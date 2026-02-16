@@ -8,6 +8,7 @@ create table profiles (
   id uuid references auth.users on delete cascade primary key,
   email text unique not null,
   imie text not null,
+  nazwisko text not null default '',
   typ text not null check (typ in ('ksiadz', 'ministrant')),
   parafia_id uuid,
   created_at timestamptz default now()
@@ -35,6 +36,7 @@ create table parafia_members (
   parafia_id uuid references parafie(id) on delete cascade not null,
   email text not null,
   imie text not null,
+  nazwisko text not null default '',
   typ text not null check (typ in ('ksiadz', 'ministrant')),
   grupa text check (grupa in ('mlodsi', 'starsi', 'lektorzy')),
   role text[] default '{}',
@@ -152,11 +154,12 @@ create policy "User can delete own zaproszenia" on zaproszenia for delete using 
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, email, imie, typ)
+  insert into public.profiles (id, email, imie, nazwisko, typ)
   values (
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data->>'imie', ''),
+    coalesce(new.raw_user_meta_data->>'nazwisko', ''),
     coalesce(new.raw_user_meta_data->>'typ', 'ministrant')
   );
   return new;

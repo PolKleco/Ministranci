@@ -62,6 +62,7 @@ interface Profile {
   id: string;
   email: string;
   imie: string;
+  nazwisko: string;
   typ: UserType;
   parafia_id: string | null;
 }
@@ -82,6 +83,7 @@ interface Member {
   parafia_id: string;
   email: string;
   imie: string;
+  nazwisko: string;
   typ: UserType;
   grupa: GrupaType | null;
   role: string[];
@@ -396,6 +398,7 @@ export default function MinistranciApp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [imie, setImie] = useState('');
+  const [nazwisko, setNazwisko] = useState('');
   const [userType, setUserType] = useState<UserType>('ministrant');
 
   // Stan parafii
@@ -475,6 +478,7 @@ export default function MinistranciApp() {
   const [editingParafiaNazwa, setEditingParafiaNazwa] = useState(false);
   const [parafiaNazwaInput, setParafiaNazwaInput] = useState('');
   const [editingAnkietaId, setEditingAnkietaId] = useState<string | null>(null);
+  const [ukryjMinistrantow, setUkryjMinistrantow] = useState(false);
   const [editAnkietaForm, setEditAnkietaForm] = useState({ pytanie: '', obowiazkowa: false, wyniki_ukryte: true, termin: '', aktywna: true, opcje: [] as { id: string; tresc: string; kolejnosc: number }[], noweOpcje: [''] });
 
   // QR Code
@@ -1245,8 +1249,8 @@ export default function MinistranciApp() {
         return;
       }
     } else {
-      if (!imie) {
-        alert('Podaj imię!');
+      if (!imie || !nazwisko) {
+        alert('Podaj imię i nazwisko!');
         setAuthLoading(false);
         return;
       }
@@ -1255,7 +1259,7 @@ export default function MinistranciApp() {
         email,
         password,
         options: {
-          data: { imie, typ: userType }
+          data: { imie, nazwisko, typ: userType }
         }
       });
 
@@ -1329,6 +1333,7 @@ export default function MinistranciApp() {
       parafia_id: newParafia.id,
       email: currentUser.email,
       imie: currentUser.imie,
+      nazwisko: currentUser.nazwisko,
       typ: 'ksiadz',
       role: []
     });
@@ -1393,6 +1398,7 @@ export default function MinistranciApp() {
       parafia_id: parafia.id,
       email: currentUser.email,
       imie: currentUser.imie,
+      nazwisko: currentUser.nazwisko,
       typ: currentUser.typ,
       role: []
     });
@@ -1422,6 +1428,7 @@ export default function MinistranciApp() {
       parafia_id: zaproszenie.parafia_id,
       email: currentUser.email,
       imie: currentUser.imie,
+      nazwisko: currentUser.nazwisko,
       typ: currentUser.typ,
       role: []
     });
@@ -2062,7 +2069,7 @@ export default function MinistranciApp() {
     if (!id) return '';
     if (id === currentUser?.id) return 'Ty';
     const member = members.find(m => m.profile_id === id);
-    return member?.imie || '';
+    return member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '';
   };
 
   const isSluzbaAssignedToMe = (sluzba: Sluzba) => {
@@ -2141,6 +2148,15 @@ export default function MinistranciApp() {
                     placeholder="Jan"
                   />
                 </div>
+                <div>
+                  <Label htmlFor="nazwisko">Nazwisko</Label>
+                  <Input
+                    id="nazwisko"
+                    value={nazwisko}
+                    onChange={(e) => setNazwisko(e.target.value)}
+                    placeholder="Kowalski"
+                  />
+                </div>
 
                 <div>
                   <Label htmlFor="typ">Typ konta</Label>
@@ -2186,7 +2202,7 @@ export default function MinistranciApp() {
           <div className="flex justify-between items-center mb-8">
             <div className="flex items-center gap-2 min-w-0">
               <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              <h1 className="text-lg sm:text-2xl font-bold truncate">Witaj, {currentUser.imie}!</h1>
+              <h1 className="text-lg sm:text-2xl font-bold truncate">Witaj, {currentUser.imie} {currentUser.nazwisko || ''}!</h1>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout} className="shrink-0">
               <LogOut className="w-4 h-4 sm:mr-2" />
@@ -2328,7 +2344,7 @@ export default function MinistranciApp() {
       <div className="bg-white dark:bg-gray-900 border-b shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-2.5 py-2 sm:px-4 sm:py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); } }}>
+            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); } }}>
               <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <div>
                 {editingParafiaNazwa ? (
@@ -2357,7 +2373,7 @@ export default function MinistranciApp() {
                     )}
                   </div>
                 )}
-                <p className="text-[11px] sm:text-sm text-gray-600 dark:text-gray-300 truncate max-w-[130px] sm:max-w-none">{currentUser.imie} ({currentUser.typ})</p>
+                <p className="text-[11px] sm:text-sm text-gray-600 dark:text-gray-300 truncate max-w-[130px] sm:max-w-none">{currentUser.imie} {currentUser.nazwisko || ''} ({currentUser.typ})</p>
               </div>
             </div>
 
@@ -2447,7 +2463,7 @@ export default function MinistranciApp() {
       <div className="max-w-7xl mx-auto px-2.5 py-3 sm:px-4 sm:py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6">
-            <TabsTrigger value="tablica" className="relative" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); }}>
+            <TabsTrigger value="tablica" className="relative" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
               <MessageSquare className="w-4 h-4 sm:mr-2" />
               Ogłoszenia
               {nieprzeczytanePowiadomienia > 0 && (
@@ -2497,7 +2513,7 @@ export default function MinistranciApp() {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   {selectedWatek && (
-                    <Button variant="ghost" size="sm" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); }}>
+                    <Button variant="ghost" size="sm" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
                       <ArrowLeft className="w-4 h-4" />
                     </Button>
                   )}
@@ -2602,72 +2618,33 @@ export default function MinistranciApp() {
                             <Badge variant={selectedWatek.kategoria === 'ogłoszenie' ? 'default' : selectedWatek.kategoria === 'ankieta' ? 'destructive' : 'secondary'}>
                               {selectedWatek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : selectedWatek.kategoria === 'ankieta' ? 'Ankieta' : 'Dyskusja'}
                             </Badge>
-                            {selectedWatek.przypiety && <Pin className="w-4 h-4 text-amber-500" />}
-                            {selectedWatek.zamkniety && <LockKeyhole className="w-4 h-4 text-red-500" />}
+                                                        {selectedWatek.zamkniety && <LockKeyhole className="w-4 h-4 text-red-500" />}
                           </div>
-                          {currentUser.typ === 'ksiadz' && (
-                            <div className="flex gap-1">
+                          {currentUser.typ === 'ksiadz' && watekAnkieta && (
+                            <div className="flex gap-2">
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
-                                title={selectedWatek.przypiety ? 'Odepnij wątek' : 'Przypnij wątek na górze'}
-                                className={selectedWatek.przypiety ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40' : 'text-gray-400 hover:text-amber-500'}
-                                onClick={() => togglePrzypiety(selectedWatek.id, selectedWatek.przypiety)}
+                                className={`h-8 px-3 text-xs ${ukryjMinistrantow ? 'bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-950 dark:border-indigo-700 dark:text-indigo-300' : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-400 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900'}`}
+                                onClick={() => setUkryjMinistrantow(!ukryjMinistrantow)}
                               >
-                                <Pin className="w-4 h-4" />
+                                {ukryjMinistrantow ? <EyeOff className="w-3.5 h-3.5 mr-1.5" /> : <Eye className="w-3.5 h-3.5 mr-1.5" />}
+                                {ukryjMinistrantow ? 'Pokaż ministrantów' : 'Ukryj ministrantów'}
                               </Button>
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
-                                title={selectedWatek.zamkniety ? 'Odblokuj komentarze' : 'Zablokuj komentarze'}
-                                className={selectedWatek.zamkniety ? 'text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40' : 'text-gray-400 hover:text-red-500'}
-                                onClick={() => toggleZamkniety(selectedWatek.id, selectedWatek.zamkniety)}
-                              >
-                                {selectedWatek.zamkniety ? <LockKeyhole className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                              </Button>
-                              {watekAnkieta && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title={watekAnkieta.wyniki_ukryte ? 'Pokaż wyniki ministrantom' : 'Ukryj wyniki'}
-                                  className={watekAnkieta.wyniki_ukryte ? 'text-red-500' : 'text-green-500'}
-                                  onClick={() => toggleWynikiUkryte(watekAnkieta.id, watekAnkieta.wyniki_ukryte)}
-                                >
-                                  {watekAnkieta.wyniki_ukryte ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="Edytuj wątek"
-                                className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400"
-                                onClick={() => {
-                                  setEditingWatek(selectedWatek);
-                                  setNewWatekForm({
-                                    tytul: selectedWatek.tytul,
-                                    tresc: selectedWatek.tresc || '',
-                                    kategoria: selectedWatek.kategoria,
-                                    grupa_docelowa: selectedWatek.grupa_docelowa,
-                                  });
-                                  setShowNewWatekModal(true);
-                                }}
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="Usuń wątek"
-                                className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                className="h-8 px-3 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
                                 onClick={() => deleteWatek(selectedWatek.id)}
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                                Usuń ankietę
                               </Button>
                             </div>
                           )}
                         </div>
                         <CardDescription className="text-xs">
-                          {autorWatku?.imie || 'Ksiądz'} &middot; {new Date(selectedWatek.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} &middot; {new Date(selectedWatek.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </CardDescription>
                       </CardHeader>
                       {selectedWatek.tresc && (
@@ -2732,7 +2709,7 @@ export default function MinistranciApp() {
                                       )}
                                     </div>
                                   ))}
-                                  {watekAnkieta.typ !== 'tak_nie' && editAnkietaForm.noweOpcje.map((opcja, i) => (
+                                  {editAnkietaForm.noweOpcje.map((opcja, i) => (
                                     <div key={`new-${i}`} className="flex gap-2">
                                       <Input
                                         value={opcja}
@@ -2752,12 +2729,10 @@ export default function MinistranciApp() {
                                       )}
                                     </div>
                                   ))}
-                                  {watekAnkieta.typ !== 'tak_nie' && (
-                                    <Button variant="outline" size="sm" onClick={() => setEditAnkietaForm({ ...editAnkietaForm, noweOpcje: [...editAnkietaForm.noweOpcje, ''] })}>
+                                  <Button variant="outline" size="sm" onClick={() => setEditAnkietaForm({ ...editAnkietaForm, noweOpcje: [...editAnkietaForm.noweOpcje, ''] })}>
                                       <Plus className="w-4 h-4 mr-1" />
                                       Dodaj opcję
                                     </Button>
-                                  )}
                                 </div>
                               </div>
 
@@ -2813,14 +2788,20 @@ export default function MinistranciApp() {
                                   const pct = totalMinistranci > 0 ? Math.round((count / totalMinistranci) * 100) : 0;
                                   const osoby = odpowiedziOpcji.map(o => {
                                     const m = members.find(mb => mb.profile_id === o.respondent_id);
-                                    return m?.imie || '?';
+                                    return m ? `${m.imie} ${m.nazwisko || ''}`.trim() : '?';
                                   });
+                                  const isTak = opcja.tresc.toLowerCase() === 'tak';
+                                  const isNie = opcja.tresc.toLowerCase() === 'nie';
+                                  const barColor = isTak ? 'bg-green-500 dark:bg-green-400' : isNie ? 'bg-red-500 dark:bg-red-400' : 'bg-indigo-500 dark:bg-indigo-400';
+                                  const selectedClass = isSelected
+                                    ? isTak ? 'bg-green-600 hover:bg-green-700 text-white' : isNie ? 'bg-red-600 hover:bg-red-700 text-white' : ''
+                                    : isTak ? 'border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-950' : isNie ? 'border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950' : '';
 
                                   return (
                                     <div key={opcja.id} className="space-y-1">
                                       <Button
                                         variant={isSelected ? 'default' : 'outline'}
-                                        className="w-full justify-between"
+                                        className={`w-full justify-between ${selectedClass}`}
                                         onClick={() => odpowiedzAnkieta(watekAnkieta.id, opcja.id)}
                                         disabled={!watekAnkieta.aktywna}
                                       >
@@ -2832,13 +2813,13 @@ export default function MinistranciApp() {
                                       </Button>
                                       {pokazWyniki && (
                                         <>
-                                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
-                                            <div className="bg-indigo-500 dark:bg-indigo-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                                            <div className={`${barColor} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }} />
                                           </div>
                                           {osoby.length > 0 && (
                                             <div className="flex flex-wrap gap-1">
                                               {osoby.map((imie, i) => (
-                                                <Badge key={i} variant="secondary" className="text-xs">{imie}</Badge>
+                                                <Badge key={i} variant="secondary" className={isTak ? 'text-xs bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300' : isNie ? 'text-xs bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300' : 'text-xs'}>{imie}</Badge>
                                               ))}
                                             </div>
                                           )}
@@ -2852,7 +2833,7 @@ export default function MinistranciApp() {
                                 {juzOdpowiedzial && (
                                   <Button
                                     className="w-full mt-2 bg-green-600 hover:bg-green-700"
-                                    onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); }}
+                                    onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}
                                   >
                                     <Check className="w-4 h-4 mr-2" />
                                     Akceptuj
@@ -2880,27 +2861,33 @@ export default function MinistranciApp() {
                                   const odpowiedziOpcji = wszystkieOdpowiedzi.filter(o => o.opcja_id === opcja.id);
                                   const count = odpowiedziOpcji.length;
                                   const pct = totalMinistranci > 0 ? Math.round((count / totalMinistranci) * 100) : 0;
+                                  const isTak = opcja.tresc.toLowerCase() === 'tak';
+                                  const isNie = opcja.tresc.toLowerCase() === 'nie';
+                                  const barColor = isTak ? 'bg-green-500 dark:bg-green-400' : isNie ? 'bg-red-500 dark:bg-red-400' : 'bg-indigo-500 dark:bg-indigo-400';
+                                  const labelColor = isTak ? 'text-green-700 dark:text-green-300' : isNie ? 'text-red-700 dark:text-red-300' : '';
+                                  const countColor = isTak ? 'text-green-600 dark:text-green-400' : isNie ? 'text-red-600 dark:text-red-400' : '';
+                                  const badgeClass = isTak ? 'text-xs bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800' : isNie ? 'text-xs bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800' : 'text-xs';
 
                                   return (
                                     <div key={opcja.id} className="space-y-1">
                                       <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium">{opcja.tresc}</span>
-                                        <span className="text-sm font-bold">{count} ({pct}%)</span>
+                                        <span className={`text-sm font-semibold ${labelColor}`}>{opcja.tresc}</span>
+                                        <span className={`text-sm font-bold ${countColor}`}>{count} ({pct}%)</span>
                                       </div>
-                                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                                        <div className="bg-indigo-500 dark:bg-indigo-400 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
+                                        <div className={`${barColor} h-2.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
                                       </div>
-                                      {odpowiedziOpcji.length > 0 && (
+                                      {!ukryjMinistrantow && odpowiedziOpcji.length > 0 && (
                                         <div className="flex flex-wrap gap-1 pt-1">
                                           {odpowiedziOpcji.map((odp, i) => {
                                             const m = members.find(mb => mb.profile_id === odp.respondent_id);
-                                            const imie = m?.imie || '?';
+                                            const imie = m ? `${m.imie} ${m.nazwisko || ''}`.trim() : '?';
                                             return odp.zmieniona ? (
                                               <Badge key={i} variant="secondary" className="text-xs border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300" title={`Zmieniona ${odp.zmieniona_at ? new Date(odp.zmieniona_at).toLocaleString('pl-PL') : ''}`}>
                                                 {imie} <span className="ml-1 text-[10px]">zmieniona</span>
                                               </Badge>
                                             ) : (
-                                              <Badge key={i} variant="secondary" className="text-xs">{imie}</Badge>
+                                              <Badge key={i} variant="secondary" className={badgeClass}>{imie}</Badge>
                                             );
                                           })}
                                         </div>
@@ -2909,17 +2896,17 @@ export default function MinistranciApp() {
                                   );
                                 })}
 
-                                {brakOdpowiedzi.length > 0 && (
+                                {!ukryjMinistrantow && brakOdpowiedzi.length > 0 && (
                                   <div className="pt-3 border-t">
                                     <p className="text-xs text-red-600 dark:text-red-400 font-semibold mb-1">Brak odpowiedzi:</p>
                                     <div className="flex flex-wrap gap-1">
                                       {brakOdpowiedzi.map(m => (
-                                        <Badge key={m.id} variant="outline" className="text-xs text-red-600 dark:text-red-400 border-red-200 dark:border-red-700">{m.imie}</Badge>
+                                        <Badge key={m.id} variant="outline" className="text-xs text-red-600 dark:text-red-400 border-red-200 dark:border-red-700">{m.imie} {m.nazwisko || ''}</Badge>
                                       ))}
                                     </div>
                                   </div>
                                 )}
-                                {brakOdpowiedzi.length === 0 && (
+                                {!ukryjMinistrantow && brakOdpowiedzi.length === 0 && (
                                   <p className="text-xs text-green-600 dark:text-green-400 pt-2">Wszyscy odpowiedzieli!</p>
                                 )}
                               </div>
@@ -2939,7 +2926,7 @@ export default function MinistranciApp() {
                         return (
                           <div key={msg.id} className={`p-3 rounded-lg ${msg.autor_id === currentUser.id ? 'bg-indigo-100 dark:bg-indigo-900/30 ml-4 sm:ml-8' : 'bg-white dark:bg-gray-800 border mr-4 sm:mr-8'}`}>
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-semibold">{msg.autor_id === currentUser.id ? 'Ty' : (autor?.imie || 'Ksiądz')}</span>
+                              <span className="text-xs font-semibold">{msg.autor_id === currentUser.id ? 'Ty' : (autor ? `${autor.imie} ${autor.nazwisko || ''}`.trim() : 'Ksiądz')}</span>
                               <span className="text-xs text-gray-400">{new Date(msg.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
                             <p className="text-sm">{msg.tresc}</p>
@@ -3027,7 +3014,7 @@ export default function MinistranciApp() {
                                 <CardDescription className="text-xs mt-1">
                                   {watekAnkieta
                                     ? <>Ważna do: {watekAnkieta.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'bez terminu'}</>
-                                    : <>{autorWatku?.imie || 'Ksiądz'} &middot; {new Date(watek.updated_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
+                                    : <>{autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} &middot; {new Date(watek.updated_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
                                   }
                                 </CardDescription>
                               </div>
@@ -3133,7 +3120,7 @@ export default function MinistranciApp() {
                       <CardContent className="pt-6">
                         <div className="flex items-center justify-between mb-4 gap-3">
                           <div className="min-w-0">
-                            <h3 className="text-lg sm:text-xl font-bold truncate">{currentUser.imie}</h3>
+                            <h3 className="text-lg sm:text-xl font-bold truncate">{currentUser.imie} {currentUser.nazwisko || ''}</h3>
                             <div className="flex items-center gap-2 mt-1">
                               <Badge style={{ backgroundColor: currentRanga ? KOLOR_KLASY[currentRanga.kolor]?.bg.replace('bg-', '').replace('-100', '') : undefined }} className={currentRanga ? `${KOLOR_KLASY[currentRanga.kolor]?.bg} ${KOLOR_KLASY[currentRanga.kolor]?.text}` : ''}>
                                 {currentRanga?.nazwa || 'Ready'}
@@ -3307,7 +3294,7 @@ export default function MinistranciApp() {
                                       {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
                                     </span>
                                     <div>
-                                      <span className="font-medium">{isMe ? `► ${currentUser.imie}` : member?.imie || '?'}</span>
+                                      <span className="font-medium">{isMe ? `► ${currentUser.imie} ${currentUser.nazwisko || ''}`.trim() : member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
                                       {ranga && (
                                         <Badge className={`ml-2 text-xs ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
                                           {ranga.nazwa}
@@ -3826,7 +3813,7 @@ export default function MinistranciApp() {
                             return (
                               <div key={o.id} className="flex items-center justify-between gap-2 p-2 sm:p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
                                 <div className="min-w-0">
-                                  <div className="font-medium text-sm sm:text-base truncate">{member?.imie || '?'}</div>
+                                  <div className="font-medium text-sm sm:text-base truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</div>
                                   <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                                     {dayName} {d.toLocaleDateString('pl-PL')} {o.godzina && `• ${o.godzina}`}
                                     {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
@@ -3875,7 +3862,7 @@ export default function MinistranciApp() {
                                 <div className="flex flex-wrap gap-1">
                                   {dyzuryDnia.map(d => {
                                     const member = members.find(m => m.profile_id === d.ministrant_id);
-                                    return <Badge key={d.id} variant="secondary">{member?.imie || '?'}</Badge>;
+                                    return <Badge key={d.id} variant="secondary">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</Badge>;
                                   })}
                                 </div>
                               </div>
@@ -3909,7 +3896,7 @@ export default function MinistranciApp() {
                                     {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
                                   </span>
                                   <div>
-                                    <span className="font-medium">{member?.imie || '?'}</span>
+                                    <span className="font-medium">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
                                     {ranga && (
                                       <Badge className={`ml-2 text-xs ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
                                         {ranga.nazwa}
@@ -4127,7 +4114,7 @@ export default function MinistranciApp() {
                           <CardContent className="py-3 sm:py-4">
                             <div className="flex justify-between items-start gap-2">
                               <div className="min-w-0">
-                                <p className="font-semibold truncate">{member.imie}</p>
+                                <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''}</p>
                                 <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                               </div>
                               <Button
@@ -4168,7 +4155,7 @@ export default function MinistranciApp() {
                             <CardContent className="py-3 sm:py-4">
                               <div className="flex justify-between items-start gap-2">
                                 <div className="min-w-0">
-                                  <p className="font-semibold truncate">{member.imie}</p>
+                                  <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''}</p>
                                   <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                                   {member.role.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2">
@@ -4696,7 +4683,7 @@ export default function MinistranciApp() {
                         <SelectItem value="BEZ">🚫 Bez {funkcja}</SelectItem>
                         {members.filter(m => m.typ === 'ministrant').map(m => (
                           <SelectItem key={m.profile_id} value={m.profile_id}>
-                            {m.imie}
+                            {m.imie} {m.nazwisko || ''}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -4728,7 +4715,7 @@ export default function MinistranciApp() {
       }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Przypisz posługi - {selectedMember?.imie}</DialogTitle>
+            <DialogTitle>Przypisz posługi - {selectedMember?.imie} {selectedMember?.nazwisko || ''}</DialogTitle>
             <DialogDescription>
               Zaznacz posługi, które będzie pełnił ministrant
             </DialogDescription>
@@ -4782,7 +4769,7 @@ export default function MinistranciApp() {
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Zmień grupę - {selectedMember?.imie}</DialogTitle>
+            <DialogTitle>Zmień grupę - {selectedMember?.imie} {selectedMember?.nazwisko || ''}</DialogTitle>
             <DialogDescription>
               Wybierz grupę dla ministranta
             </DialogDescription>

@@ -468,7 +468,7 @@ export default function MinistranciApp() {
   const [editingWatek, setEditingWatek] = useState<TablicaWatek | null>(null);
   const [showNewAnkietaModal, setShowNewAnkietaModal] = useState(false);
   const [newWatekForm, setNewWatekForm] = useState({ tytul: '', tresc: '', kategoria: 'ogłoszenie' as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: 'wszyscy' });
-  const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: true, termin: '', opcje: ['', ''] });
+  const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''] });
   const [newWiadomoscTresc, setNewWiadomoscTresc] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
   const [showInfoBanner, setShowInfoBanner] = useState(true);
@@ -1894,7 +1894,7 @@ export default function MinistranciApp() {
       }
 
       setShowNewAnkietaModal(false);
-      setNewAnkietaForm({ pytanie: '', typ: 'tak_nie', obowiazkowa: true, wyniki_ukryte: true, termin: '', opcje: ['', ''] });
+      setNewAnkietaForm({ pytanie: '', typ: 'tak_nie', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''] });
       await loadTablicaData();
     } catch (err) {
       alert('Nieoczekiwany błąd: ' + (err instanceof Error ? err.message : String(err)));
@@ -3025,65 +3025,32 @@ export default function MinistranciApp() {
                                 </div>
                                 <CardTitle className="text-base">{watek.tytul}</CardTitle>
                                 <CardDescription className="text-xs mt-1">
-                                  {autorWatku?.imie || 'Ksiądz'} &middot; {new Date(watek.updated_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  {watekAnkieta
+                                    ? <>Ważna do: {watekAnkieta.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'bez terminu'}</>
+                                    : <>{autorWatku?.imie || 'Ksiądz'} &middot; {new Date(watek.updated_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
+                                  }
                                 </CardDescription>
                               </div>
                               <div className="flex flex-col items-end gap-1">
                                 {currentUser.typ === 'ksiadz' && watekAnkieta && (
                                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                     <Button
-                                      variant="ghost"
+                                      variant="outline"
                                       size="sm"
-                                      title={watek.przypiety ? 'Odepnij' : 'Przypnij'}
-                                      className={`h-7 w-7 p-0 ${watek.przypiety ? 'text-amber-500' : 'text-gray-400 hover:text-amber-500'}`}
+                                      className={`h-7 px-2 text-xs ${watek.przypiety ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-300' : 'text-gray-500 hover:text-amber-600 hover:border-amber-300'}`}
                                       onClick={() => togglePrzypiety(watek.id, watek.przypiety)}
                                     >
-                                      <Pin className="w-3.5 h-3.5" />
+                                      <Pin className="w-3 h-3 mr-1" />
+                                      {watek.przypiety ? 'Odepnij' : 'Przypnij'}
                                     </Button>
                                     <Button
-                                      variant="ghost"
+                                      variant="outline"
                                       size="sm"
-                                      title={watek.zamkniety ? 'Odblokuj' : 'Zablokuj'}
-                                      className={`h-7 w-7 p-0 ${watek.zamkniety ? 'text-red-500' : 'text-gray-400 hover:text-red-500'}`}
-                                      onClick={() => toggleZamkniety(watek.id, watek.zamkniety)}
-                                    >
-                                      {watek.zamkniety ? <LockKeyhole className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      title={watekAnkieta.wyniki_ukryte ? 'Pokaż wyniki ministrantom' : 'Ukryj wyniki'}
-                                      className={`h-7 w-7 p-0 ${watekAnkieta.wyniki_ukryte ? 'text-red-500' : 'text-green-500'}`}
-                                      onClick={() => toggleWynikiUkryte(watekAnkieta.id, watekAnkieta.wyniki_ukryte)}
-                                    >
-                                      {watekAnkieta.wyniki_ukryte ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      title="Edytuj"
-                                      className="h-7 w-7 p-0 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400"
-                                      onClick={() => {
-                                        setEditingWatek(watek);
-                                        setNewWatekForm({
-                                          tytul: watek.tytul,
-                                          tresc: watek.tresc || '',
-                                          kategoria: watek.kategoria,
-                                          grupa_docelowa: watek.grupa_docelowa,
-                                        });
-                                        setShowNewWatekModal(true);
-                                      }}
-                                    >
-                                      <Pencil className="w-3.5 h-3.5" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      title="Usuń"
-                                      className="h-7 w-7 p-0 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+                                      className="h-7 px-2 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
                                       onClick={() => deleteWatek(watek.id)}
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <Trash2 className="w-3 h-3 mr-1" />
+                                      Usuń
                                     </Button>
                                   </div>
                                 )}
@@ -3112,12 +3079,23 @@ export default function MinistranciApp() {
                             const pokazWyniki = currentUser.typ === 'ksiadz' || (!watekAnkieta.wyniki_ukryte && mojaOdp);
                             return (
                               <CardContent className="pt-0 pb-3">
-                                <div className="flex items-center justify-end gap-2 sm:gap-3 text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 flex-wrap">
-                                  <span>{unikatoweOsoby}/{totalMinistrantow}</span>
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{unikatoweOsoby}/{totalMinistrantow} odpowiedzi</span>
                                   {pokazWyniki && opcje.map(opcja => {
                                     const count = odpowiedzi.filter(od => od.opcja_id === opcja.id).length;
                                     const pct = unikatoweOsoby > 0 ? Math.round((count / unikatoweOsoby) * 100) : 0;
-                                    return <span key={opcja.id} className="text-gray-600 dark:text-gray-300">{opcja.tresc}: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{count}</span> ({pct}%)</span>;
+                                    const isTak = opcja.tresc.toLowerCase() === 'tak';
+                                    const isNie = opcja.tresc.toLowerCase() === 'nie';
+                                    const bgColor = isTak ? 'bg-green-50 dark:bg-green-950' : isNie ? 'bg-red-50 dark:bg-red-950' : 'bg-indigo-50 dark:bg-indigo-950';
+                                    const textColor = isTak ? 'text-green-700 dark:text-green-300' : isNie ? 'text-red-700 dark:text-red-300' : 'text-gray-700 dark:text-gray-200';
+                                    const countColor = isTak ? 'text-green-600 dark:text-green-400' : isNie ? 'text-red-600 dark:text-red-400' : 'text-indigo-600 dark:text-indigo-400';
+                                    return (
+                                      <span key={opcja.id} className={`inline-flex items-center gap-1 rounded-full ${bgColor} px-2.5 py-0.5 text-sm font-medium`}>
+                                        <span className={textColor}>{opcja.tresc}:</span>
+                                        <span className={`font-bold ${countColor}`}>{count}</span>
+                                        <span className="text-gray-500 dark:text-gray-400">({pct}%)</span>
+                                      </span>
+                                    );
                                   })}
                                 </div>
                               </CardContent>
@@ -5468,7 +5446,7 @@ export default function MinistranciApp() {
               <Input
                 value={newAnkietaForm.pytanie}
                 onChange={(e) => setNewAnkietaForm({ ...newAnkietaForm, pytanie: e.target.value })}
-                placeholder="Np. Kto będzie na zbiórce w sobotę?"
+                placeholder="Czy będziesz w sobotę na zbiórce?"
               />
             </div>
             <div>

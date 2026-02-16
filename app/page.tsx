@@ -2613,15 +2613,20 @@ export default function MinistranciApp() {
                     {/* Info o wątku */}
                     <Card>
                       <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={selectedWatek.kategoria === 'ogłoszenie' ? 'default' : selectedWatek.kategoria === 'ankieta' ? 'destructive' : 'secondary'}>
-                              {selectedWatek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : selectedWatek.kategoria === 'ankieta' ? 'Ankieta' : 'Dyskusja'}
-                            </Badge>
-                                                        {selectedWatek.zamkniety && <LockKeyhole className="w-4 h-4 text-red-500" />}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant={selectedWatek.kategoria === 'ogłoszenie' ? 'default' : selectedWatek.kategoria === 'ankieta' ? 'destructive' : 'secondary'}>
+                                {selectedWatek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : selectedWatek.kategoria === 'ankieta' ? 'Ankieta' : 'Dyskusja'}
+                              </Badge>
+                              {selectedWatek.zamkniety && <LockKeyhole className="w-4 h-4 text-red-500" />}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Ważna do: {watekAnkieta?.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) : 'bez terminu'}
+                            </p>
                           </div>
                           {currentUser.typ === 'ksiadz' && watekAnkieta && (
-                            <div className="flex gap-2">
+                            <div className="flex flex-col gap-1.5 shrink-0">
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -2643,9 +2648,6 @@ export default function MinistranciApp() {
                             </div>
                           )}
                         </div>
-                        <CardDescription className="text-xs">
-                          {autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} &middot; {new Date(selectedWatek.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </CardDescription>
                       </CardHeader>
                       {selectedWatek.tresc && (
                         <CardContent>

@@ -178,6 +178,86 @@
   }
 }
 
+/* Tiptap editor styles */
+.tiptap-content {
+  outline: none;
+}
+.tiptap-content p {
+  margin: 0.25rem 0;
+}
+.tiptap-content h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin: 0.5rem 0 0.25rem;
+}
+.tiptap-content h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0.5rem 0 0.25rem;
+}
+.tiptap-content h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+}
+.tiptap-content ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.tiptap-content ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.tiptap-content img {
+  max-width: 100%;
+  border-radius: 8px;
+  cursor: pointer;
+  margin: 4px 0;
+}
+.tiptap-content img[data-float="left"] {
+  float: left;
+  margin: 0 16px 8px 0;
+  max-width: 50%;
+}
+.tiptap-content img[data-float="right"] {
+  float: right;
+  margin: 0 0 8px 16px;
+  max-width: 50%;
+}
+.tiptap-content img[data-float="center"] {
+  display: block;
+  margin: 8px auto;
+}
+.tiptap-content img.ProseMirror-selectednode {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+/* NodeView image wrapper float support */
+.tiptap-image-wrapper[style*="float: left"] + *,
+.tiptap-image-wrapper[style*="float: right"] + * {
+  display: block;
+}
+.tiptap-content a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+.tiptap-content iframe {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+.tiptap-content blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 1rem;
+  margin: 0.5rem 0;
+  color: #6b7280;
+}
+.tiptap-content ::after {
+  content: '';
+  display: table;
+  clear: both;
+}
+
 /* Safe area support for notched devices */
 @supports (padding: env(safe-area-inset-bottom)) {
   body {

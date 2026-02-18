@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   Church, Users, Calendar, Book, LogOut, Mail,
@@ -8,8 +8,17 @@ import {
   UserPlus, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
-  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip,
+  Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type
 } from 'lucide-react';
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import TiptapImage from '@tiptap/extension-image';
+import TextAlign from '@tiptap/extension-text-align';
+import YoutubeExtension from '@tiptap/extension-youtube';
+import TiptapUnderline from '@tiptap/extension-underline';
+import TiptapColor from '@tiptap/extension-color';
+import { TextStyle } from '@tiptap/extension-text-style';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -385,6 +394,63 @@ const WSKAZOWKI = {
   ]
 };
 
+// ==================== TIPTAP IMAGE NODE VIEW ====================
+
+function TiptapImageView({ node, updateAttributes, selected }: any) {
+  const [showControls, setShowControls] = useState(false);
+
+  const wrapperStyle: React.CSSProperties = { display: 'inline-block' };
+  if (node.attrs.float === 'left') {
+    Object.assign(wrapperStyle, { float: 'left' as const, margin: '4px 16px 8px 0', maxWidth: '50%' });
+  } else if (node.attrs.float === 'right') {
+    Object.assign(wrapperStyle, { float: 'right' as const, margin: '4px 0 8px 16px', maxWidth: '50%' });
+  } else if (node.attrs.float === 'center') {
+    Object.assign(wrapperStyle, { display: 'block', textAlign: 'center' as const, margin: '8px 0' });
+  }
+
+  const imgStyle: React.CSSProperties = {
+    maxWidth: '100%',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    ...(node.attrs.width ? { width: `${node.attrs.width}px` } : {}),
+  };
+
+  return (
+    <NodeViewWrapper
+      as="span"
+      style={wrapperStyle}
+      className="tiptap-image-wrapper"
+    >
+      <span
+        className="relative inline-block"
+        onMouseEnter={() => setShowControls(true)}
+        onMouseLeave={() => setShowControls(false)}
+      >
+        <img
+          src={node.attrs.src}
+          alt={node.attrs.alt || ''}
+          style={imgStyle}
+          className={selected ? 'outline-2 outline-indigo-500 outline-offset-2' : ''}
+        />
+        {showControls && (
+          <span
+            className="absolute top-1 left-1 flex items-center gap-0.5 bg-black/80 backdrop-blur-sm rounded-lg p-1 z-10"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {[{ label: 'S', w: 150 }, { label: 'M', w: 300 }, { label: 'L', w: 500 }, { label: 'Auto', w: null }].map(p => (
+              <button key={p.label} type="button" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${node.attrs.width == p.w ? 'bg-indigo-500 text-white' : 'text-white/80 hover:bg-white/20'}`} onClick={() => updateAttributes({ width: p.w })}>{p.label}</button>
+            ))}
+            <span className="inline-block w-px h-3.5 bg-white/30 mx-0.5" />
+            {[{ label: '←', v: 'left', title: 'Lewo' }, { label: '↔', v: 'center', title: 'Środek' }, { label: '→', v: 'right', title: 'Prawo' }].map(o => (
+              <button key={o.title} type="button" title={o.title} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${node.attrs.float === o.v ? 'bg-indigo-500 text-white' : 'text-white/80 hover:bg-white/20'}`} onClick={() => updateAttributes({ float: node.attrs.float === o.v ? null : o.v })}>{o.label}</button>
+            ))}
+          </span>
+        )}
+      </span>
+    </NodeViewWrapper>
+  );
+}
+
 // ==================== GŁÓWNY KOMPONENT ====================
 
 export default function MinistranciApp() {
@@ -438,7 +504,7 @@ export default function MinistranciApp() {
   const [editGalleryPreviews, setEditGalleryPreviews] = useState<string[]>([]);
   const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [newGalleryPreviews, setNewGalleryPreviews] = useState<string[]>([]);
-  const [watekFiles, setWatekFiles] = useState<File[]>([]);
+  const [isUploadingInline, setIsUploadingInline] = useState(false);
   const [newGrupaForm, setNewGrupaForm] = useState({ nazwa: '', kolor: 'gray', emoji: '⚪', opis: '' });
   const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
 
@@ -488,6 +554,52 @@ export default function MinistranciApp() {
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
+
+  // Tiptap Image extension with float & width + hover controls
+  const FloatImage = useMemo(() => TiptapImage.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        float: {
+          default: null,
+          parseHTML: element => element.getAttribute('data-float'),
+          renderHTML: attributes => attributes.float ? { 'data-float': attributes.float } : {},
+        },
+        width: {
+          default: null,
+          parseHTML: element => element.getAttribute('data-width'),
+          renderHTML: attributes => {
+            if (!attributes.width) return {};
+            return { 'data-width': attributes.width, style: `width: ${attributes.width}px` };
+          },
+        },
+      };
+    },
+    addNodeView() {
+      return ReactNodeViewRenderer(TiptapImageView);
+    },
+  }), []);
+
+  // Tiptap editor
+  const tiptapEditor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit,
+      FloatImage.configure({ allowBase64: false, inline: true }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      YoutubeExtension.configure({ width: 480, height: 320, nocookie: true }),
+      TiptapUnderline,
+      TextStyle,
+      TiptapColor,
+    ],
+    content: '',
+    editorProps: {
+      attributes: { class: 'tiptap-content min-h-[100px] max-h-[300px] overflow-auto px-3 py-2 text-sm outline-none' },
+    },
+    onUpdate: ({ editor }) => {
+      setNewWatekForm(prev => ({ ...prev, tresc: editor.getHTML() }));
+    },
+  });
 
   useEffect(() => {
     const saved = localStorage.getItem('darkMode');
@@ -1233,6 +1345,24 @@ export default function MinistranciApp() {
     }
   }, [currentUser?.parafia_id, loadTablicaData]);
 
+  // Inicjalizacja Tiptap edytora przy otwarciu modala
+  const editorInitialized = useRef(false);
+  useEffect(() => {
+    if (showNewWatekModal && tiptapEditor && !editorInitialized.current) {
+      const content = newWatekForm.tresc || '';
+      // Konwersja starego markdown na HTML jeśli trzeba
+      if (content && !content.includes('<p>') && !content.includes('<img')) {
+        tiptapEditor.commands.setContent(trescToHtml(content));
+      } else {
+        tiptapEditor.commands.setContent(content || '<p></p>');
+      }
+      editorInitialized.current = true;
+    }
+    if (!showNewWatekModal) {
+      editorInitialized.current = false;
+    }
+  }, [showNewWatekModal, tiptapEditor]);
+
   // ==================== AUTENTYKACJA ====================
 
   const handleAuth = async () => {
@@ -1801,46 +1931,79 @@ export default function MinistranciApp() {
 
   // ==================== FUNKCJE — TABLICA OGŁOSZEŃ ====================
 
-  const renderTrescWithLinks = (text: string) => {
+  // Konwersja starego markdown na HTML (dla kompatybilności)
+  const trescToHtml = (text: string): string => {
+    if (!text) return '';
     const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
-    const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
-    return parts.map((part, i) => {
-      const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (match) {
-        const fileName = match[1];
-        const url = match[2];
-        const ext = fileName.split('.').pop()?.toLowerCase() || '';
-        if (imageExts.includes(ext)) {
-          return <a key={i} href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={fileName} className="max-w-full rounded-lg mt-2 mb-1 max-h-80 object-contain" /></a>;
-        }
-        return <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"><Paperclip className="w-3 h-3" />{fileName}</a>;
+    const html = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, rawLabel, url) => {
+      const labelParts = rawLabel.split('|');
+      const fileName = labelParts[0];
+      const params: Record<string, string> = {};
+      for (let j = 1; j < labelParts.length; j++) {
+        const [key, val] = labelParts[j].split('=');
+        if (key && val) params[key.trim()] = val.trim();
       }
-      return part;
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+      if (imageExts.includes(ext)) {
+        const widthAttr = params.width ? ` data-width="${params.width}" style="width:${params.width}px"` : '';
+        return `<img src="${url}" alt="${fileName}"${widthAttr} />`;
+      }
+      return `<a href="${url}" target="_blank">${fileName}</a>`;
     });
+    return html.split('\n').map(line => `<p>${line || '<br>'}</p>`).join('');
   };
 
-  const uploadWatekFiles = async (files: File[], watekId: string): Promise<string[]> => {
-    if (!currentUser?.parafia_id || files.length === 0) return [];
-    const urls: string[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+  // Upload pliku i wstawienie do Tiptap
+  const uploadAndInsertFile = async (file: File) => {
+    if (!currentUser?.parafia_id || !tiptapEditor) return;
+    setIsUploadingInline(true);
+    try {
       const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
-      const path = `${currentUser.parafia_id}/${watekId}/${Date.now()}_${i}.${ext}`;
+      const path = `${currentUser.parafia_id}/inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const { error } = await supabase.storage
         .from('watki-files')
         .upload(path, file, { upsert: true, contentType: file.type });
       if (error) {
-        console.error('Błąd uploadu pliku:', file.name, error.message);
-        alert('Błąd uploadu pliku: ' + file.name + ' — ' + error.message);
+        alert('Błąd uploadu: ' + error.message);
+        return;
       }
-      if (!error) {
-        const { data: { publicUrl } } = supabase.storage
-          .from('watki-files')
-          .getPublicUrl(path);
-        urls.push(`[${file.name}](${publicUrl})`);
+      const { data: { publicUrl } } = supabase.storage
+        .from('watki-files')
+        .getPublicUrl(path);
+      const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+      if (imageExts.includes(ext)) {
+        tiptapEditor.chain().focus().setImage({ src: publicUrl, alt: file.name }).run();
+      } else {
+        tiptapEditor.chain().focus().setLink({ href: publicUrl, target: '_blank' }).insertContent(file.name).unsetLink().run();
       }
+    } finally {
+      setIsUploadingInline(false);
     }
-    return urls;
+  };
+
+  // Renderowanie treści — obsługa HTML (nowy) i markdown (stary)
+  const renderTresc = (text: string) => {
+    if (!text) return null;
+    if (/<[a-z][\s\S]*>/i.test(text)) {
+      return <div className="tiptap-content text-sm" dangerouslySetInnerHTML={{ __html: text }} />;
+    }
+    // Stary format markdown
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+    const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+    return <p className="text-sm whitespace-pre-wrap">{parts.map((part, i) => {
+      const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (match) {
+        const rawLabel = match[1];
+        const url = match[2];
+        const fileName = rawLabel.split('|')[0];
+        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        if (imageExts.includes(ext)) {
+          return <a key={i} href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={fileName} className="rounded-lg mt-2 mb-1 object-contain" style={{ maxWidth: '100%', maxHeight: '320px' }} /></a>;
+        }
+        return <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"><Paperclip className="w-3 h-3" />{fileName}</a>;
+      }
+      return part;
+    })}</p>;
   };
 
   const createWatek = async () => {
@@ -1868,18 +2031,8 @@ export default function MinistranciApp() {
 
       if (error) { alert('Błąd: ' + error.message); return; }
 
-      // Upload plików
-      if (watekFiles.length > 0 && inserted) {
-        const fileLinks = await uploadWatekFiles(watekFiles, inserted.id);
-        if (fileLinks.length > 0) {
-          const updatedTresc = tresc.trim() + '\n\nZałączniki:\n' + fileLinks.join('\n');
-          await supabase.from('tablica_watki').update({ tresc: updatedTresc }).eq('id', inserted.id);
-        }
-      }
-
       setShowNewWatekModal(false);
       setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
-      setWatekFiles([]);
       await loadTablicaData();
     } catch (err) {
       alert('Nieoczekiwany błąd: ' + (err instanceof Error ? err.message : String(err)));
@@ -2725,7 +2878,7 @@ export default function MinistranciApp() {
                       </CardHeader>
                       {selectedWatek.tresc && (
                         <CardContent>
-                          <p className="text-sm whitespace-pre-wrap">{selectedWatek.tresc ? renderTrescWithLinks(selectedWatek.tresc) : ''}</p>
+                          {renderTresc(selectedWatek.tresc || '')}
                         </CardContent>
                       )}
                     </Card>
@@ -3092,7 +3245,7 @@ export default function MinistranciApp() {
                                 </div>
                                 {watek.kategoria !== 'ogłoszenie' && <CardTitle className="text-base">{watek.tytul}</CardTitle>}
                                 {watek.kategoria === 'ogłoszenie' && watek.tresc && (
-                                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap line-clamp-3 mt-1">{renderTrescWithLinks(watek.tresc)}</p>
+                                  <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 mt-1">{renderTresc(watek.tresc)}</div>
                                 )}
                                 {watekAnkieta && (
                                   <CardDescription className="text-xs mt-1">
@@ -3197,7 +3350,7 @@ export default function MinistranciApp() {
                           </CardHeader>
                           {watek.kategoria !== 'ogłoszenie' && watek.tresc && (
                             <CardContent className="pt-0">
-                              <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 whitespace-pre-wrap">{watek.tresc ? renderTrescWithLinks(watek.tresc) : ''}</p>
+                              <div className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">{renderTresc(watek.tresc || '')}</div>
                               {(watek.tresc.split('\n').length > 2 || watek.tresc.length > 100) && (
                                 <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">Pokaż więcej...</p>
                               )}
@@ -5476,7 +5629,7 @@ export default function MinistranciApp() {
                   )}
                 </div>
                 {previewOgloszenie.tresc && (
-                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap mt-1">{renderTrescWithLinks(previewOgloszenie.tresc)}</p>
+                  <div className="text-sm text-gray-700 dark:text-gray-300 mt-1">{renderTresc(previewOgloszenie.tresc)}</div>
                 )}
               </CardHeader>
             </Card>
@@ -5490,7 +5643,6 @@ export default function MinistranciApp() {
         if (!open) {
           setEditingWatek(null);
           setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
-          setWatekFiles([]);
         }
       }}>
         <DialogContent>
@@ -5512,55 +5664,60 @@ export default function MinistranciApp() {
               </div>
             )}
             <div className="relative">
-              <div className="flex items-center justify-between">
-                <Label>Treść {newWatekForm.kategoria === 'ogłoszenie' ? '*' : ''}</Label>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowEmojiPicker(showEmojiPicker === 'watek' ? null : 'watek')}>
-                  <Smile className="w-4 h-4 text-gray-400" />
-                </Button>
-              </div>
-              <textarea
-                className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={newWatekForm.tresc}
-                onChange={(e) => setNewWatekForm({ ...newWatekForm, tresc: e.target.value })}
-                placeholder={newWatekForm.kategoria === 'ogłoszenie' ? 'Treść ogłoszenia...' : 'Opcjonalna treść...'}
-              />
-              {showEmojiPicker === 'watek' && (
-                <div className="absolute z-50 mt-1">
-                  <Picker data={data} locale="pl" theme={darkMode ? 'dark' : 'light'} onEmojiSelect={(emoji: { native: string }) => { setNewWatekForm(prev => ({ ...prev, tresc: prev.tresc + emoji.native })); setShowEmojiPicker(null); }} />
+              <Label className="mb-1 block">Treść {newWatekForm.kategoria === 'ogłoszenie' ? '*' : ''}</Label>
+              {/* Toolbar */}
+              {tiptapEditor && (
+                <div className="flex flex-wrap items-center gap-0.5 p-1 border border-b-0 border-input rounded-t-md bg-muted/50">
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('bold') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleBold().run()}><Bold className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('italic') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleItalic().run()}><Italic className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('underline') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('strike') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleStrike().run()}><Strikethrough className="w-3.5 h-3.5" /></Button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('heading', { level: 1 }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('heading', { level: 2 }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('heading', { level: 3 }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 className="w-3.5 h-3.5" /></Button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive({ textAlign: 'left' }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().setTextAlign('left').run()}><AlignLeft className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive({ textAlign: 'center' }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().setTextAlign('center').run()}><AlignCenter className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive({ textAlign: 'right' }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().setTextAlign('right').run()}><AlignRight className="w-3.5 h-3.5" /></Button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('bulletList') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleBulletList().run()}><List className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('orderedList') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleOrderedList().run()}><ListOrdered className="w-3.5 h-3.5" /></Button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  {/* Kolory */}
+                  {['#000000', '#dc2626', '#2563eb', '#16a34a', '#9333ea', '#ea580c'].map(color => (
+                    <button key={color} type="button" className={`w-5 h-5 rounded-full border-2 ${tiptapEditor.isActive('textStyle', { color }) ? 'border-foreground scale-110' : 'border-transparent'}`} style={{ backgroundColor: color }} onClick={() => tiptapEditor.chain().focus().setColor(color).run()} />
+                  ))}
+                  <button type="button" className="w-5 h-5 rounded-full border-2 border-dashed border-gray-400 flex items-center justify-center text-[8px]" onClick={() => tiptapEditor.chain().focus().unsetColor().run()}>✕</button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  {/* Wstaw plik */}
+                  <label>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 cursor-pointer" asChild>
+                      <span>{isUploadingInline ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}</span>
+                    </Button>
+                    <input type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" disabled={isUploadingInline} onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadAndInsertFile(file); e.target.value = ''; }} />
+                  </label>
+                  {/* YouTube */}
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                    const url = window.prompt('Wklej link do filmu YouTube:');
+                    if (url) tiptapEditor.chain().focus().setYoutubeVideo({ src: url }).run();
+                  }}><Youtube className="w-3.5 h-3.5" /></Button>
+                  {/* Emoji */}
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowEmojiPicker(showEmojiPicker === 'watek' ? null : 'watek')}><Smile className="w-3.5 h-3.5" /></Button>
                 </div>
               )}
-            </div>
-            {/* Upload plików */}
-            <div>
-              <Label>Załączniki</Label>
-              <div className="mt-1">
-                <label className="flex items-center gap-2 cursor-pointer text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300">
-                  <Paperclip className="w-4 h-4" />
-                  Dodaj pliki
-                  <input
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files) {
-                        setWatekFiles(prev => [...prev, ...Array.from(e.target.files!)]);
-                      }
-                    }}
-                  />
-                </label>
-                {watekFiles.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {watekFiles.map((file, i) => (
-                      <div key={i} className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-800 rounded px-2 py-1">
-                        <span className="truncate">{file.name}</span>
-                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-400 hover:text-red-600" onClick={() => setWatekFiles(prev => prev.filter((_, idx) => idx !== i))}>
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              {/* Edytor */}
+              <div className="w-full rounded-b-md border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                <EditorContent editor={tiptapEditor} />
               </div>
+              {showEmojiPicker === 'watek' && (
+                <div className="absolute z-50 mt-1">
+                  <Picker data={data} locale="pl" theme={darkMode ? 'dark' : 'light'} onEmojiSelect={(emoji: { native: string }) => {
+                    tiptapEditor?.chain().focus().insertContent(emoji.native).run();
+                    setShowEmojiPicker(null);
+                  }} />
+                </div>
+              )}
             </div>
             {currentUser?.typ === 'ksiadz' && (
               <div>
@@ -5576,7 +5733,7 @@ export default function MinistranciApp() {
                 </Select>
               </div>
             )}
-            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={newWatekForm.kategoria === 'ogłoszenie' ? !newWatekForm.tresc.trim() : !newWatekForm.tytul.trim()}>
+            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={newWatekForm.kategoria === 'ogłoszenie' ? (!newWatekForm.tresc || newWatekForm.tresc === '<p></p>') : !newWatekForm.tytul.trim()}>
               <Send className="w-4 h-4 mr-2" />
               {editingWatek ? 'Zapisz zmiany' : 'Opublikuj'}
             </Button>

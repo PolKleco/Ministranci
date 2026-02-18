@@ -8,7 +8,7 @@ import {
   UserPlus, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
-  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -438,6 +438,7 @@ export default function MinistranciApp() {
   const [editGalleryPreviews, setEditGalleryPreviews] = useState<string[]>([]);
   const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
   const [newGalleryPreviews, setNewGalleryPreviews] = useState<string[]>([]);
+  const [watekFiles, setWatekFiles] = useState<File[]>([]);
   const [newGrupaForm, setNewGrupaForm] = useState({ nazwa: '', kolor: 'gray', emoji: '⚪', opis: '' });
   const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
 
@@ -469,6 +470,7 @@ export default function MinistranciApp() {
   const [selectedWatek, setSelectedWatek] = useState<TablicaWatek | null>(null);
   const [showNewWatekModal, setShowNewWatekModal] = useState(false);
   const [editingWatek, setEditingWatek] = useState<TablicaWatek | null>(null);
+  const [previewOgloszenie, setPreviewOgloszenie] = useState<TablicaWatek | null>(null);
   const [showNewAnkietaModal, setShowNewAnkietaModal] = useState(false);
   const [newWatekForm, setNewWatekForm] = useState({ tytul: '', tresc: '', kategoria: 'ogłoszenie' as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: 'wszyscy' });
   const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''] });
@@ -1799,27 +1801,85 @@ export default function MinistranciApp() {
 
   // ==================== FUNKCJE — TABLICA OGŁOSZEŃ ====================
 
+  const renderTrescWithLinks = (text: string) => {
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+    const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+    return parts.map((part, i) => {
+      const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (match) {
+        const fileName = match[1];
+        const url = match[2];
+        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        if (imageExts.includes(ext)) {
+          return <a key={i} href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={fileName} className="max-w-full rounded-lg mt-2 mb-1 max-h-80 object-contain" /></a>;
+        }
+        return <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"><Paperclip className="w-3 h-3" />{fileName}</a>;
+      }
+      return part;
+    });
+  };
+
+  const uploadWatekFiles = async (files: File[], watekId: string): Promise<string[]> => {
+    if (!currentUser?.parafia_id || files.length === 0) return [];
+    const urls: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
+      const path = `${currentUser.parafia_id}/${watekId}/${Date.now()}_${i}.${ext}`;
+      const { error } = await supabase.storage
+        .from('watki-files')
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (error) {
+        console.error('Błąd uploadu pliku:', file.name, error.message);
+        alert('Błąd uploadu pliku: ' + file.name + ' — ' + error.message);
+      }
+      if (!error) {
+        const { data: { publicUrl } } = supabase.storage
+          .from('watki-files')
+          .getPublicUrl(path);
+        urls.push(`[${file.name}](${publicUrl})`);
+      }
+    }
+    return urls;
+  };
+
   const createWatek = async () => {
     if (!currentUser || !currentParafia) {
       alert('Błąd: nie załadowano danych użytkownika lub parafii.');
       return;
     }
     const { tytul, tresc, kategoria, grupa_docelowa } = newWatekForm;
-    if (!tytul.trim()) { alert('Podaj tytuł!'); return; }
+    // Dla ogłoszenia tytuł generujemy z treści
+    const finalTytul = kategoria === 'ogłoszenie'
+      ? (tresc.trim().substring(0, 50) + (tresc.trim().length > 50 ? '...' : '') || 'Ogłoszenie')
+      : tytul.trim();
+    if (!finalTytul) { alert('Podaj tytuł!'); return; }
+    if (kategoria === 'ogłoszenie' && !tresc.trim()) { alert('Podaj treść ogłoszenia!'); return; }
 
     try {
-      const { error } = await supabase.from('tablica_watki').insert({
+      const { data: inserted, error } = await supabase.from('tablica_watki').insert({
         parafia_id: currentParafia.id,
         autor_id: currentUser.id,
-        tytul: tytul.trim(),
+        tytul: finalTytul,
         tresc: tresc.trim(),
         kategoria,
         grupa_docelowa,
-      });
+      }).select().single();
 
       if (error) { alert('Błąd: ' + error.message); return; }
+
+      // Upload plików
+      if (watekFiles.length > 0 && inserted) {
+        const fileLinks = await uploadWatekFiles(watekFiles, inserted.id);
+        if (fileLinks.length > 0) {
+          const updatedTresc = tresc.trim() + '\n\nZałączniki:\n' + fileLinks.join('\n');
+          await supabase.from('tablica_watki').update({ tresc: updatedTresc }).eq('id', inserted.id);
+        }
+      }
+
       setShowNewWatekModal(false);
       setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+      setWatekFiles([]);
       await loadTablicaData();
     } catch (err) {
       alert('Nieoczekiwany błąd: ' + (err instanceof Error ? err.message : String(err)));
@@ -1829,10 +1889,14 @@ export default function MinistranciApp() {
   const updateWatek = async () => {
     if (!editingWatek) return;
     const { tytul, tresc, kategoria, grupa_docelowa } = newWatekForm;
-    if (!tytul.trim()) { alert('Podaj tytuł!'); return; }
+    const finalTytul = kategoria === 'ogłoszenie'
+      ? (tresc.trim().substring(0, 50) + (tresc.trim().length > 50 ? '...' : '') || 'Ogłoszenie')
+      : tytul.trim();
+    if (!finalTytul) { alert('Podaj tytuł!'); return; }
+    if (kategoria === 'ogłoszenie' && !tresc.trim()) { alert('Podaj treść ogłoszenia!'); return; }
 
     const { error } = await supabase.from('tablica_watki').update({
-      tytul: tytul.trim(),
+      tytul: finalTytul,
       tresc: tresc.trim(),
       kategoria,
       grupa_docelowa,
@@ -2465,7 +2529,7 @@ export default function MinistranciApp() {
           <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6">
             <TabsTrigger value="tablica" className="relative" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
               <MessageSquare className="w-4 h-4 sm:mr-2" />
-              Ogłoszenia
+              Aktualności
               {nieprzeczytanePowiadomienia > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                   {nieprzeczytanePowiadomienia}
@@ -2509,7 +2573,7 @@ export default function MinistranciApp() {
           {/* ==================== PANEL TABLICA OGŁOSZEŃ ==================== */}
           <TabsContent value="tablica">
             <div className="space-y-4">
-              {/* Nagłówek + przyciski */}
+              {/* Nagłówek */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   {selectedWatek && (
@@ -2518,21 +2582,9 @@ export default function MinistranciApp() {
                     </Button>
                   )}
                   <h2 className="text-lg sm:text-xl font-bold truncate">
-                    {selectedWatek ? selectedWatek.tytul : 'Ogłoszenia'}
+                    {selectedWatek ? selectedWatek.tytul : 'Aktualności'}
                   </h2>
                 </div>
-                {!selectedWatek && currentUser.typ === 'ksiadz' && (
-                  <div className="flex gap-1.5 sm:gap-2 shrink-0">
-                    <Button size="sm" variant="outline" onClick={() => setShowNewAnkietaModal(true)}>
-                      <Plus className="w-4 h-4 mr-1" />
-                      Dodaj ankietę
-                    </Button>
-                    <Button size="sm" onClick={() => setShowNewWatekModal(true)}>
-                      <Plus className="w-4 h-4 mr-1" />
-                      Dodaj wątek
-                    </Button>
-                  </div>
-                )}
                 {!selectedWatek && currentUser.typ === 'ministrant' && (
                   <Button size="sm" variant="outline" onClick={() => {
                     setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy' });
@@ -2543,6 +2595,28 @@ export default function MinistranciApp() {
                   </Button>
                 )}
               </div>
+              {!selectedWatek && currentUser.typ === 'ksiadz' && (
+                <div className="flex gap-1.5 sm:gap-2">
+                  <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Dodaj ankietę
+                  </Button>
+                  <Button size="sm" variant="outline" className="border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800 dark:bg-teal-900/20 dark:text-teal-300 dark:hover:bg-teal-900/40" onClick={() => {
+                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+                    setShowNewWatekModal(true);
+                  }}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Ogłoszenie
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => {
+                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy' });
+                    setShowNewWatekModal(true);
+                  }}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Dyskusja
+                  </Button>
+                </div>
+              )}
 
               {/* Baner informacyjny */}
               {!selectedWatek && showInfoBanner && (
@@ -2651,7 +2725,7 @@ export default function MinistranciApp() {
                       </CardHeader>
                       {selectedWatek.tresc && (
                         <CardContent>
-                          <p className="text-sm whitespace-pre-wrap">{selectedWatek.tresc}</p>
+                          <p className="text-sm whitespace-pre-wrap">{selectedWatek.tresc ? renderTrescWithLinks(selectedWatek.tresc) : ''}</p>
                         </CardContent>
                       )}
                     </Card>
@@ -2989,8 +3063,12 @@ export default function MinistranciApp() {
                       return (
                         <Card
                           key={watek.id}
-                          className={`cursor-pointer hover:shadow-md transition-shadow ${watek.przypiety ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : ''}`}
+                          className={`cursor-pointer hover:shadow-md transition-shadow ${watek.kategoria === 'ankieta' ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : watek.kategoria === 'ogłoszenie' ? 'border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20' : watek.przypiety ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : ''}`}
                           onClick={() => {
+                            if (watek.kategoria === 'ogłoszenie') {
+                              setPreviewOgloszenie(watek);
+                              return;
+                            }
                             setSelectedWatek(watek);
                             loadWatekWiadomosci(watek.id);
                             // Oznacz powiadomienia tego wątku jako przeczytane
@@ -3003,7 +3081,7 @@ export default function MinistranciApp() {
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
                                   {watek.przypiety && <Pin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
-                                  <Badge variant={watek.kategoria === 'ogłoszenie' ? 'default' : watek.kategoria === 'ankieta' ? 'destructive' : 'secondary'} className="text-xs">
+                                  <Badge variant={watek.kategoria === 'ankieta' ? 'destructive' : 'secondary'} className={`text-xs ${watek.kategoria === 'ogłoszenie' ? 'bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600' : ''}`}>
                                     {watek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : watek.kategoria === 'ankieta' ? 'Ankieta' : 'Dyskusja'}
                                   </Badge>
                                   {watek.zamkniety && <LockKeyhole className="w-3 h-3 text-red-500" />}
@@ -3012,35 +3090,74 @@ export default function MinistranciApp() {
                                     <Badge variant="outline" className="text-xs">{watek.grupa_docelowa}</Badge>
                                   )}
                                 </div>
-                                <CardTitle className="text-base">{watek.tytul}</CardTitle>
-                                <CardDescription className="text-xs mt-1">
-                                  {watekAnkieta
-                                    ? <>Ważna do: {watekAnkieta.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'bez terminu'}</>
-                                    : <>{autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} &middot; {new Date(watek.updated_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</>
-                                  }
-                                </CardDescription>
+                                {watek.kategoria !== 'ogłoszenie' && <CardTitle className="text-base">{watek.tytul}</CardTitle>}
+                                {watek.kategoria === 'ogłoszenie' && watek.tresc && (
+                                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap line-clamp-3 mt-1">{renderTrescWithLinks(watek.tresc)}</p>
+                                )}
+                                {watekAnkieta && (
+                                  <CardDescription className="text-xs mt-1">
+                                    Ważna do: {watekAnkieta.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'bez terminu'}
+                                  </CardDescription>
+                                )}
+                                {watek.kategoria === 'dyskusja' && (
+                                  <CardDescription className="text-xs mt-1">
+                                    {autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} &middot; {new Date(watek.updated_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  </CardDescription>
+                                )}
                               </div>
                               <div className="flex flex-col items-end gap-1">
-                                {currentUser.typ === 'ksiadz' && watekAnkieta && (
-                                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                {currentUser.typ === 'ksiadz' && (watekAnkieta || watek.kategoria === 'ogłoszenie') && (
+                                  <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className={`h-7 px-2 text-xs ${watek.przypiety ? (watek.kategoria === 'ogłoszenie' ? 'bg-teal-50 border-teal-300 text-teal-700 dark:bg-teal-950 dark:border-teal-700 dark:text-teal-300' : 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-300') : 'text-gray-500 hover:text-amber-600 hover:border-amber-300'}`}
+                                        onClick={() => togglePrzypiety(watek.id, watek.przypiety)}
+                                      >
+                                        <Pin className="w-3 h-3 mr-1" />
+                                        {watek.przypiety ? 'Odepnij' : 'Przypnij'}
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
+                                        onClick={() => deleteWatek(watek.id)}
+                                      >
+                                        <Trash2 className="w-3 h-3 mr-1" />
+                                        Usuń
+                                      </Button>
+                                    </div>
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      className={`h-7 px-2 text-xs ${watek.przypiety ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-300' : 'text-gray-500 hover:text-amber-600 hover:border-amber-300'}`}
-                                      onClick={() => togglePrzypiety(watek.id, watek.przypiety)}
+                                      className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
+                                      onClick={() => {
+                                        if (watek.kategoria === 'ogłoszenie') {
+                                          setEditingWatek(watek);
+                                          setNewWatekForm({ tytul: watek.tytul, tresc: watek.tresc || '', kategoria: watek.kategoria as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: watek.grupa_docelowa || 'wszyscy' });
+                                          setShowNewWatekModal(true);
+                                        } else {
+                                          setSelectedWatek(watek);
+                                          loadWatekWiadomosci(watek.id);
+                                          const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
+                                          watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                                        }
+                                      }}
                                     >
-                                      <Pin className="w-3 h-3 mr-1" />
-                                      {watek.przypiety ? 'Odepnij' : 'Przypnij'}
+                                      {watek.kategoria === 'ogłoszenie' ? 'Edytuj' : 'Szczegóły'}
                                     </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
-                                      onClick={() => deleteWatek(watek.id)}
-                                    >
-                                      <Trash2 className="w-3 h-3 mr-1" />
-                                      Usuń
-                                    </Button>
+                                    {watek.kategoria === 'ogłoszenie' && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 w-full text-xs text-teal-600 border-teal-200 hover:bg-teal-50 hover:border-teal-400 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-950 dark:hover:border-teal-600"
+                                        onClick={() => setPreviewOgloszenie(watek)}
+                                      >
+                                        <Eye className="w-3 h-3 mr-1" />
+                                        Pogląd
+                                      </Button>
+                                    )}
                                   </div>
                                 )}
                                 {currentUser.typ === 'ministrant' && watekAnkieta && !mojaOdp && watekAnkieta.aktywna && (
@@ -3051,26 +3168,14 @@ export default function MinistranciApp() {
                                 )}
                               </div>
                             </div>
-                          </CardHeader>
-                          {watek.tresc && (
-                            <CardContent className="pt-0">
-                              <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 whitespace-pre-wrap">{watek.tresc}</p>
-                              {(watek.tresc.split('\n').length > 2 || watek.tresc.length > 100) && (
-                                <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">Pokaż więcej...</p>
-                              )}
-                            </CardContent>
-                          )}
-                          {watekAnkieta && (() => {
-                            const opcje = ankietyOpcje.filter(o => o.ankieta_id === watekAnkieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc);
-                            const odpowiedzi = ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id);
-                            const totalMinistrantow = members.filter(m => m.typ === 'ministrant').length;
-                            const unikatoweOsoby = new Set(odpowiedzi.map(o => o.respondent_id)).size;
-                            const pokazWyniki = currentUser.typ === 'ksiadz' || (!watekAnkieta.wyniki_ukryte && mojaOdp);
-                            return (
-                              <CardContent className="pt-0 pb-3">
-                                <div className="flex items-center gap-3 flex-wrap">
-                                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{unikatoweOsoby}/{totalMinistrantow} odpowiedzi</span>
-                                  {pokazWyniki && opcje.map(opcja => {
+                            {watekAnkieta && (() => {
+                              const opcje = ankietyOpcje.filter(o => o.ankieta_id === watekAnkieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc);
+                              const odpowiedzi = ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id);
+                              const unikatoweOsoby = new Set(odpowiedzi.map(o => o.respondent_id)).size;
+                              const pokazWyniki = currentUser.typ === 'ksiadz' || (!watekAnkieta.wyniki_ukryte && mojaOdp);
+                              return pokazWyniki ? (
+                                <div className="flex items-center gap-3 flex-wrap mt-2">
+                                  {opcje.map(opcja => {
                                     const count = odpowiedzi.filter(od => od.opcja_id === opcja.id).length;
                                     const pct = unikatoweOsoby > 0 ? Math.round((count / unikatoweOsoby) * 100) : 0;
                                     const isTak = opcja.tresc.toLowerCase() === 'tak';
@@ -3087,9 +3192,17 @@ export default function MinistranciApp() {
                                     );
                                   })}
                                 </div>
-                              </CardContent>
-                            );
-                          })()}
+                              ) : null;
+                            })()}
+                          </CardHeader>
+                          {watek.kategoria !== 'ogłoszenie' && watek.tresc && (
+                            <CardContent className="pt-0">
+                              <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 whitespace-pre-wrap">{watek.tresc ? renderTrescWithLinks(watek.tresc) : ''}</p>
+                              {(watek.tresc.split('\n').length > 2 || watek.tresc.length > 100) && (
+                                <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">Pokaż więcej...</p>
+                              )}
+                            </CardContent>
+                          )}
                         </Card>
                       );
                     })
@@ -5343,33 +5456,64 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
+      {/* Pogląd ogłoszenia - widok ministranta */}
+      <Dialog open={!!previewOgloszenie} onOpenChange={(open) => { if (!open) setPreviewOgloszenie(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Podgląd</DialogTitle>
+            <DialogDescription>Tak wygląda ogłoszenie w panelu ministranta</DialogDescription>
+          </DialogHeader>
+          {previewOgloszenie && (
+            <Card className="border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2 mb-1">
+                  {previewOgloszenie.przypiety && <Pin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
+                  <Badge className="text-xs bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600">
+                    Ogłoszenie
+                  </Badge>
+                  {previewOgloszenie.grupa_docelowa !== 'wszyscy' && (
+                    <Badge variant="outline" className="text-xs">{previewOgloszenie.grupa_docelowa}</Badge>
+                  )}
+                </div>
+                {previewOgloszenie.tresc && (
+                  <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap mt-1">{renderTrescWithLinks(previewOgloszenie.tresc)}</p>
+                )}
+              </CardHeader>
+            </Card>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Modal nowego wątku */}
       <Dialog open={showNewWatekModal} onOpenChange={(open) => {
         setShowNewWatekModal(open);
         if (!open) {
           setEditingWatek(null);
           setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+          setWatekFiles([]);
         }
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingWatek ? 'Edytuj wątek' : 'Nowy wątek'}</DialogTitle>
+            <DialogTitle>{editingWatek ? 'Edytuj wątek' : newWatekForm.kategoria === 'ogłoszenie' ? 'Nowe ogłoszenie' : 'Nowa dyskusja'}</DialogTitle>
             <DialogDescription>
-              {editingWatek ? 'Zmień tytuł, treść lub kategorię wątku' : (currentUser?.typ === 'ksiadz' ? 'Utwórz ogłoszenie lub dyskusję' : 'Rozpocznij nową dyskusję')}
+              {editingWatek ? 'Zmień treść wątku' : newWatekForm.kategoria === 'ogłoszenie' ? 'Napisz ogłoszenie dla ministrantów' : 'Rozpocznij nową dyskusję'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div>
-              <Label>Tytuł *</Label>
-              <Input
-                value={newWatekForm.tytul}
-                onChange={(e) => setNewWatekForm({ ...newWatekForm, tytul: e.target.value })}
-                placeholder="Tytuł wątku"
-              />
-            </div>
+            {newWatekForm.kategoria === 'dyskusja' && (
+              <div>
+                <Label>Tytuł *</Label>
+                <Input
+                  value={newWatekForm.tytul}
+                  onChange={(e) => setNewWatekForm({ ...newWatekForm, tytul: e.target.value })}
+                  placeholder="Tytuł dyskusji"
+                />
+              </div>
+            )}
             <div className="relative">
               <div className="flex items-center justify-between">
-                <Label>Treść</Label>
+                <Label>Treść {newWatekForm.kategoria === 'ogłoszenie' ? '*' : ''}</Label>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowEmojiPicker(showEmojiPicker === 'watek' ? null : 'watek')}>
                   <Smile className="w-4 h-4 text-gray-400" />
                 </Button>
@@ -5378,7 +5522,7 @@ export default function MinistranciApp() {
                 className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 value={newWatekForm.tresc}
                 onChange={(e) => setNewWatekForm({ ...newWatekForm, tresc: e.target.value })}
-                placeholder="Opcjonalna treść..."
+                placeholder={newWatekForm.kategoria === 'ogłoszenie' ? 'Treść ogłoszenia...' : 'Opcjonalna treść...'}
               />
               {showEmojiPicker === 'watek' && (
                 <div className="absolute z-50 mt-1">
@@ -5386,33 +5530,53 @@ export default function MinistranciApp() {
                 </div>
               )}
             </div>
+            {/* Upload plików */}
+            <div>
+              <Label>Załączniki</Label>
+              <div className="mt-1">
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300">
+                  <Paperclip className="w-4 h-4" />
+                  Dodaj pliki
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        setWatekFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+                      }
+                    }}
+                  />
+                </label>
+                {watekFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {watekFiles.map((file, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-800 rounded px-2 py-1">
+                        <span className="truncate">{file.name}</span>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-400 hover:text-red-600" onClick={() => setWatekFiles(prev => prev.filter((_, idx) => idx !== i))}>
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
             {currentUser?.typ === 'ksiadz' && (
-              <>
-                <div>
-                  <Label>Kategoria</Label>
-                  <Select value={newWatekForm.kategoria} onValueChange={(v) => setNewWatekForm({ ...newWatekForm, kategoria: v as 'ogłoszenie' | 'dyskusja' })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ogłoszenie">Ogłoszenie</SelectItem>
-                      <SelectItem value="dyskusja">Dyskusja</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Grupa docelowa</Label>
-                  <Select value={newWatekForm.grupa_docelowa} onValueChange={(v) => setNewWatekForm({ ...newWatekForm, grupa_docelowa: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="wszyscy">Wszyscy</SelectItem>
-                      <SelectItem value="mlodsi">Młodsi</SelectItem>
-                      <SelectItem value="starsi">Starsi</SelectItem>
-                      <SelectItem value="lektorzy">Lektorzy</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
+              <div>
+                <Label>Grupa docelowa</Label>
+                <Select value={newWatekForm.grupa_docelowa} onValueChange={(v) => setNewWatekForm({ ...newWatekForm, grupa_docelowa: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="wszyscy">Wszyscy</SelectItem>
+                    <SelectItem value="mlodsi">Młodsi</SelectItem>
+                    <SelectItem value="starsi">Starsi</SelectItem>
+                    <SelectItem value="lektorzy">Lektorzy</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             )}
-            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={!newWatekForm.tytul.trim()}>
+            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={newWatekForm.kategoria === 'ogłoszenie' ? !newWatekForm.tresc.trim() : !newWatekForm.tytul.trim()}>
               <Send className="w-4 h-4 mr-2" />
               {editingWatek ? 'Zapisz zmiany' : 'Opublikuj'}
             </Button>

@@ -1,0 +1,6128 @@
+'use client';
+
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
+import {
+  Church, Users, Calendar, Book, LogOut, Mail,
+  Copy, X, Plus, Check, CheckCircle, Hourglass,
+  UserPlus, Send, Loader2, Bell, Pencil, Trash2,
+  Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
+  MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip,
+  Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type
+} from 'lucide-react';
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import TiptapImage from '@tiptap/extension-image';
+import TextAlign from '@tiptap/extension-text-align';
+import YoutubeExtension from '@tiptap/extension-youtube';
+import TiptapUnderline from '@tiptap/extension-underline';
+import TiptapColor from '@tiptap/extension-color';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { QRCodeSVG } from 'qrcode.react';
+import Picker from '@emoji-mart/react';
+import data from '@emoji-mart/data';
+import {
+  getLiturgicalMonth, KOLORY_LITURGICZNE, RANGI, MIESIACE, DNI_TYGODNIA, DNI_TYGODNIA_FULL,
+  type DzienLiturgiczny,
+} from '@/lib/kalendarz-liturgiczny';
+
+// ==================== TYPY ====================
+
+type UserType = 'ksiadz' | 'ministrant';
+type GrupaType = string;
+
+interface GrupaConfig {
+  id: string;
+  nazwa: string;
+  kolor: string;
+  emoji: string;
+  opis: string;
+}
+type FunkcjaType = 'Krzyż' | 'Świeca 1' | 'Świeca 2' | 'Kadzidło' | 'Ceremoniarz' | 'Ministrant 1' | 'Ministrant 2';
+
+interface Profile {
+  id: string;
+  email: string;
+  imie: string;
+  nazwisko: string;
+  typ: UserType;
+  parafia_id: string | null;
+}
+
+interface Parafia {
+  id: string;
+  nazwa: string;
+  miasto: string;
+  adres: string;
+  admin_id: string;
+  admin_email: string;
+  kod_zaproszenia: string;
+}
+
+interface Member {
+  id: string;
+  profile_id: string;
+  parafia_id: string;
+  email: string;
+  imie: string;
+  nazwisko: string;
+  typ: UserType;
+  grupa: GrupaType | null;
+  role: string[];
+}
+
+interface Funkcja {
+  id: string;
+  sluzba_id: string;
+  typ: FunkcjaType;
+  ministrant_id: string | null;
+  aktywna: boolean;
+  zaakceptowana: boolean;
+}
+
+interface Sluzba {
+  id: string;
+  nazwa: string;
+  data: string;
+  godzina: string;
+  parafia_id: string;
+  utworzono_przez: string;
+  status: 'zaplanowana' | 'wykonana';
+  funkcje: Funkcja[];
+}
+
+interface Zaproszenie {
+  id: string;
+  email: string;
+  parafia_id: string;
+  parafia_nazwa: string;
+  admin_email: string;
+}
+
+interface Posluga {
+  id: string;
+  slug: string;
+  nazwa: string;
+  opis: string;
+  emoji: string;
+  kolor: string;
+  obrazek_url?: string;
+  kolejnosc: number;
+  dlugi_opis?: string;
+  zdjecia?: string[];
+  youtube_url?: string;
+}
+
+// ==================== TYPY — RANKING SŁUŻBY ====================
+
+interface PunktacjaConfig {
+  id: string;
+  parafia_id: string;
+  klucz: string;
+  wartosc: number;
+  opis: string;
+}
+
+interface RangaConfig {
+  id: string;
+  parafia_id: string;
+  nazwa: string;
+  min_pkt: number;
+  kolor: string;
+  kolejnosc: number;
+}
+
+interface OdznakaConfig {
+  id: string;
+  parafia_id: string;
+  nazwa: string;
+  opis: string;
+  warunek_typ: string;
+  warunek_wartosc: number;
+  bonus_pkt: number;
+  aktywna: boolean;
+}
+
+interface Dyzur {
+  id: string;
+  ministrant_id: string;
+  parafia_id: string;
+  dzien_tygodnia: number;
+  aktywny: boolean;
+}
+
+interface Obecnosc {
+  id: string;
+  ministrant_id: string;
+  parafia_id: string;
+  data: string;
+  godzina: string;
+  typ: 'msza' | 'nabożeństwo';
+  nazwa_nabożeństwa: string;
+  status: 'oczekuje' | 'zatwierdzona' | 'odrzucona';
+  punkty_bazowe: number;
+  mnoznik: number;
+  punkty_finalne: number;
+  zatwierdzona_przez: string | null;
+  created_at: string;
+}
+
+interface MinusowePunkty {
+  id: string;
+  ministrant_id: string;
+  parafia_id: string;
+  data: string;
+  powod: string;
+  punkty: number;
+}
+
+interface OdznakaZdobyta {
+  id: string;
+  ministrant_id: string;
+  odznaka_config_id: string;
+  bonus_pkt: number;
+  zdobyta_data: string;
+}
+
+interface RankingEntry {
+  id: string;
+  ministrant_id: string;
+  parafia_id: string;
+  total_pkt: number;
+  streak_tyg: number;
+  max_streak_tyg: number;
+  total_obecnosci: number;
+  total_minusowe: number;
+  ranga: string;
+}
+
+// ==================== TYPY — TABLICA OGŁOSZEŃ ====================
+
+interface TablicaWatek {
+  id: string;
+  parafia_id: string;
+  autor_id: string;
+  tytul: string;
+  tresc: string;
+  kategoria: 'ogłoszenie' | 'dyskusja' | 'ankieta';
+  grupa_docelowa: string;
+  przypiety: boolean;
+  zamkniety: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TablicaWiadomosc {
+  id: string;
+  watek_id: string;
+  autor_id: string;
+  tresc: string;
+  created_at: string;
+}
+
+interface Ankieta {
+  id: string;
+  watek_id: string;
+  parafia_id: string;
+  pytanie: string;
+  typ: 'tak_nie' | 'jednokrotny' | 'wielokrotny';
+  obowiazkowa: boolean;
+  wyniki_ukryte: boolean;
+  termin: string | null;
+  aktywna: boolean;
+  created_at: string;
+}
+
+interface AnkietaOpcja {
+  id: string;
+  ankieta_id: string;
+  tresc: string;
+  kolejnosc: number;
+}
+
+interface AnkietaOdpowiedz {
+  id: string;
+  ankieta_id: string;
+  opcja_id: string;
+  respondent_id: string;
+  zmieniona: boolean;
+  zmieniona_at: string | null;
+  created_at: string;
+}
+
+interface Powiadomienie {
+  id: string;
+  odbiorca_id: string;
+  parafia_id: string;
+  typ: string;
+  tytul: string;
+  tresc: string;
+  odniesienie_typ: string | null;
+  odniesienie_id: string | null;
+  przeczytane: boolean;
+  wymaga_akcji: boolean;
+  created_at: string;
+}
+
+// ==================== GRUPY DOMYŚLNE ====================
+
+const DEFAULT_GRUPY: GrupaConfig[] = [
+  { id: 'kandydaci', nazwa: 'Kandydaci na ministrantów', kolor: 'amber', emoji: '🟡', opis: 'Nowi, przygotowujący się do służby' },
+  { id: 'mlodsi', nazwa: 'Ministranci młodsi', kolor: 'blue', emoji: '🔵', opis: 'Początkujący ministranci' },
+  { id: 'starsi', nazwa: 'Ministranci starsi', kolor: 'green', emoji: '🟢', opis: 'Doświadczeni ministranci' },
+  { id: 'lektorzy_mlodsi', nazwa: 'Lektorzy młodsi', kolor: 'purple', emoji: '🟣', opis: 'Początkujący lektorzy' },
+  { id: 'lektorzy_starsi', nazwa: 'Lektorzy starsi', kolor: 'red', emoji: '🔴', opis: 'Doświadczeni lektorzy' },
+];
+
+// ==================== POSŁUGI ====================
+
+// DEFAULT_POSLUGI — teraz seedowane przez Supabase (init_poslugi), ta stała służy jako fallback
+const DEFAULT_POSLUGI: Posluga[] = [
+  { id: 'ceremoniarz', slug: 'ceremoniarz', nazwa: 'Ceremoniarz', opis: 'Koordynuje służbę liturgiczną, ustawia procesje', emoji: '👑', kolor: 'amber', kolejnosc: 1 },
+  { id: 'krucyferariusz', slug: 'krucyferariusz', nazwa: 'Krucyferariusz', opis: 'Niesie krzyż procesyjny', emoji: '✝️', kolor: 'red', kolejnosc: 2 },
+  { id: 'ministrant_oltarza', slug: 'ministrant_oltarza', nazwa: 'Ministrant ołtarza', opis: 'Przygotowuje ołtarz, podaje ampułki', emoji: '⛪', kolor: 'blue', kolejnosc: 3 },
+  { id: 'ministrant_ksiegi', slug: 'ministrant_ksiegi', nazwa: 'Ministrant księgi', opis: 'Trzyma mszał i podaje księgi', emoji: '📖', kolor: 'emerald', kolejnosc: 4 },
+  { id: 'ministrant_swiatla', slug: 'ministrant_swiatla', nazwa: 'Ministrant światła', opis: 'Niesie świece w procesjach', emoji: '🕯️', kolor: 'yellow', kolejnosc: 5 },
+  { id: 'ministrant_darow', slug: 'ministrant_darow', nazwa: 'Ministrant darów', opis: 'Przynosi chleb, wino i wodę', emoji: '🍞', kolor: 'orange', kolejnosc: 6 },
+  { id: 'ministrant_kadzidla', slug: 'ministrant_kadzidla', nazwa: 'Ministrant kadzidła', opis: 'Obsługuje kadzidło', emoji: '💨', kolor: 'purple', kolejnosc: 7 },
+  { id: 'nawikulariusz', slug: 'nawikulariusz', nazwa: 'Nawikulariusz', opis: 'Podaje kadzidło do trybularza', emoji: '🚢', kolor: 'cyan', kolejnosc: 8 },
+  { id: 'lektor', slug: 'lektor', nazwa: 'Lektor', opis: 'Proklamuje czytania biblijne', emoji: '📜', kolor: 'indigo', kolejnosc: 9 },
+  { id: 'psalterzysta', slug: 'psalterzysta', nazwa: 'Psałterzysta', opis: 'Wykonuje psalm responsoryjny', emoji: '🎵', kolor: 'pink', kolejnosc: 10 },
+  { id: 'kantor', slug: 'kantor', nazwa: 'Kantor', opis: 'Prowadzi śpiew i wezwania', emoji: '🎶', kolor: 'rose', kolejnosc: 11 },
+  { id: 'ministrant_dzwonkow', slug: 'ministrant_dzwonkow', nazwa: 'Ministrant dzwonków', opis: 'Dzwoni dzwonkami', emoji: '🔔', kolor: 'green', kolejnosc: 12 }
+];
+
+const KOLOR_KLASY: Record<string, { bg: string; text: string; hover: string; border: string }> = {
+  amber: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-900 dark:text-amber-200', hover: 'hover:bg-amber-200 dark:hover:bg-amber-800/40', border: 'border-amber-300 dark:border-amber-700' },
+  blue: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-900 dark:text-blue-200', hover: 'hover:bg-blue-200 dark:hover:bg-blue-800/40', border: 'border-blue-300 dark:border-blue-700' },
+  green: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-900 dark:text-green-200', hover: 'hover:bg-green-200 dark:hover:bg-green-800/40', border: 'border-green-300 dark:border-green-700' },
+  purple: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-900 dark:text-purple-200', hover: 'hover:bg-purple-200 dark:hover:bg-purple-800/40', border: 'border-purple-300 dark:border-purple-700' },
+  red: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-900 dark:text-red-200', hover: 'hover:bg-red-200 dark:hover:bg-red-800/40', border: 'border-red-300 dark:border-red-700' },
+  emerald: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-900 dark:text-emerald-200', hover: 'hover:bg-emerald-200 dark:hover:bg-emerald-800/40', border: 'border-emerald-300 dark:border-emerald-700' },
+  yellow: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-900 dark:text-yellow-200', hover: 'hover:bg-yellow-200 dark:hover:bg-yellow-800/40', border: 'border-yellow-300 dark:border-yellow-700' },
+  orange: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-900 dark:text-orange-200', hover: 'hover:bg-orange-200 dark:hover:bg-orange-800/40', border: 'border-orange-300 dark:border-orange-700' },
+  cyan: { bg: 'bg-cyan-100 dark:bg-cyan-900/30', text: 'text-cyan-900 dark:text-cyan-200', hover: 'hover:bg-cyan-200 dark:hover:bg-cyan-800/40', border: 'border-cyan-300 dark:border-cyan-700' },
+  indigo: { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-900 dark:text-indigo-200', hover: 'hover:bg-indigo-200 dark:hover:bg-indigo-800/40', border: 'border-indigo-300 dark:border-indigo-700' },
+  pink: { bg: 'bg-pink-100 dark:bg-pink-900/30', text: 'text-pink-900 dark:text-pink-200', hover: 'hover:bg-pink-200 dark:hover:bg-pink-800/40', border: 'border-pink-300 dark:border-pink-700' },
+  rose: { bg: 'bg-rose-100 dark:bg-rose-900/30', text: 'text-rose-900 dark:text-rose-200', hover: 'hover:bg-rose-200 dark:hover:bg-rose-800/40', border: 'border-rose-300 dark:border-rose-700' },
+  gray: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-900 dark:text-gray-100', hover: 'hover:bg-gray-200 dark:hover:bg-gray-600', border: 'border-gray-300 dark:border-gray-600' },
+  brown: { bg: 'bg-orange-200 dark:bg-orange-900/30', text: 'text-orange-950 dark:text-orange-200', hover: 'hover:bg-orange-300 dark:hover:bg-orange-800/40', border: 'border-orange-400 dark:border-orange-700' },
+  teal: { bg: 'bg-teal-100 dark:bg-teal-900/30', text: 'text-teal-900 dark:text-teal-200', hover: 'hover:bg-teal-200 dark:hover:bg-teal-800/40', border: 'border-teal-300 dark:border-teal-700' },
+};
+
+// ==================== MODLITWY ====================
+
+const MODLITWY = {
+  przed: `Panie Jezu Chryste, dziękuję Ci, że mogę służyć przy Twoim ołtarzu.
+Proszę Cię, pomóż mi pełnić tę służbę godnie i z wielką czcią.
+Niech moja posługa będzie wyrazem mojej miłości do Ciebie.
+Amen.`,
+
+  po: `Panie Jezu, dziękuję Ci za możliwość uczestniczenia w świętej Mszy.
+Błogosław mojej służbie i pomóż mi być wiernym ministrantem.
+Niech to, czego doświadczyłem przy ołtarzu, owocuje w moim życiu.
+Amen.`,
+
+  lacina: `V: Ad Deum qui laetificat iuventutem meam.
+R: Amen.
+
+V: Introibo ad altare Dei.
+R: Ad Deum qui laetificat iuventutem meam.
+
+Confiteor Deo omnipotenti...
+Misereatur nostri omnipotens Deus...
+Indulgentiam, absolutionem...`
+};
+
+// ==================== WSKAZÓWKI ====================
+
+const WSKAZOWKI = {
+  przed: [
+    'Przyjdź 15 minut wcześniej',
+    'Zadbaj o czysty strój liturgiczny',
+    'Sprawdź przygotowanie ołtarza',
+    'Odmów modlitwę przed służbą',
+    'Zachowaj skupienie i wyciszenie'
+  ],
+  podczas: [
+    'Zachowaj godną postawę i skupienie',
+    'Odpowiadaj głośno i wyraźnie',
+    'Wykonuj gesty staranne i powolne',
+    'Uważnie obserwuj znaki księdza',
+    'Przyjmuj właściwą pozycję: stojącą, klęczącą'
+  ],
+  funkcje: [
+    { nazwa: 'Krzyż', opis: 'Niesie krzyż procesyjny na czele procesji' },
+    { nazwa: 'Świece', opis: 'Niosą świece po bokach krzyża lub księdza' },
+    { nazwa: 'Kadzidło', opis: 'Obsługuje kadzidło podczas uroczystych momentów' },
+    { nazwa: 'Ceremoniarz', opis: 'Koordynuje całą służbę ministrantów' },
+    { nazwa: 'Ministrant ołtarza', opis: 'Podaje księgę, ampułki, dzwonek' }
+  ],
+  zasady: [
+    'Służba ministranta to wielki dar i odpowiedzialność',
+    'Szanuj świętość liturgii i miejsca świętego',
+    'Jeśli nie możesz przyjść, zawiadom z wyprzedzeniem',
+    'Ucz się systematycznie - obserwuj i pytaj starszych',
+    'Bądź przykładem dla innych w szkole i parafii'
+  ]
+};
+
+// ==================== TIPTAP IMAGE NODE VIEW ====================
+
+function TiptapImageView({ node, updateAttributes, selected }: any) {
+  const [showControls, setShowControls] = useState(false);
+
+  const wrapperStyle: React.CSSProperties = { display: 'inline-block' };
+  if (node.attrs.float === 'left') {
+    Object.assign(wrapperStyle, { float: 'left' as const, margin: '4px 16px 8px 0', maxWidth: '50%' });
+  } else if (node.attrs.float === 'right') {
+    Object.assign(wrapperStyle, { float: 'right' as const, margin: '4px 0 8px 16px', maxWidth: '50%' });
+  } else if (node.attrs.float === 'center') {
+    Object.assign(wrapperStyle, { display: 'block', textAlign: 'center' as const, margin: '8px 0' });
+  }
+
+  const imgStyle: React.CSSProperties = {
+    maxWidth: '100%',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    ...(node.attrs.width ? { width: `${node.attrs.width}px` } : {}),
+  };
+
+  return (
+    <NodeViewWrapper
+      as="span"
+      style={wrapperStyle}
+      className="tiptap-image-wrapper"
+    >
+      <span
+        className="relative inline-block"
+        onMouseEnter={() => setShowControls(true)}
+        onMouseLeave={() => setShowControls(false)}
+      >
+        <img
+          src={node.attrs.src}
+          alt={node.attrs.alt || ''}
+          style={imgStyle}
+          className={selected ? 'outline-2 outline-indigo-500 outline-offset-2' : ''}
+        />
+        {showControls && (
+          <span
+            className="absolute top-1 left-1 flex items-center gap-0.5 bg-black/80 backdrop-blur-sm rounded-lg p-1 z-10"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {[{ label: 'S', w: 150 }, { label: 'M', w: 300 }, { label: 'L', w: 500 }, { label: 'Auto', w: null }].map(p => (
+              <button key={p.label} type="button" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${node.attrs.width == p.w ? 'bg-indigo-500 text-white' : 'text-white/80 hover:bg-white/20'}`} onClick={() => updateAttributes({ width: p.w })}>{p.label}</button>
+            ))}
+            <span className="inline-block w-px h-3.5 bg-white/30 mx-0.5" />
+            {[{ label: '←', v: 'left', title: 'Lewo' }, { label: '↔', v: 'center', title: 'Środek' }, { label: '→', v: 'right', title: 'Prawo' }].map(o => (
+              <button key={o.title} type="button" title={o.title} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${node.attrs.float === o.v ? 'bg-indigo-500 text-white' : 'text-white/80 hover:bg-white/20'}`} onClick={() => updateAttributes({ float: node.attrs.float === o.v ? null : o.v })}>{o.label}</button>
+            ))}
+          </span>
+        )}
+      </span>
+    </NodeViewWrapper>
+  );
+}
+
+function TiptapYoutubeView({ node, updateAttributes, selected }: any) {
+  const [showControls, setShowControls] = useState(false);
+
+  const wrapperStyle: React.CSSProperties = { display: 'inline-block' };
+  if (node.attrs.float === 'left') {
+    Object.assign(wrapperStyle, { float: 'left' as const, margin: '4px 16px 8px 0', maxWidth: '50%' });
+  } else if (node.attrs.float === 'right') {
+    Object.assign(wrapperStyle, { float: 'right' as const, margin: '4px 0 8px 16px', maxWidth: '50%' });
+  } else if (node.attrs.float === 'center') {
+    Object.assign(wrapperStyle, { display: 'block', textAlign: 'center' as const, margin: '8px 0' });
+  }
+
+  const iframeWidth = node.attrs.width || node.attrs.width || 480;
+  const iframeHeight = Math.round(iframeWidth * (320 / 480));
+
+  return (
+    <NodeViewWrapper
+      as="span"
+      style={wrapperStyle}
+      className="tiptap-youtube-wrapper"
+    >
+      <span
+        className="relative inline-block"
+        onMouseEnter={() => setShowControls(true)}
+        onMouseLeave={() => setShowControls(false)}
+      >
+        <iframe
+          src={node.attrs.src}
+          width={iframeWidth}
+          height={iframeHeight}
+          allowFullScreen
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          style={{ maxWidth: '100%', borderRadius: '8px', border: 'none' }}
+          className={selected ? 'outline-2 outline-indigo-500 outline-offset-2' : ''}
+        />
+        {showControls && (
+          <span
+            className="absolute top-1 left-1 flex items-center gap-0.5 bg-black/80 backdrop-blur-sm rounded-lg p-1 z-10"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {[{ label: 'S', w: 200 }, { label: 'M', w: 350 }, { label: 'L', w: 500 }, { label: 'Auto', w: null }].map(p => (
+              <button key={p.label} type="button" className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${node.attrs.width == p.w ? 'bg-indigo-500 text-white' : 'text-white/80 hover:bg-white/20'}`} onClick={() => updateAttributes({ width: p.w })}>{p.label}</button>
+            ))}
+            <span className="inline-block w-px h-3.5 bg-white/30 mx-0.5" />
+            {[{ label: '←', v: 'left', title: 'Lewo' }, { label: '↔', v: 'center', title: 'Środek' }, { label: '→', v: 'right', title: 'Prawo' }].map(o => (
+              <button key={o.title} type="button" title={o.title} className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${node.attrs.float === o.v ? 'bg-indigo-500 text-white' : 'text-white/80 hover:bg-white/20'}`} onClick={() => updateAttributes({ float: node.attrs.float === o.v ? null : o.v })}>{o.label}</button>
+            ))}
+          </span>
+        )}
+      </span>
+    </NodeViewWrapper>
+  );
+}
+
+// ==================== GŁÓWNY KOMPONENT ====================
+
+export default function MinistranciApp() {
+  // Stan aplikacji
+  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [isLogin, setIsLogin] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Stany formularzy
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [imie, setImie] = useState('');
+  const [nazwisko, setNazwisko] = useState('');
+  const [userType, setUserType] = useState<UserType>('ministrant');
+
+  // Stan parafii
+  const [currentParafia, setCurrentParafia] = useState<Parafia | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [zaproszenia, setZaproszenia] = useState<Zaproszenie[]>([]);
+
+  // Stany UI
+  const [activeTab, setActiveTab] = useState('tablica');
+  const [showParafiaModal, setShowParafiaModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showSluzbaModal, setShowSluzbaModal] = useState(false);
+  const [showPoslugiModal, setShowPoslugiModal] = useState(false);
+  const [showGrupaModal, setShowGrupaModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showGrupyEditModal, setShowGrupyEditModal] = useState(false);
+  const [showPoslugaEditModal, setShowPoslugaEditModal] = useState(false);
+  const [showAddPoslugaModal, setShowAddPoslugaModal] = useState(false);
+
+  // Dane
+  const [sluzby, setSluzby] = useState<Sluzba[]>([]);
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [selectedSluzba, setSelectedSluzba] = useState<Sluzba | null>(null);
+
+  // Grupy i posługi (edytowalne)
+  const [grupy, setGrupy] = useState<GrupaConfig[]>(DEFAULT_GRUPY);
+  const [poslugi, setPoslugi] = useState<Posluga[]>([]);
+  const [editingPosluga, setEditingPosluga] = useState<Posluga | null>(null);
+  const [newPoslugaForm, setNewPoslugaForm] = useState({ nazwa: '', opis: '', emoji: '⭐', kolor: 'gray', dlugi_opis: '', youtube_url: '' });
+  const [newPoslugaFile, setNewPoslugaFile] = useState<File | null>(null);
+  const [newPoslugaPreview, setNewPoslugaPreview] = useState('');
+  const [editPoslugaFile, setEditPoslugaFile] = useState<File | null>(null);
+  const [editPoslugaPreview, setEditPoslugaPreview] = useState('');
+  const [expandedPosluga, setExpandedPosluga] = useState<string | null>(null);
+  const [editGalleryFiles, setEditGalleryFiles] = useState<File[]>([]);
+  const [editGalleryPreviews, setEditGalleryPreviews] = useState<string[]>([]);
+  const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
+  const [newGalleryPreviews, setNewGalleryPreviews] = useState<string[]>([]);
+  const [isUploadingInline, setIsUploadingInline] = useState(false);
+  const [showYoutubeInput, setShowYoutubeInput] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [newGrupaForm, setNewGrupaForm] = useState({ nazwa: '', kolor: 'gray', emoji: '⚪', opis: '' });
+  const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
+
+  // ==================== STAN — RANKING SŁUŻBY ====================
+  const [punktacjaConfig, setPunktacjaConfig] = useState<PunktacjaConfig[]>([]);
+  const [rangiConfig, setRangiConfig] = useState<RangaConfig[]>([]);
+  const [odznakiConfig, setOdznakiConfig] = useState<OdznakaConfig[]>([]);
+  const [dyzury, setDyzury] = useState<Dyzur[]>([]);
+  const [obecnosci, setObecnosci] = useState<Obecnosc[]>([]);
+  const [minusowePunkty, setMinusowePunkty] = useState<MinusowePunkty[]>([]);
+  const [odznakiZdobyte, setOdznakiZdobyte] = useState<OdznakaZdobyta[]>([]);
+  const [rankingData, setRankingData] = useState<RankingEntry[]>([]);
+  const [showZglosModal, setShowZglosModal] = useState(false);
+  const [showDyzuryModal, setShowDyzuryModal] = useState(false);
+  const [showRankingSettings, setShowRankingSettings] = useState(false);
+  const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo', nazwa_nabożeństwa: '', godzina: '' });
+  const [rankingSettingsTab, setRankingSettingsTab] = useState<'punkty' | 'rangi' | 'odznaki' | 'ogolne'>('punkty');
+  const [newPunktacjaForm, setNewPunktacjaForm] = useState({ klucz: '', wartosc: 0, opis: '' });
+  const [showNewPunktacjaForm, setShowNewPunktacjaForm] = useState(false);
+  const [editingOdznakaId, setEditingOdznakaId] = useState<string | null>(null);
+
+  // ==================== STAN — TABLICA OGŁOSZEŃ ====================
+  const [tablicaWatki, setTablicaWatki] = useState<TablicaWatek[]>([]);
+  const [tablicaWiadomosci, setTablicaWiadomosci] = useState<TablicaWiadomosc[]>([]);
+  const [ankiety, setAnkiety] = useState<Ankieta[]>([]);
+  const [ankietyOpcje, setAnkietyOpcje] = useState<AnkietaOpcja[]>([]);
+  const [ankietyOdpowiedzi, setAnkietyOdpowiedzi] = useState<AnkietaOdpowiedz[]>([]);
+  const [powiadomienia, setPowiadomienia] = useState<Powiadomienie[]>([]);
+  const [selectedWatek, setSelectedWatek] = useState<TablicaWatek | null>(null);
+  const [showNewWatekModal, setShowNewWatekModal] = useState(false);
+  const [editingWatek, setEditingWatek] = useState<TablicaWatek | null>(null);
+  const [previewOgloszenie, setPreviewOgloszenie] = useState<TablicaWatek | null>(null);
+  const [showNewAnkietaModal, setShowNewAnkietaModal] = useState(false);
+  const [newWatekForm, setNewWatekForm] = useState({ tytul: '', tresc: '', kategoria: 'ogłoszenie' as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: 'wszyscy' });
+  const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''] });
+  const [newWiadomoscTresc, setNewWiadomoscTresc] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
+  const [showInfoBanner, setShowInfoBanner] = useState(true);
+  const [editingParafiaNazwa, setEditingParafiaNazwa] = useState(false);
+  const [parafiaNazwaInput, setParafiaNazwaInput] = useState('');
+  const [editingAnkietaId, setEditingAnkietaId] = useState<string | null>(null);
+  const [ukryjMinistrantow, setUkryjMinistrantow] = useState(false);
+  const [editAnkietaForm, setEditAnkietaForm] = useState({ pytanie: '', obowiazkowa: false, wyniki_ukryte: true, termin: '', aktywna: true, opcje: [] as { id: string; tresc: string; kolejnosc: number }[], noweOpcje: [''] });
+
+  // QR Code
+  const [showQrModal, setShowQrModal] = useState(false);
+
+  // Dark mode
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Tiptap Image extension with float & width + hover controls
+  const FloatImage = useMemo(() => TiptapImage.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        float: {
+          default: null,
+          parseHTML: element => element.getAttribute('data-float'),
+          renderHTML: attributes => attributes.float ? { 'data-float': attributes.float } : {},
+        },
+        width: {
+          default: null,
+          parseHTML: element => element.getAttribute('data-width'),
+          renderHTML: attributes => {
+            if (!attributes.width) return {};
+            return { 'data-width': attributes.width, style: `width: ${attributes.width}px` };
+          },
+        },
+      };
+    },
+    addNodeView() {
+      return ReactNodeViewRenderer(TiptapImageView);
+    },
+  }), []);
+
+  // Tiptap YouTube extension with float & width + hover controls
+  const FloatYoutube = useMemo(() => YoutubeExtension.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        float: {
+          default: null,
+          parseHTML: element => element.getAttribute('data-float'),
+          renderHTML: attributes => attributes.float ? { 'data-float': attributes.float } : {},
+        },
+        width: {
+          default: null,
+          parseHTML: element => element.getAttribute('data-width'),
+          renderHTML: attributes => {
+            if (!attributes.width) return {};
+            return { 'data-width': attributes.width, style: `width: ${attributes.width}px; max-width: 100%;` };
+          },
+        },
+      };
+    },
+    addNodeView() {
+      return ReactNodeViewRenderer(TiptapYoutubeView);
+    },
+  }), []);
+
+  // Tiptap editor
+  const tiptapEditor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit,
+      FloatImage.configure({ allowBase64: false, inline: true }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      FloatYoutube.configure({ width: 480, height: 320, nocookie: true }),
+      TiptapUnderline,
+      TextStyle,
+      TiptapColor,
+    ],
+    content: '',
+    editorProps: {
+      attributes: { class: 'tiptap-content min-h-[100px] max-h-[300px] overflow-auto px-3 py-2 text-sm outline-none' },
+    },
+    onUpdate: ({ editor }) => {
+      setNewWatekForm(prev => ({ ...prev, tresc: editor.getHTML() }));
+    },
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved === 'true') {
+      setDarkMode(true);
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    localStorage.setItem('darkMode', String(next));
+    if (next) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
+  // Formularze
+  const [parafiaNazwa, setParafiaNazwa] = useState('');
+  const [parafiaMiasto, setParafiaMiasto] = useState('');
+  const [parafiaAdres, setParafiaAdres] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+
+  const [sluzbaForm, setSluzbaForm] = useState({
+    nazwa: '',
+    data: '',
+    godzina: '',
+    funkcje: {} as Record<FunkcjaType, string>
+  });
+
+  // Kalendarz liturgiczny
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<DzienLiturgiczny | null>(null);
+
+  // Dzisiejszy dzień liturgiczny (dla belki koloru)
+  const dzisLiturgiczny = useMemo(() => {
+    const now = new Date();
+    const days = getLiturgicalMonth(now.getFullYear(), now.getMonth());
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return days.find(d => d.date === todayStr) || null;
+  }, []);
+
+  // ==================== FUNKCJE ŁADOWANIA ====================
+
+  const loadProfile = useCallback(async (userId: string) => {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (profile) {
+      setCurrentUser(profile as Profile);
+    }
+    setLoading(false);
+  }, []);
+
+  const loadParafiaData = useCallback(async () => {
+    if (!currentUser?.parafia_id) return;
+
+    const { data: parafia } = await supabase
+      .from('parafie')
+      .select('*')
+      .eq('id', currentUser.parafia_id)
+      .single();
+
+    if (parafia) {
+      setCurrentParafia(parafia as Parafia);
+      // Załaduj grupy z bazy (jeśli zapisane)
+      if (parafia.grupy && Array.isArray(parafia.grupy) && parafia.grupy.length > 0) {
+        setGrupy(parafia.grupy as GrupaConfig[]);
+      }
+    }
+
+    const { data: membersData } = await supabase
+      .from('parafia_members')
+      .select('*')
+      .eq('parafia_id', currentUser.parafia_id);
+
+    if (membersData) setMembers(membersData as Member[]);
+  }, [currentUser?.parafia_id]);
+
+  const loadSluzby = useCallback(async () => {
+    if (!currentUser?.parafia_id) return;
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data: sluzbyData } = await supabase
+      .from('sluzby')
+      .select('*, funkcje(*)')
+      .eq('parafia_id', currentUser.parafia_id)
+      .gte('data', today)
+      .order('data', { ascending: true });
+
+    if (sluzbyData) setSluzby(sluzbyData as Sluzba[]);
+  }, [currentUser?.parafia_id]);
+
+  const loadPoslugi = useCallback(async () => {
+    if (!currentUser?.parafia_id) return;
+
+    const { data } = await supabase
+      .from('poslugi')
+      .select('*')
+      .eq('parafia_id', currentUser.parafia_id)
+      .order('kolejnosc');
+
+    if (data && data.length > 0) {
+      setPoslugi(data as Posluga[]);
+    } else if (data && data.length === 0) {
+      const { error: rpcError } = await supabase.rpc('init_poslugi', {
+        p_parafia_id: currentUser.parafia_id
+      });
+      if (!rpcError) {
+        const { data: seeded } = await supabase
+          .from('poslugi')
+          .select('*')
+          .eq('parafia_id', currentUser.parafia_id)
+          .order('kolejnosc');
+        if (seeded) setPoslugi(seeded as Posluga[]);
+      }
+    }
+  }, [currentUser?.parafia_id]);
+
+  const uploadPoslugaImage = async (file: File, poslugaId: string): Promise<string | null> => {
+    if (!currentUser?.parafia_id) return null;
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+    const path = `${currentUser.parafia_id}/${poslugaId}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from('poslugi-images')
+      .upload(path, file, { upsert: true, contentType: file.type });
+
+    if (error) {
+      console.error('Image upload error:', error);
+      return null;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('poslugi-images')
+      .getPublicUrl(path);
+
+    return publicUrl;
+  };
+
+  const deletePoslugaImage = async (obrazekUrl: string) => {
+    if (!currentUser?.parafia_id || !obrazekUrl) return;
+    const bucketPath = obrazekUrl.split('/poslugi-images/')[1];
+    if (bucketPath) {
+      await supabase.storage.from('poslugi-images').remove([bucketPath]);
+    }
+  };
+
+  const uploadPoslugaGalleryImages = async (files: File[], poslugaId: string): Promise<string[]> => {
+    if (!currentUser?.parafia_id || files.length === 0) return [];
+    const urls: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const path = `${currentUser.parafia_id}/${poslugaId}/gallery/${Date.now()}_${i}.${ext}`;
+      const { error } = await supabase.storage
+        .from('poslugi-images')
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (!error) {
+        const { data: { publicUrl } } = supabase.storage
+          .from('poslugi-images')
+          .getPublicUrl(path);
+        urls.push(publicUrl);
+      }
+    }
+    return urls;
+  };
+
+  const getYoutubeEmbedUrl = (url: string): string | null => {
+    if (!url) return null;
+    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+    return match ? `https://www.youtube.com/embed/${match[1]}` : null;
+  };
+
+  const loadZaproszenia = useCallback(async () => {
+    if (!currentUser?.email) return;
+
+    const { data: zaproszeniaData } = await supabase
+      .from('zaproszenia')
+      .select('*')
+      .eq('email', currentUser.email);
+
+    if (zaproszeniaData) setZaproszenia(zaproszeniaData as Zaproszenie[]);
+  }, [currentUser?.email]);
+
+  // ==================== ŁADOWANIE — RANKING SŁUŻBY ====================
+
+  const loadRankingData = useCallback(async () => {
+    if (!currentUser?.parafia_id) return;
+    const pid = currentUser.parafia_id;
+
+    const [
+      { data: pConfig },
+      { data: rConfig },
+      { data: oConfig },
+      { data: dyzuryData },
+      { data: obecnosciData },
+      { data: minusoweData },
+      { data: odznakiZdobyteData },
+      { data: rankingRows },
+    ] = await Promise.all([
+      supabase.from('punktacja_config').select('*').eq('parafia_id', pid),
+      supabase.from('rangi_config').select('*').eq('parafia_id', pid).order('kolejnosc'),
+      supabase.from('odznaki_config').select('*').eq('parafia_id', pid),
+      supabase.from('dyzury').select('*').eq('parafia_id', pid),
+      supabase.from('obecnosci').select('*').eq('parafia_id', pid).order('data', { ascending: false }),
+      supabase.from('minusowe_punkty').select('*').eq('parafia_id', pid),
+      supabase.from('odznaki_zdobyte').select('*'),
+      supabase.from('ranking').select('*').eq('parafia_id', pid).order('total_pkt', { ascending: false }),
+    ]);
+
+    if (pConfig) setPunktacjaConfig(pConfig as PunktacjaConfig[]);
+    if (rConfig) setRangiConfig(rConfig as RangaConfig[]);
+    if (oConfig) setOdznakiConfig(oConfig as OdznakaConfig[]);
+    if (dyzuryData) setDyzury(dyzuryData as Dyzur[]);
+    if (obecnosciData) setObecnosci(obecnosciData as Obecnosc[]);
+    if (minusoweData) setMinusowePunkty(minusoweData as MinusowePunkty[]);
+    if (odznakiZdobyteData) setOdznakiZdobyte(odznakiZdobyteData as OdznakaZdobyta[]);
+    if (rankingRows) setRankingData(rankingRows as RankingEntry[]);
+  }, [currentUser?.parafia_id]);
+
+  // ==================== ŁADOWANIE — TABLICA OGŁOSZEŃ ====================
+
+  const loadTablicaData = useCallback(async () => {
+    if (!currentUser?.parafia_id) return;
+    const pid = currentUser.parafia_id;
+
+    const [
+      { data: watkiData },
+      { data: ankietyData },
+      { data: opcjeData },
+      { data: odpowiedziData },
+      { data: powiadomieniaData },
+    ] = await Promise.all([
+      supabase.from('tablica_watki').select('*').eq('parafia_id', pid).order('przypiety', { ascending: false }).order('updated_at', { ascending: false }),
+      supabase.from('ankiety').select('*').eq('parafia_id', pid),
+      supabase.from('ankiety_opcje').select('*'),
+      supabase.from('ankiety_odpowiedzi').select('*'),
+      supabase.from('powiadomienia').select('*').eq('odbiorca_id', currentUser.id).order('created_at', { ascending: false }),
+    ]);
+
+    if (watkiData) setTablicaWatki(watkiData as TablicaWatek[]);
+    if (ankietyData) setAnkiety(ankietyData as Ankieta[]);
+    if (opcjeData) setAnkietyOpcje(opcjeData as AnkietaOpcja[]);
+    if (odpowiedziData) setAnkietyOdpowiedzi(odpowiedziData as AnkietaOdpowiedz[]);
+    if (powiadomieniaData) setPowiadomienia(powiadomieniaData as Powiadomienie[]);
+  }, [currentUser?.parafia_id, currentUser?.id]);
+
+  const loadWatekWiadomosci = useCallback(async (watekId: string) => {
+    const { data } = await supabase
+      .from('tablica_wiadomosci')
+      .select('*')
+      .eq('watek_id', watekId)
+      .order('created_at', { ascending: true });
+    if (data) setTablicaWiadomosci(data as TablicaWiadomosc[]);
+  }, []);
+
+  // Helper: pobierz wartość z punktacja_config
+  const getConfigValue = useCallback((klucz: string, fallback: number = 0): number => {
+    const entry = punktacjaConfig.find(p => p.klucz === klucz);
+    return entry ? Number(entry.wartosc) : fallback;
+  }, [punktacjaConfig]);
+
+  // Helper: oblicz punkty bazowe na podstawie rangi liturgicznej dnia
+  const obliczPunktyBazowe = useCallback((data: string, typ: 'msza' | 'nabożeństwo', nazwa_nabożeństwa: string): { bazowe: number; mnoznik: number } => {
+    if (typ === 'nabożeństwo') {
+      const klucz = `nabożeństwo_${nazwa_nabożeństwa}`;
+      return { bazowe: getConfigValue(klucz, 8), mnoznik: 1 };
+    }
+
+    const dateObj = new Date(data);
+    const dayOfWeek = dateObj.getDay();
+
+    // Niedziela = 0 pkt
+    if (dayOfWeek === 0) return { bazowe: getConfigValue('msza_niedziela', 0), mnoznik: 1 };
+
+    // Pobierz dzień liturgiczny
+    const days = getLiturgicalMonth(dateObj.getFullYear(), dateObj.getMonth());
+    const liturgDay = days.find(d => d.date === data);
+
+    // Mnożnik sezonowy
+    let mnoznik = getConfigValue('mnoznik_domyslny', 1);
+    if (liturgDay?.okres === 'Wielki Post') mnoznik = getConfigValue('mnoznik_wielki_post', 1.5);
+    else if (liturgDay?.okres === 'Adwent') mnoznik = getConfigValue('mnoznik_adwent', 1.5);
+
+    // Punkty bazowe na podstawie rangi
+    let bazowe = getConfigValue('msza_dzien_powszedni', 5);
+    if (liturgDay) {
+      const rangaMap: Record<string, string> = {
+        uroczystosc: 'msza_uroczystosc',
+        swieto: 'msza_swieto',
+        wspomnienie: 'msza_wspomnienie_obowiazkowe',
+        wspomnienie_dowolne: 'msza_wspomnienie_dowolne',
+        dzien_powszedni: 'msza_dzien_powszedni',
+      };
+      bazowe = getConfigValue(rangaMap[liturgDay.ranga] || 'msza_dzien_powszedni', 5);
+    }
+
+    return { bazowe, mnoznik };
+  }, [getConfigValue]);
+
+  // Helper: pobierz aktualną rangę ministranta
+  const getRanga = useCallback((pkt: number): RangaConfig | null => {
+    const sorted = [...rangiConfig].sort((a, b) => b.min_pkt - a.min_pkt);
+    return sorted.find(r => pkt >= r.min_pkt) || null;
+  }, [rangiConfig]);
+
+  // Helper: następna ranga
+  const getNextRanga = useCallback((pkt: number): RangaConfig | null => {
+    const sorted = [...rangiConfig].sort((a, b) => a.min_pkt - b.min_pkt);
+    return sorted.find(r => r.min_pkt > pkt) || null;
+  }, [rangiConfig]);
+
+  // ==================== AKCJE — RANKING SŁUŻBY ====================
+
+  const zglosObecnosc = async () => {
+    if (!currentUser?.parafia_id || !zglosForm.data) return;
+
+    // Porównuj daty jako stringi YYYY-MM-DD żeby uniknąć problemów ze strefami czasowymi
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dataStr = zglosForm.data; // już jest w formacie YYYY-MM-DD z inputa
+    const limitDni = getConfigValue('limit_dni_zgloszenie', 2);
+
+    // Oblicz różnicę dni przez parsowanie lokalnych dat
+    const todayParts = todayStr.split('-').map(Number);
+    const dataParts = dataStr.split('-').map(Number);
+    const todayMs = Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]);
+    const dataMs = Date.UTC(dataParts[0], dataParts[1] - 1, dataParts[2]);
+    const diffDays = Math.floor((todayMs - dataMs) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      alert('Nie możesz zgłosić obecności na przyszły dzień.');
+      return;
+    }
+    if (diffDays > limitDni) {
+      alert(`Nie możesz zgłosić obecności — upłynął limit ${limitDni} dni od daty służby.`);
+      return;
+    }
+
+    const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa);
+
+    const { error } = await supabase.from('obecnosci').insert({
+      ministrant_id: currentUser.id,
+      parafia_id: currentUser.parafia_id,
+      data: zglosForm.data,
+      godzina: zglosForm.godzina,
+      typ: zglosForm.typ,
+      nazwa_nabożeństwa: zglosForm.typ === 'nabożeństwo' ? zglosForm.nazwa_nabożeństwa : '',
+      punkty_bazowe: bazowe,
+      mnoznik,
+      punkty_finalne: Math.round(bazowe * mnoznik),
+    });
+
+    if (error) {
+      alert('Błąd zgłoszenia: ' + error.message);
+    } else {
+      setShowZglosModal(false);
+      setZglosForm({ data: '', typ: 'msza', nazwa_nabożeństwa: '', godzina: '' });
+      loadRankingData();
+    }
+  };
+
+  const sprawdzOdznaki = async (ministrantId: string, parafiaId: string, newTotalObecnosci: number, newTotalPkt: number, newStreakTyg: number) => {
+    // Pobierz aktualne odznaki zdobyte przez tego ministranta
+    const { data: juzZdobyte } = await supabase.from('odznaki_zdobyte')
+      .select('odznaka_config_id')
+      .eq('ministrant_id', ministrantId);
+    const zdobyteIds = new Set((juzZdobyte || []).map(z => z.odznaka_config_id));
+
+    // Sprawdź każdą aktywną odznakę
+    for (const odznaka of odznakiConfig.filter(o => o.aktywna)) {
+      if (zdobyteIds.has(odznaka.id)) continue; // już zdobyta
+
+      let spelnia = false;
+      switch (odznaka.warunek_typ) {
+        case 'total_obecnosci':
+          spelnia = newTotalObecnosci >= odznaka.warunek_wartosc;
+          break;
+        case 'streak_tyg':
+          spelnia = newStreakTyg >= odznaka.warunek_wartosc;
+          break;
+        case 'pelny_tydzien': {
+          // Sprawdź czy ministrant ma 6 zatwierdzonych dni w bieżącym tygodniu (pon-sob)
+          const now = new Date();
+          const dayOfWeek = now.getDay();
+          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+          const monday = new Date(now);
+          monday.setDate(now.getDate() + mondayOffset);
+          const saturday = new Date(monday);
+          saturday.setDate(monday.getDate() + 5);
+          const monStr = monday.toISOString().split('T')[0];
+          const satStr = saturday.toISOString().split('T')[0];
+          const { count } = await supabase.from('obecnosci')
+            .select('*', { count: 'exact', head: true })
+            .eq('ministrant_id', ministrantId)
+            .eq('parafia_id', parafiaId)
+            .eq('status', 'zatwierdzona')
+            .eq('typ', 'msza')
+            .gte('data', monStr)
+            .lte('data', satStr);
+          spelnia = (count || 0) >= 6;
+          break;
+        }
+        case 'ranking_miesieczny': {
+          // Sprawdź czy ministrant jest na 1. miejscu w rankingu
+          const sorted = [...rankingData].sort((a, b) => Number(b.total_pkt) - Number(a.total_pkt));
+          spelnia = sorted.length > 0 && sorted[0].ministrant_id === ministrantId;
+          break;
+        }
+        case 'nabożeństwo_droga_krzyzowa':
+        case 'nabożeństwo_rozaniec':
+        case 'nabożeństwo_majowe': {
+          const nabName = odznaka.warunek_typ.replace('nabożeństwo_', '');
+          const { count: nabCount } = await supabase.from('obecnosci')
+            .select('*', { count: 'exact', head: true })
+            .eq('ministrant_id', ministrantId)
+            .eq('parafia_id', parafiaId)
+            .eq('status', 'zatwierdzona')
+            .eq('typ', 'nabożeństwo')
+            .eq('nazwa_nabożeństwa', nabName);
+          spelnia = (nabCount || 0) >= odznaka.warunek_wartosc;
+          break;
+        }
+        case 'zero_minusowych_tyg': {
+          // Wymaga pełnego miesiąca kalendarzowego aktywności
+          // Sprawdź datę pierwszej zatwierdzonej obecności
+          const { data: pierwszaObecnoscN } = await supabase.from('obecnosci')
+            .select('data')
+            .eq('ministrant_id', ministrantId)
+            .eq('parafia_id', parafiaId)
+            .eq('status', 'zatwierdzona')
+            .order('data', { ascending: true })
+            .limit(1)
+            .single();
+          if (!pierwszaObecnoscN) break;
+
+          const pierwszaDataN = new Date(pierwszaObecnoscN.data + 'T00:00:00');
+          const terazN = new Date();
+          // Sprawdź czy minął pełny miesiąc kalendarzowy
+          const miesiacPozniej = new Date(pierwszaDataN);
+          miesiacPozniej.setMonth(miesiacPozniej.getMonth() + 1);
+          if (terazN < miesiacPozniej) break;
+
+          // Sprawdź brak minusowych w ostatnich N tygodniach
+          const wymaganyOkres = odznaka.warunek_wartosc;
+          const weeksAgo = new Date();
+          weeksAgo.setDate(weeksAgo.getDate() - wymaganyOkres * 7);
+          const { count: minusCount } = await supabase.from('minusowe_punkty')
+            .select('*', { count: 'exact', head: true })
+            .eq('ministrant_id', ministrantId)
+            .eq('parafia_id', parafiaId)
+            .gte('data', weeksAgo.toISOString().split('T')[0]);
+          spelnia = (minusCount || 0) === 0;
+          break;
+        }
+        case 'rekord_parafii': {
+          // Wymaga pełnego miesiąca kalendarzowego aktywności + min. 2 ministrantów
+          const { data: pierwszaObecnoscR } = await supabase.from('obecnosci')
+            .select('data')
+            .eq('ministrant_id', ministrantId)
+            .eq('parafia_id', parafiaId)
+            .eq('status', 'zatwierdzona')
+            .order('data', { ascending: true })
+            .limit(1)
+            .single();
+          if (!pierwszaObecnoscR) break;
+
+          const pierwszaDataR = new Date(pierwszaObecnoscR.data + 'T00:00:00');
+          const terazR = new Date();
+          const miesiacPozniejR = new Date(pierwszaDataR);
+          miesiacPozniejR.setMonth(miesiacPozniejR.getMonth() + 1);
+          if (terazR < miesiacPozniejR) break;
+
+          const { data: topRows } = await supabase.from('ranking')
+            .select('ministrant_id, total_pkt')
+            .eq('parafia_id', parafiaId)
+            .order('total_pkt', { ascending: false })
+            .limit(2);
+          spelnia = (topRows || []).length >= 2
+            && topRows![0].ministrant_id === ministrantId
+            && Number(topRows![0].total_pkt) > Number(topRows![1].total_pkt);
+          break;
+        }
+        default:
+          break;
+      }
+
+      if (spelnia) {
+        await supabase.from('odznaki_zdobyte').insert({
+          ministrant_id: ministrantId,
+          odznaka_config_id: odznaka.id,
+          bonus_pkt: odznaka.bonus_pkt,
+        });
+        // Dodaj bonus punktów do rankingu
+        if (odznaka.bonus_pkt > 0) {
+          await supabase.from('ranking').update({
+            total_pkt: newTotalPkt + odznaka.bonus_pkt,
+          }).eq('ministrant_id', ministrantId).eq('parafia_id', parafiaId);
+          newTotalPkt += odznaka.bonus_pkt;
+        }
+      }
+    }
+  };
+
+  const zatwierdzObecnosc = async (obecnoscId: string) => {
+    if (!currentUser) return;
+
+    const obecnosc = obecnosci.find(o => o.id === obecnoscId);
+    if (!obecnosc) return;
+
+    await supabase.from('obecnosci').update({
+      status: 'zatwierdzona',
+      zatwierdzona_przez: currentUser.id,
+    }).eq('id', obecnoscId);
+
+    // Upsert ranking
+    const { data: existing } = await supabase.from('ranking')
+      .select('*')
+      .eq('ministrant_id', obecnosc.ministrant_id)
+      .eq('parafia_id', obecnosc.parafia_id)
+      .single();
+
+    let newTotalPkt: number;
+    let newTotalObecnosci: number;
+    let streakTyg: number;
+
+    if (existing) {
+      newTotalPkt = Number(existing.total_pkt) + obecnosc.punkty_finalne;
+      newTotalObecnosci = (existing.total_obecnosci || 0) + 1;
+      streakTyg = existing.streak_tyg || 0;
+      const ranga = getRanga(newTotalPkt);
+      await supabase.from('ranking').update({
+        total_pkt: newTotalPkt,
+        total_obecnosci: newTotalObecnosci,
+        ranga: ranga?.nazwa || 'Ready',
+        updated_at: new Date().toISOString(),
+      }).eq('id', existing.id);
+    } else {
+      newTotalPkt = obecnosc.punkty_finalne;
+      newTotalObecnosci = 1;
+      streakTyg = 0;
+      const ranga = getRanga(newTotalPkt);
+      await supabase.from('ranking').insert({
+        ministrant_id: obecnosc.ministrant_id,
+        parafia_id: obecnosc.parafia_id,
+        total_pkt: newTotalPkt,
+        total_obecnosci: newTotalObecnosci,
+        ranga: ranga?.nazwa || 'Ready',
+      });
+    }
+
+    // Sprawdź odznaki
+    await sprawdzOdznaki(obecnosc.ministrant_id, obecnosc.parafia_id, newTotalObecnosci, newTotalPkt, streakTyg);
+
+    loadRankingData();
+  };
+
+  const odrzucObecnosc = async (obecnoscId: string) => {
+    await supabase.from('obecnosci').update({
+      status: 'odrzucona',
+      zatwierdzona_przez: currentUser?.id,
+    }).eq('id', obecnoscId);
+    loadRankingData();
+  };
+
+  const zatwierdzWszystkie = async () => {
+    const oczekujace = obecnosci.filter(o => o.status === 'oczekuje');
+    for (const o of oczekujace) {
+      await zatwierdzObecnosc(o.id);
+    }
+  };
+
+  const toggleDyzur = async (dzienTygodnia: number) => {
+    if (!currentUser?.parafia_id) return;
+
+    const existing = dyzury.find(d => d.ministrant_id === currentUser.id && d.dzien_tygodnia === dzienTygodnia);
+
+    if (existing) {
+      await supabase.from('dyzury').delete().eq('id', existing.id);
+    } else {
+      await supabase.from('dyzury').insert({
+        ministrant_id: currentUser.id,
+        parafia_id: currentUser.parafia_id,
+        dzien_tygodnia: dzienTygodnia,
+      });
+    }
+    loadRankingData();
+  };
+
+  const updateConfigValue = async (klucz: string, nowaWartosc: number) => {
+    const entry = punktacjaConfig.find(p => p.klucz === klucz);
+    if (entry) {
+      await supabase.from('punktacja_config').update({ wartosc: nowaWartosc }).eq('id', entry.id);
+      loadRankingData();
+    }
+  };
+
+  const updateRanga = async (id: string, nazwa: string, min_pkt: number) => {
+    await supabase.from('rangi_config').update({ nazwa, min_pkt }).eq('id', id);
+    loadRankingData();
+  };
+
+  const updateRangaKolor = async (id: string, kolor: string) => {
+    await supabase.from('rangi_config').update({ kolor }).eq('id', id);
+    loadRankingData();
+  };
+
+  const addRanga = async () => {
+    if (!currentParafia) return;
+    const maxKolejnosc = rangiConfig.reduce((max, r) => Math.max(max, r.kolejnosc), 0);
+    await supabase.from('rangi_config').insert({
+      parafia_id: currentParafia.id,
+      nazwa: 'Nowa ranga',
+      min_pkt: (rangiConfig[rangiConfig.length - 1]?.min_pkt || 0) + 500,
+      kolor: 'gray',
+      kolejnosc: maxKolejnosc + 1,
+    });
+    loadRankingData();
+  };
+
+  const deleteRanga = async (id: string) => {
+    await supabase.from('rangi_config').delete().eq('id', id);
+    loadRankingData();
+  };
+
+  const addPunktacja = async (klucz: string, wartosc: number, opis: string) => {
+    if (!currentParafia) return;
+    await supabase.from('punktacja_config').insert({
+      parafia_id: currentParafia.id,
+      klucz,
+      wartosc,
+      opis,
+    });
+    loadRankingData();
+  };
+
+  const updateConfigOpis = async (klucz: string, opis: string) => {
+    const entry = punktacjaConfig.find(p => p.klucz === klucz);
+    if (entry) {
+      await supabase.from('punktacja_config').update({ opis }).eq('id', entry.id);
+      loadRankingData();
+    }
+  };
+
+  const deletePunktacja = async (id: string) => {
+    await supabase.from('punktacja_config').delete().eq('id', id);
+    loadRankingData();
+  };
+
+  const updateOdznaka = async (id: string, updates: Partial<OdznakaConfig>) => {
+    await supabase.from('odznaki_config').update(updates).eq('id', id);
+    loadRankingData();
+  };
+
+  const addOdznaka = async () => {
+    if (!currentParafia) return;
+    await supabase.from('odznaki_config').insert({
+      parafia_id: currentParafia.id,
+      nazwa: 'Nowa odznaka',
+      opis: 'Opis odznaki',
+      warunek_typ: 'total_obecnosci',
+      warunek_wartosc: 1,
+      bonus_pkt: 10,
+      aktywna: true,
+    });
+    loadRankingData();
+  };
+
+  const deleteOdznaka = async (id: string) => {
+    await supabase.from('odznaki_config').delete().eq('id', id);
+    loadRankingData();
+  };
+
+  const initRankingConfig = async () => {
+    if (!currentParafia) return;
+    const { error } = await supabase.rpc('init_ranking_config', { p_parafia_id: currentParafia.id });
+    if (error) {
+      alert('Błąd inicjalizacji: ' + error.message);
+    } else {
+      loadRankingData();
+    }
+  };
+
+  // ==================== USEEFFECT - INICJALIZACJA ====================
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        loadProfile(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        loadProfile(session.user.id);
+      } else {
+        setCurrentUser(null);
+        setCurrentParafia(null);
+        setMembers([]);
+        setSluzby([]);
+        setZaproszenia([]);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadProfile]);
+
+  useEffect(() => {
+    if (currentUser?.parafia_id) {
+      loadParafiaData();
+      loadSluzby();
+      loadPoslugi();
+    }
+  }, [currentUser?.parafia_id, loadParafiaData, loadSluzby, loadPoslugi]);
+
+  useEffect(() => {
+    if (currentUser?.email) {
+      loadZaproszenia();
+    }
+  }, [currentUser?.email, loadZaproszenia]);
+
+  useEffect(() => {
+    if (currentUser?.parafia_id) {
+      loadRankingData();
+    }
+  }, [currentUser?.parafia_id, loadRankingData]);
+
+  useEffect(() => {
+    if (currentUser?.parafia_id) {
+      loadTablicaData();
+    }
+  }, [currentUser?.parafia_id, loadTablicaData]);
+
+  // Inicjalizacja Tiptap edytora przy otwarciu modala
+  const editorInitialized = useRef(false);
+  useEffect(() => {
+    if (showNewWatekModal && tiptapEditor && !editorInitialized.current) {
+      editorInitialized.current = true;
+      // Defer setContent to avoid flushSync warning during React render
+      queueMicrotask(() => {
+        const content = newWatekForm.tresc || '';
+        if (content && !content.includes('<p>') && !content.includes('<img')) {
+          tiptapEditor.commands.setContent(trescToHtml(content));
+        } else {
+          tiptapEditor.commands.setContent(content || '<p></p>');
+        }
+      });
+    }
+    if (!showNewWatekModal) {
+      editorInitialized.current = false;
+      // Clear editor content when dialog closes to avoid flushSync error on re-mount
+      if (tiptapEditor) {
+        tiptapEditor.commands.clearContent(false);
+      }
+    }
+  }, [showNewWatekModal, tiptapEditor]);
+
+  // ==================== AUTENTYKACJA ====================
+
+  const handleAuth = async () => {
+    if (!email || !password) {
+      alert('Wypełnij wszystkie pola!');
+      return;
+    }
+
+    setAuthLoading(true);
+
+    if (isLogin) {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        alert('Nieprawidłowy email lub hasło!');
+        setAuthLoading(false);
+        return;
+      }
+    } else {
+      if (!imie || !nazwisko) {
+        alert('Podaj imię i nazwisko!');
+        setAuthLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { imie, nazwisko, typ: userType }
+        }
+      });
+
+      if (error) {
+        alert(error.message === 'User already registered'
+          ? 'Użytkownik o tym emailu już istnieje!'
+          : `Błąd: ${error.message}`);
+        setAuthLoading(false);
+        return;
+      }
+    }
+
+    setAuthLoading(false);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setEmail('');
+    setPassword('');
+    setImie('');
+  };
+
+  const saveParafiaNazwa = async () => {
+    if (!currentParafia || !parafiaNazwaInput.trim()) return;
+    const { error } = await supabase.from('parafie').update({ nazwa: parafiaNazwaInput.trim() }).eq('id', currentParafia.id);
+    if (error) { alert('Błąd: ' + error.message); return; }
+    setCurrentParafia({ ...currentParafia, nazwa: parafiaNazwaInput.trim() });
+    setEditingParafiaNazwa(false);
+  };
+
+  // ==================== PARAFIA ====================
+
+  const generateInviteCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
+  const handleCreateParafia = async () => {
+    if (!parafiaNazwa || !parafiaMiasto || !currentUser) {
+      alert('Wypełnij wymagane pola!');
+      return;
+    }
+
+    // Utwórz parafię
+    const { data: newParafia, error: parafiaError } = await supabase
+      .from('parafie')
+      .insert({
+        nazwa: parafiaNazwa,
+        miasto: parafiaMiasto,
+        adres: parafiaAdres,
+        admin_id: currentUser.id,
+        admin_email: currentUser.email,
+        kod_zaproszenia: generateInviteCode()
+      })
+      .select()
+      .single();
+
+    if (parafiaError || !newParafia) {
+      alert('Błąd tworzenia parafii!');
+      return;
+    }
+
+    // Dodaj księdza jako członka
+    await supabase.from('parafia_members').insert({
+      profile_id: currentUser.id,
+      parafia_id: newParafia.id,
+      email: currentUser.email,
+      imie: currentUser.imie,
+      nazwisko: currentUser.nazwisko,
+      typ: 'ksiadz',
+      role: []
+    });
+
+    // Zaktualizuj profil użytkownika
+    await supabase
+      .from('profiles')
+      .update({ parafia_id: newParafia.id })
+      .eq('id', currentUser.id);
+
+    setCurrentUser({ ...currentUser, parafia_id: newParafia.id });
+    setShowParafiaModal(false);
+    setParafiaNazwa('');
+    setParafiaMiasto('');
+    setParafiaAdres('');
+  };
+
+  const handleSendInvite = async () => {
+    if (!inviteEmail || !currentParafia || !currentUser) {
+      alert('Wypełnij email!');
+      return;
+    }
+
+    const { error } = await supabase.from('zaproszenia').insert({
+      email: inviteEmail,
+      parafia_id: currentParafia.id,
+      parafia_nazwa: currentParafia.nazwa,
+      admin_email: currentUser.email
+    });
+
+    if (error) {
+      alert('Błąd wysyłania zaproszenia!');
+      return;
+    }
+
+    alert(`Zaproszenie wysłane do ${inviteEmail}`);
+    setShowInviteModal(false);
+    setInviteEmail('');
+  };
+
+  const handleJoinByCode = async () => {
+    if (!joinCode || !currentUser) {
+      alert('Wpisz kod zaproszenia!');
+      return;
+    }
+
+    // Szukaj parafii po kodzie
+    const { data: parafia } = await supabase
+      .from('parafie')
+      .select('*')
+      .eq('kod_zaproszenia', joinCode.toUpperCase())
+      .single();
+
+    if (!parafia) {
+      alert('Nie znaleziono parafii o tym kodzie!');
+      return;
+    }
+
+    // Dodaj jako członka
+    const { error: memberError } = await supabase.from('parafia_members').insert({
+      profile_id: currentUser.id,
+      parafia_id: parafia.id,
+      email: currentUser.email,
+      imie: currentUser.imie,
+      nazwisko: currentUser.nazwisko,
+      typ: currentUser.typ,
+      role: []
+    });
+
+    if (memberError) {
+      alert('Już należysz do tej parafii!');
+      return;
+    }
+
+    // Zaktualizuj profil
+    await supabase
+      .from('profiles')
+      .update({ parafia_id: parafia.id })
+      .eq('id', currentUser.id);
+
+    setCurrentUser({ ...currentUser, parafia_id: parafia.id });
+    setShowJoinModal(false);
+    setJoinCode('');
+  };
+
+  const handleAcceptInvite = async (zaproszenie: Zaproszenie) => {
+    if (!currentUser) return;
+
+    // Dodaj jako członka parafii
+    await supabase.from('parafia_members').insert({
+      profile_id: currentUser.id,
+      parafia_id: zaproszenie.parafia_id,
+      email: currentUser.email,
+      imie: currentUser.imie,
+      nazwisko: currentUser.nazwisko,
+      typ: currentUser.typ,
+      role: []
+    });
+
+    // Zaktualizuj profil
+    await supabase
+      .from('profiles')
+      .update({ parafia_id: zaproszenie.parafia_id })
+      .eq('id', currentUser.id);
+
+    // Usuń zaproszenie
+    await supabase
+      .from('zaproszenia')
+      .delete()
+      .eq('id', zaproszenie.id);
+
+    setCurrentUser({ ...currentUser, parafia_id: zaproszenie.parafia_id });
+    setZaproszenia(zaproszenia.filter(z => z.id !== zaproszenie.id));
+  };
+
+  const handleRejectInvite = async (zaproszenie: Zaproszenie) => {
+    await supabase
+      .from('zaproszenia')
+      .delete()
+      .eq('id', zaproszenie.id);
+
+    setZaproszenia(zaproszenia.filter(z => z.id !== zaproszenie.id));
+  };
+
+  // ==================== SŁUŻBY ====================
+
+  const FUNKCJE_TYPES: FunkcjaType[] = ['Krzyż', 'Świeca 1', 'Świeca 2', 'Kadzidło', 'Ceremoniarz', 'Ministrant 1', 'Ministrant 2'];
+  const FUNKCJE_OPISY: Record<FunkcjaType, string> = {
+    'Krzyż': 'Niesiesz krzyż procesyjny na czele pochodu. Trzymaj go prosto i pewnie.',
+    'Świeca 1': 'Niesiesz świecę po lewej stronie. Idź równo ze Świecą 2.',
+    'Świeca 2': 'Niesiesz świecę po prawej stronie. Idź równo ze Świecą 1.',
+    'Kadzidło': 'Obsługujesz kadzidło — przygotuj węgielki przed Mszą i podawaj łódkę z kadzidłem.',
+    'Ceremoniarz': 'Koordynujesz przebieg liturgii. Dbasz o porządek i wskazujesz ministrantom ich zadania.',
+    'Ministrant 1': 'Służysz przy ołtarzu — podajesz ampułki, dzwonek i inne naczynia liturgiczne.',
+    'Ministrant 2': 'Służysz przy ołtarzu — pomagasz Ministrantowi 1 i asystujesz kapłanowi.',
+  };
+
+  const handleCreateSluzba = async () => {
+    if (!sluzbaForm.nazwa || !sluzbaForm.data || !sluzbaForm.godzina || !currentUser?.parafia_id) {
+      alert('Wypełnij wymagane pola!');
+      return;
+    }
+
+    if (selectedSluzba) {
+      // Edycja - zaktualizuj wydarzenie
+      await supabase
+        .from('sluzby')
+        .update({
+          nazwa: sluzbaForm.nazwa,
+          data: sluzbaForm.data,
+          godzina: sluzbaForm.godzina
+        })
+        .eq('id', selectedSluzba.id);
+
+      // Usuń stare funkcje i dodaj nowe
+      await supabase
+        .from('funkcje')
+        .delete()
+        .eq('sluzba_id', selectedSluzba.id);
+
+      const funkcjeToInsert = FUNKCJE_TYPES.map(typ => {
+        const assigned = sluzbaForm.funkcje[typ];
+        return {
+          sluzba_id: selectedSluzba.id,
+          typ,
+          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
+          aktywna: assigned !== 'BEZ',
+          zaakceptowana: false
+        };
+      });
+
+      await supabase.from('funkcje').insert(funkcjeToInsert);
+    } else {
+      // Nowe wydarzenie
+      const { data: newSluzba, error } = await supabase
+        .from('sluzby')
+        .insert({
+          nazwa: sluzbaForm.nazwa,
+          data: sluzbaForm.data,
+          godzina: sluzbaForm.godzina,
+          parafia_id: currentUser.parafia_id,
+          utworzono_przez: currentUser.id,
+          status: 'zaplanowana'
+        })
+        .select()
+        .single();
+
+      if (error || !newSluzba) {
+        alert('Błąd tworzenia wydarzenia!');
+        return;
+      }
+
+      const funkcjeToInsert = FUNKCJE_TYPES.map(typ => {
+        const assigned = sluzbaForm.funkcje[typ];
+        return {
+          sluzba_id: newSluzba.id,
+          typ,
+          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
+          aktywna: assigned !== 'BEZ',
+          zaakceptowana: false
+        };
+      });
+
+      await supabase.from('funkcje').insert(funkcjeToInsert);
+    }
+
+    // Odśwież listę
+    await loadSluzby();
+    setShowSluzbaModal(false);
+    setSelectedSluzba(null);
+    setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+  };
+
+  const handleEditSluzba = (sluzba: Sluzba) => {
+    setSelectedSluzba(sluzba);
+    const funkcjeMap: Record<FunkcjaType, string> = {} as Record<FunkcjaType, string>;
+    sluzba.funkcje.forEach(f => {
+      if (!f.aktywna) {
+        funkcjeMap[f.typ as FunkcjaType] = 'BEZ';
+      } else if (f.ministrant_id) {
+        funkcjeMap[f.typ as FunkcjaType] = f.ministrant_id;
+      } else {
+        funkcjeMap[f.typ as FunkcjaType] = 'UNASSIGNED';
+      }
+    });
+
+    setSluzbaForm({
+      nazwa: sluzba.nazwa,
+      data: sluzba.data,
+      godzina: sluzba.godzina,
+      funkcje: funkcjeMap
+    });
+    setShowSluzbaModal(true);
+  };
+
+  const handleDeleteSluzba = async () => {
+    if (!selectedSluzba) return;
+
+    await supabase
+      .from('sluzby')
+      .delete()
+      .eq('id', selectedSluzba.id);
+
+    await loadSluzby();
+    setShowSluzbaModal(false);
+    setSelectedSluzba(null);
+  };
+
+  const handleAcceptSluzba = async (sluzba: Sluzba) => {
+    if (!currentUser) return;
+
+    await supabase
+      .from('funkcje')
+      .update({ zaakceptowana: true })
+      .eq('sluzba_id', sluzba.id)
+      .eq('ministrant_id', currentUser.id);
+
+    await loadSluzby();
+  };
+
+  const handleRejectSluzba = async (sluzba: Sluzba) => {
+    if (!currentUser) return;
+
+    await supabase
+      .from('funkcje')
+      .update({ ministrant_id: null, zaakceptowana: false })
+      .eq('sluzba_id', sluzba.id)
+      .eq('ministrant_id', currentUser.id);
+
+    await loadSluzby();
+  };
+
+  // ==================== MINISTRANCI ====================
+
+  const handleUpdatePoslugi = async () => {
+    if (!selectedMember) return;
+
+    await supabase
+      .from('parafia_members')
+      .update({ role: selectedMember.role })
+      .eq('id', selectedMember.id);
+
+    await loadParafiaData();
+    setShowPoslugiModal(false);
+    setSelectedMember(null);
+  };
+
+  const handleUpdateGrupa = async (grupa: GrupaType) => {
+    if (!selectedMember) return;
+
+    await supabase
+      .from('parafia_members')
+      .update({ grupa })
+      .eq('id', selectedMember.id);
+
+    await loadParafiaData();
+    setShowGrupaModal(false);
+    setSelectedMember(null);
+  };
+
+  // ==================== ZARZĄDZANIE GRUPAMI ====================
+
+  const saveGrupyToDb = async (newGrupy: GrupaConfig[]) => {
+    if (!currentUser?.parafia_id) return;
+    await supabase
+      .from('parafie')
+      .update({ grupy: newGrupy })
+      .eq('id', currentUser.parafia_id);
+  };
+
+  const handleAddGrupa = () => {
+    if (!newGrupaForm.nazwa.trim()) {
+      alert('Podaj nazwę grupy!');
+      return;
+    }
+    const id = newGrupaForm.nazwa.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const newGrupa: GrupaConfig = {
+      id,
+      nazwa: newGrupaForm.nazwa,
+      kolor: newGrupaForm.kolor,
+      emoji: newGrupaForm.emoji,
+      opis: newGrupaForm.opis,
+    };
+    const updated = [...grupy, newGrupa];
+    setGrupy(updated);
+    saveGrupyToDb(updated);
+    setNewGrupaForm({ nazwa: '', kolor: 'gray', emoji: '⚪', opis: '' });
+  };
+
+  const handleDeleteGrupa = (id: string) => {
+    const updated = grupy.filter(g => g.id !== id);
+    setGrupy(updated);
+    saveGrupyToDb(updated);
+  };
+
+  const handleRenameGrupa = (id: string, nazwa: string) => {
+    const updated = grupy.map(g => g.id === id ? { ...g, nazwa } : g);
+    setGrupy(updated);
+    saveGrupyToDb(updated);
+  };
+
+  // ==================== ZARZĄDZANIE POSŁUGAMI ====================
+
+  const handleAddPosluga = async () => {
+    if (!newPoslugaForm.nazwa.trim() || !currentUser?.parafia_id) {
+      alert('Podaj nazwę posługi!');
+      return;
+    }
+
+    const slug = newPoslugaForm.nazwa.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const tempId = crypto.randomUUID();
+
+    let obrazekUrl: string | undefined;
+    if (newPoslugaFile) {
+      const url = await uploadPoslugaImage(newPoslugaFile, tempId);
+      if (url) obrazekUrl = url;
+    }
+
+    let zdjeciaUrls: string[] = [];
+    if (newGalleryFiles.length > 0) {
+      zdjeciaUrls = await uploadPoslugaGalleryImages(newGalleryFiles, tempId);
+    }
+
+    const { error } = await supabase.from('poslugi').insert({
+      id: tempId,
+      parafia_id: currentUser.parafia_id,
+      slug,
+      nazwa: newPoslugaForm.nazwa,
+      opis: newPoslugaForm.opis,
+      emoji: newPoslugaForm.emoji,
+      kolor: newPoslugaForm.kolor,
+      obrazek_url: obrazekUrl || null,
+      kolejnosc: poslugi.length,
+      dlugi_opis: newPoslugaForm.dlugi_opis || '',
+      zdjecia: zdjeciaUrls,
+      youtube_url: newPoslugaForm.youtube_url || '',
+    });
+
+    if (error) {
+      alert('Błąd dodawania posługi: ' + error.message);
+      return;
+    }
+
+    await loadPoslugi();
+    setNewPoslugaForm({ nazwa: '', opis: '', emoji: '⭐', kolor: 'gray', dlugi_opis: '', youtube_url: '' });
+    setNewPoslugaFile(null);
+    setNewPoslugaPreview('');
+    setNewGalleryFiles([]);
+    setNewGalleryPreviews([]);
+    setShowAddPoslugaModal(false);
+  };
+
+  const handleUpdatePoslugaDetails = async () => {
+    if (!editingPosluga) return;
+
+    let obrazekUrl = editingPosluga.obrazek_url;
+
+    if (editPoslugaFile) {
+      if (editingPosluga.obrazek_url) {
+        await deletePoslugaImage(editingPosluga.obrazek_url);
+      }
+      const url = await uploadPoslugaImage(editPoslugaFile, editingPosluga.id);
+      if (url) obrazekUrl = url;
+    }
+
+    let zdjeciaUrls = editingPosluga.zdjecia || [];
+    if (editGalleryFiles.length > 0) {
+      const newUrls = await uploadPoslugaGalleryImages(editGalleryFiles, editingPosluga.id);
+      zdjeciaUrls = [...zdjeciaUrls, ...newUrls];
+    }
+
+    const { error } = await supabase
+      .from('poslugi')
+      .update({
+        nazwa: editingPosluga.nazwa,
+        opis: editingPosluga.opis,
+        emoji: editingPosluga.emoji,
+        kolor: editingPosluga.kolor,
+        obrazek_url: obrazekUrl || null,
+        dlugi_opis: editingPosluga.dlugi_opis || '',
+        zdjecia: zdjeciaUrls,
+        youtube_url: editingPosluga.youtube_url || '',
+      })
+      .eq('id', editingPosluga.id);
+
+    if (error) {
+      alert('Błąd aktualizacji: ' + error.message);
+      return;
+    }
+
+    await loadPoslugi();
+    setEditingPosluga(null);
+    setEditPoslugaFile(null);
+    setEditPoslugaPreview('');
+    setEditGalleryFiles([]);
+    setEditGalleryPreviews([]);
+    setShowPoslugaEditModal(false);
+  };
+
+  const handleDeletePosluga = async (id: string) => {
+    const posluga = poslugi.find(p => p.id === id);
+    if (posluga?.obrazek_url) {
+      await deletePoslugaImage(posluga.obrazek_url);
+    }
+    if (posluga?.zdjecia) {
+      for (const url of posluga.zdjecia) {
+        await deletePoslugaImage(url);
+      }
+    }
+
+    const { error } = await supabase
+      .from('poslugi')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert('Błąd usuwania: ' + error.message);
+      return;
+    }
+
+    await loadPoslugi();
+  };
+
+  // ==================== FUNKCJE — TABLICA OGŁOSZEŃ ====================
+
+  // Konwersja starego markdown na HTML (dla kompatybilności)
+  const trescToHtml = (text: string): string => {
+    if (!text) return '';
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+    const html = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, rawLabel, url) => {
+      const labelParts = rawLabel.split('|');
+      const fileName = labelParts[0];
+      const params: Record<string, string> = {};
+      for (let j = 1; j < labelParts.length; j++) {
+        const [key, val] = labelParts[j].split('=');
+        if (key && val) params[key.trim()] = val.trim();
+      }
+      const ext = fileName.split('.').pop()?.toLowerCase() || '';
+      if (imageExts.includes(ext)) {
+        const widthAttr = params.width ? ` data-width="${params.width}" style="width:${params.width}px"` : '';
+        return `<img src="${url}" alt="${fileName}"${widthAttr} />`;
+      }
+      return `<a href="${url}" target="_blank">${fileName}</a>`;
+    });
+    return html.split('\n').map(line => `<p>${line || '<br>'}</p>`).join('');
+  };
+
+  // Upload pliku i wstawienie do Tiptap
+  const uploadAndInsertFile = async (file: File) => {
+    if (!currentUser?.parafia_id || !tiptapEditor) return;
+    setIsUploadingInline(true);
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
+      const path = `${currentUser.parafia_id}/inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage
+        .from('watki-files')
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (error) {
+        alert('Błąd uploadu: ' + error.message);
+        return;
+      }
+      const { data: { publicUrl } } = supabase.storage
+        .from('watki-files')
+        .getPublicUrl(path);
+      const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+      if (imageExts.includes(ext)) {
+        tiptapEditor.chain().focus().setImage({ src: publicUrl, alt: file.name }).run();
+      } else {
+        tiptapEditor.chain().focus().setLink({ href: publicUrl, target: '_blank' }).insertContent(file.name).unsetLink().run();
+      }
+    } finally {
+      setIsUploadingInline(false);
+    }
+  };
+
+  // Renderowanie treści — obsługa HTML (nowy) i markdown (stary)
+  const renderTresc = (text: string) => {
+    if (!text) return null;
+    if (/<[a-z][\s\S]*>/i.test(text)) {
+      return <div className="tiptap-content text-sm" dangerouslySetInnerHTML={{ __html: text }} />;
+    }
+    // Stary format markdown
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+    const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g);
+    return <p className="text-sm whitespace-pre-wrap">{parts.map((part, i) => {
+      const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (match) {
+        const rawLabel = match[1];
+        const url = match[2];
+        const fileName = rawLabel.split('|')[0];
+        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        if (imageExts.includes(ext)) {
+          return <a key={i} href={url} target="_blank" rel="noopener noreferrer"><img src={url} alt={fileName} className="rounded-lg mt-2 mb-1 object-contain" style={{ maxWidth: '100%', maxHeight: '320px' }} /></a>;
+        }
+        return <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"><Paperclip className="w-3 h-3" />{fileName}</a>;
+      }
+      return part;
+    })}</p>;
+  };
+
+  const createWatek = async () => {
+    if (!currentUser || !currentParafia) {
+      alert('Błąd: nie załadowano danych użytkownika lub parafii.');
+      return;
+    }
+    const tresc = tiptapEditor?.getHTML() || newWatekForm.tresc;
+    const { tytul, kategoria, grupa_docelowa } = newWatekForm;
+    // Dla ogłoszenia tytuł generujemy z treści
+    const finalTytul = kategoria === 'ogłoszenie'
+      ? (tresc.trim().substring(0, 50) + (tresc.trim().length > 50 ? '...' : '') || 'Ogłoszenie')
+      : tytul.trim();
+    if (!finalTytul) { alert('Podaj tytuł!'); return; }
+    if (kategoria === 'ogłoszenie' && !tresc.trim()) { alert('Podaj treść ogłoszenia!'); return; }
+
+    try {
+      const { data: inserted, error } = await supabase.from('tablica_watki').insert({
+        parafia_id: currentParafia.id,
+        autor_id: currentUser.id,
+        tytul: finalTytul,
+        tresc: tresc.trim(),
+        kategoria,
+        grupa_docelowa,
+      }).select().single();
+
+      if (error) { alert('Błąd: ' + error.message); return; }
+
+      setShowNewWatekModal(false);
+      setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+      await loadTablicaData();
+    } catch (err) {
+      alert('Nieoczekiwany błąd: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const updateWatek = async () => {
+    if (!editingWatek) return;
+    const tresc = tiptapEditor?.getHTML() || newWatekForm.tresc;
+    const { tytul, kategoria, grupa_docelowa } = newWatekForm;
+    const finalTytul = kategoria === 'ogłoszenie'
+      ? (tresc.trim().substring(0, 50) + (tresc.trim().length > 50 ? '...' : '') || 'Ogłoszenie')
+      : tytul.trim();
+    if (!finalTytul) { alert('Podaj tytuł!'); return; }
+    if (kategoria === 'ogłoszenie' && !tresc.trim()) { alert('Podaj treść ogłoszenia!'); return; }
+
+    const { error } = await supabase.from('tablica_watki').update({
+      tytul: finalTytul,
+      tresc: tresc.trim(),
+      kategoria,
+      grupa_docelowa,
+    }).eq('id', editingWatek.id);
+
+    if (error) { alert('Błąd: ' + error.message); return; }
+    const editedId = editingWatek.id;
+    setShowNewWatekModal(false);
+    setEditingWatek(null);
+    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+    await loadTablicaData();
+    // Odśwież selectedWatek jeśli edytowaliśmy aktualnie otwarty wątek
+    if (selectedWatek?.id === editedId) {
+      const { data: updated } = await supabase.from('tablica_watki').select('*').eq('id', editedId).single();
+      if (updated) setSelectedWatek(updated as TablicaWatek);
+    }
+  };
+
+  const createAnkieta = async () => {
+    if (!currentUser || !currentParafia) {
+      alert('Błąd: nie załadowano danych użytkownika lub parafii.');
+      return;
+    }
+    const { pytanie, typ, obowiazkowa, termin, opcje } = newAnkietaForm;
+    if (!pytanie.trim()) { alert('Podaj pytanie ankiety!'); return; }
+
+    // Walidacja opcji PRZED wstawieniem do bazy
+    if (typ !== 'tak_nie') {
+      const validOpcje = opcje.filter(o => o.trim());
+      if (validOpcje.length < 2) { alert('Dodaj minimum 2 opcje!'); return; }
+    }
+
+    try {
+      // Stwórz wątek ankiety
+      const { data: watek, error: watekErr } = await supabase.from('tablica_watki').insert({
+        parafia_id: currentParafia.id,
+        autor_id: currentUser.id,
+        tytul: pytanie.trim(),
+        tresc: '',
+        kategoria: 'ankieta' as const,
+        grupa_docelowa: 'wszyscy',
+      }).select().single();
+
+      if (watekErr || !watek) { alert('Błąd tworzenia wątku: ' + (watekErr?.message || 'Brak danych')); return; }
+
+      // Stwórz ankietę
+      const { data: ankieta, error: ankietaErr } = await supabase.from('ankiety').insert({
+        watek_id: watek.id,
+        parafia_id: currentParafia.id,
+        pytanie: pytanie.trim(),
+        typ,
+        obowiazkowa,
+        wyniki_ukryte: newAnkietaForm.wyniki_ukryte,
+        termin: termin || null,
+      }).select().single();
+
+      if (ankietaErr || !ankieta) { alert('Błąd tworzenia ankiety: ' + (ankietaErr?.message || 'Brak danych')); return; }
+
+      // Dodaj opcje (dla nie-tak_nie — tak_nie tworzy trigger automatycznie)
+      if (typ !== 'tak_nie') {
+        const validOpcje = opcje.filter(o => o.trim());
+        const { error: opcjeErr } = await supabase.from('ankiety_opcje').insert(
+          validOpcje.map((o, i) => ({ ankieta_id: ankieta.id, tresc: o.trim(), kolejnosc: i + 1 }))
+        );
+        if (opcjeErr) { alert('Błąd dodawania opcji: ' + opcjeErr.message); return; }
+      }
+
+      setShowNewAnkietaModal(false);
+      setNewAnkietaForm({ pytanie: '', typ: 'tak_nie', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''] });
+      await loadTablicaData();
+    } catch (err) {
+      alert('Nieoczekiwany błąd: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const sendWiadomosc = async () => {
+    if (!currentUser || !selectedWatek || !newWiadomoscTresc.trim()) return;
+    const { error } = await supabase.from('tablica_wiadomosci').insert({
+      watek_id: selectedWatek.id,
+      autor_id: currentUser.id,
+      tresc: newWiadomoscTresc.trim(),
+    });
+    if (error) { alert('Błąd: ' + error.message); return; }
+    setNewWiadomoscTresc('');
+    await loadWatekWiadomosci(selectedWatek.id);
+  };
+
+  const odpowiedzAnkieta = async (ankietaId: string, opcjaId: string) => {
+    if (!currentUser) return;
+    // Sprawdź czy ministrant już wcześniej odpowiadał (zmiana odpowiedzi)
+    const ankieta = ankiety.find(a => a.id === ankietaId);
+    const miałPoprzednia = ankietyOdpowiedzi.some(o => o.ankieta_id === ankietaId && o.respondent_id === currentUser.id);
+
+    if (ankieta && ankieta.typ !== 'wielokrotny') {
+      await supabase.from('ankiety_odpowiedzi')
+        .delete()
+        .eq('ankieta_id', ankietaId)
+        .eq('respondent_id', currentUser.id);
+    }
+
+    const { error } = await supabase.from('ankiety_odpowiedzi').insert({
+      ankieta_id: ankietaId,
+      opcja_id: opcjaId,
+      respondent_id: currentUser.id,
+      zmieniona: miałPoprzednia,
+      zmieniona_at: miałPoprzednia ? new Date().toISOString() : null,
+    });
+    if (error && !error.message.includes('duplicate')) { alert('Błąd: ' + error.message); return; }
+
+    // Oznacz powiadomienie jako przeczytane
+    await supabase.from('powiadomienia')
+      .update({ przeczytane: true, wymaga_akcji: false })
+      .eq('odniesienie_id', ankietaId)
+      .eq('odbiorca_id', currentUser.id);
+
+    await loadTablicaData();
+  };
+
+  const togglePrzypiety = async (watekId: string, current: boolean) => {
+    // Instant feedback — aktualizuj lokalny stan natychmiast
+    setSelectedWatek(prev => prev && prev.id === watekId ? { ...prev, przypiety: !current } : prev);
+    setTablicaWatki(prev => prev.map(w => w.id === watekId ? { ...w, przypiety: !current } : w));
+    const { error } = await supabase.from('tablica_watki').update({ przypiety: !current }).eq('id', watekId);
+    if (error) { alert('Błąd: ' + error.message); }
+    await loadTablicaData();
+  };
+
+  const toggleZamkniety = async (watekId: string, current: boolean) => {
+    setSelectedWatek(prev => prev && prev.id === watekId ? { ...prev, zamkniety: !current } : prev);
+    setTablicaWatki(prev => prev.map(w => w.id === watekId ? { ...w, zamkniety: !current } : w));
+    const { error } = await supabase.from('tablica_watki').update({ zamkniety: !current }).eq('id', watekId);
+    if (error) { alert('Błąd: ' + error.message); }
+    await loadTablicaData();
+  };
+
+  const toggleWynikiUkryte = async (ankietaId: string, current: boolean) => {
+    setAnkiety(prev => prev.map(a => a.id === ankietaId ? { ...a, wyniki_ukryte: !current } : a));
+    const { error } = await supabase.from('ankiety').update({ wyniki_ukryte: !current }).eq('id', ankietaId);
+    if (error) { alert('Błąd: ' + error.message); }
+    await loadTablicaData();
+  };
+
+  const deleteWatek = async (watekId: string) => {
+    if (!confirm('Czy na pewno chcesz usunąć ten wątek?')) return;
+    // Usuń powiadomienia powiązane z wątkiem
+    await supabase.from('powiadomienia').delete().eq('odniesienie_typ', 'watek').eq('odniesienie_id', watekId);
+    // Usuń powiadomienia powiązane z ankietą tego wątku
+    const watekAnkieta = ankiety.find(a => a.watek_id === watekId);
+    if (watekAnkieta) {
+      await supabase.from('powiadomienia').delete().eq('odniesienie_typ', 'ankieta').eq('odniesienie_id', watekAnkieta.id);
+    }
+    // Usuń wątek (kaskada: ankiety, opcje, odpowiedzi, wiadomości)
+    await supabase.from('tablica_watki').delete().eq('id', watekId);
+    setSelectedWatek(null);
+    await loadTablicaData();
+  };
+
+  const markPowiadomienieRead = async (id: string) => {
+    await supabase.from('powiadomienia').update({ przeczytane: true }).eq('id', id);
+    await loadTablicaData();
+  };
+
+  const startEditAnkieta = (ankieta: Ankieta) => {
+    const opcje = ankietyOpcje.filter(o => o.ankieta_id === ankieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc);
+    setEditAnkietaForm({
+      pytanie: ankieta.pytanie,
+      obowiazkowa: ankieta.obowiazkowa,
+      wyniki_ukryte: ankieta.wyniki_ukryte,
+      termin: ankieta.termin ? new Date(ankieta.termin).toISOString().slice(0, 16) : '',
+      aktywna: ankieta.aktywna,
+      opcje: opcje.map(o => ({ id: o.id, tresc: o.tresc, kolejnosc: o.kolejnosc })),
+      noweOpcje: [''],
+    });
+    setEditingAnkietaId(ankieta.id);
+  };
+
+  const saveEditAnkieta = async () => {
+    if (!editingAnkietaId) return;
+    try {
+      // Aktualizuj ankietę
+      const { error: ankietaErr } = await supabase.from('ankiety').update({
+        pytanie: editAnkietaForm.pytanie.trim(),
+        obowiazkowa: editAnkietaForm.obowiazkowa,
+        wyniki_ukryte: editAnkietaForm.wyniki_ukryte,
+        termin: editAnkietaForm.termin || null,
+        aktywna: editAnkietaForm.aktywna,
+      }).eq('id', editingAnkietaId);
+      if (ankietaErr) { alert('Błąd: ' + ankietaErr.message); return; }
+
+      // Aktualizuj tytuł wątku (= pytanie ankiety)
+      const ankieta = ankiety.find(a => a.id === editingAnkietaId);
+      if (ankieta) {
+        await supabase.from('tablica_watki').update({ tytul: editAnkietaForm.pytanie.trim() }).eq('id', ankieta.watek_id);
+      }
+
+      // Aktualizuj istniejące opcje
+      for (const opcja of editAnkietaForm.opcje) {
+        if (opcja.tresc.trim()) {
+          await supabase.from('ankiety_opcje').update({ tresc: opcja.tresc.trim() }).eq('id', opcja.id);
+        }
+      }
+
+      // Dodaj nowe opcje
+      const noweValid = editAnkietaForm.noweOpcje.filter(o => o.trim());
+      if (noweValid.length > 0) {
+        const maxKolejnosc = editAnkietaForm.opcje.length;
+        await supabase.from('ankiety_opcje').insert(
+          noweValid.map((o, i) => ({ ankieta_id: editingAnkietaId, tresc: o.trim(), kolejnosc: maxKolejnosc + i + 1 }))
+        );
+      }
+
+      setEditingAnkietaId(null);
+      await loadTablicaData();
+    } catch (err) {
+      alert('Błąd: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const deleteAnkietaOpcja = async (opcjaId: string) => {
+    // Sprawdź czy ktoś zagłosował na tę opcję
+    const glosy = ankietyOdpowiedzi.filter(o => o.opcja_id === opcjaId);
+    if (glosy.length > 0 && !confirm(`Ta opcja ma ${glosy.length} głosów. Usunąć?`)) return;
+    await supabase.from('ankiety_odpowiedzi').delete().eq('opcja_id', opcjaId);
+    await supabase.from('ankiety_opcje').delete().eq('id', opcjaId);
+    setEditAnkietaForm(prev => ({ ...prev, opcje: prev.opcje.filter(o => o.id !== opcjaId) }));
+    await loadTablicaData();
+  };
+
+  const nieprzeczytanePowiadomienia = powiadomienia.filter(p => !p.przeczytane).length;
+
+  // ==================== RENDERY ====================
+
+  const getMemberName = (id: string | null) => {
+    if (!id) return '';
+    if (id === currentUser?.id) return 'Ty';
+    const member = members.find(m => m.profile_id === id);
+    return member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '';
+  };
+
+  const isSluzbaAssignedToMe = (sluzba: Sluzba) => {
+    return sluzba.funkcje.some(f => f.ministrant_id === currentUser?.id);
+  };
+
+  const getMyFunkcje = (sluzba: Sluzba) => {
+    return sluzba.funkcje.filter(f => f.ministrant_id === currentUser?.id && f.aktywna);
+  };
+
+  const hasUnacceptedFunkcje = (sluzba: Sluzba) => {
+    return sluzba.funkcje.some(f => f.ministrant_id === currentUser?.id && !f.zaakceptowana && f.aktywna);
+  };
+
+  // ==================== EKRAN ŁADOWANIA ====================
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-indigo-600 dark:text-indigo-400 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-300">Ładowanie...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ==================== EKRAN LOGOWANIA ====================
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <div className="flex items-center justify-center mb-4">
+              <Church className="w-12 h-12 text-indigo-600 dark:text-indigo-400" />
+            </div>
+            <CardTitle className="text-center text-2xl">
+              {isLogin ? 'Zaloguj się' : 'Zarejestruj się'}
+            </CardTitle>
+            <CardDescription className="text-center">
+              Aplikacja dla ministrantów
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="twoj@email.pl"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="password">Hasło</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+
+            {!isLogin && (
+              <>
+                <div>
+                  <Label htmlFor="imie">Imię</Label>
+                  <Input
+                    id="imie"
+                    value={imie}
+                    onChange={(e) => setImie(e.target.value)}
+                    placeholder="Jan"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="nazwisko">Nazwisko</Label>
+                  <Input
+                    id="nazwisko"
+                    value={nazwisko}
+                    onChange={(e) => setNazwisko(e.target.value)}
+                    placeholder="Kowalski"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="typ">Typ konta</Label>
+                  <Select value={userType} onValueChange={(v) => setUserType(v as UserType)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ministrant">Ministrant</SelectItem>
+                      <SelectItem value="ksiadz">Ksiądz</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+
+            <Button onClick={handleAuth} className="w-full" disabled={authLoading}>
+              {authLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {isLogin ? 'Zaloguj się' : 'Zarejestruj się'}
+            </Button>
+
+            <Button
+              variant="ghost"
+              onClick={() => setIsLogin(!isLogin)}
+              className="w-full"
+            >
+              {isLogin ? 'Nie masz konta? Zarejestruj się' : 'Masz konto? Zaloguj się'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ==================== EKRAN BRAKU PARAFII ====================
+
+  if (!currentUser.parafia_id) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-2 min-w-0">
+              <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <h1 className="text-lg sm:text-2xl font-bold truncate">Witaj, {currentUser.imie} {currentUser.nazwisko || ''}!</h1>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleLogout} className="shrink-0">
+              <LogOut className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Wyloguj</span>
+            </Button>
+          </div>
+
+          {currentUser.typ !== 'ksiadz' && zaproszenia.length > 0 && (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>Zaproszenia do parafii</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {zaproszenia.map((z) => (
+                  <div key={z.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border rounded-lg gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{z.parafia_nazwa}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">od {z.admin_email}</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <Button onClick={() => handleAcceptInvite(z)} size="sm" className="flex-1 sm:flex-none">
+                        <Check className="w-4 h-4 mr-1" />
+                        Akceptuj
+                      </Button>
+                      <Button onClick={() => handleRejectInvite(z)} variant="outline" size="sm" className="flex-1 sm:flex-none">
+                        <X className="w-4 h-4 mr-1" />
+                        Odrzuć
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          <div className={`grid ${currentUser.typ === 'ksiadz' ? '' : 'md:grid-cols-2'} gap-6`}>
+            {currentUser.typ === 'ksiadz' && (
+              <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowParafiaModal(true)}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Plus className="w-5 h-5" />
+                    Utwórz parafię
+                  </CardTitle>
+                  <CardDescription>
+                    Załóż nową parafię i zaproś ministrantów
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
+
+            {currentUser.typ !== 'ksiadz' && (
+              <Card className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowJoinModal(true)}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <UserPlus className="w-5 h-5" />
+                    Dołącz do parafii
+                  </CardTitle>
+                  <CardDescription>
+                    Wpisz kod zaproszenia od księdza
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
+          </div>
+        </div>
+
+        {/* Modal tworzenia parafii */}
+        <Dialog open={showParafiaModal} onOpenChange={setShowParafiaModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Utwórz nową parafię</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Nazwa parafii *</Label>
+                <Input
+                  value={parafiaNazwa}
+                  onChange={(e) => setParafiaNazwa(e.target.value)}
+                  placeholder="Parafia św. Jana"
+                />
+              </div>
+              <div>
+                <Label>Miasto *</Label>
+                <Input
+                  value={parafiaMiasto}
+                  onChange={(e) => setParafiaMiasto(e.target.value)}
+                  placeholder="Warszawa"
+                />
+              </div>
+              <div>
+                <Label>Adres</Label>
+                <Input
+                  value={parafiaAdres}
+                  onChange={(e) => setParafiaAdres(e.target.value)}
+                  placeholder="ul. Przykładowa 1"
+                />
+              </div>
+              <Button onClick={handleCreateParafia} className="w-full">
+                Utwórz parafię
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal dołączania po kodzie */}
+        <Dialog open={showJoinModal} onOpenChange={setShowJoinModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Dołącz do parafii</DialogTitle>
+              <DialogDescription>
+                Wpisz 8-znakowy kod zaproszenia otrzymany od księdza
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Kod zaproszenia</Label>
+                <Input
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  placeholder="ABC12345"
+                  maxLength={8}
+                />
+              </div>
+              <Button onClick={handleJoinByCode} className="w-full">
+                Dołącz
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  // ==================== GŁÓWNY INTERFEJS ====================
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-900 border-b shadow-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-2.5 py-2 sm:px-4 sm:py-3">
+          {/* Linia 1: nazwa parafii + tryb nocny + wyloguj */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); } }}>
+              <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div>
+                {editingParafiaNazwa ? (
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <Input
+                      value={parafiaNazwaInput}
+                      onChange={(e) => setParafiaNazwaInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveParafiaNazwa(); if (e.key === 'Escape') setEditingParafiaNazwa(false); }}
+                      className="h-8 text-sm sm:text-lg font-bold w-36 sm:w-60"
+                      autoFocus
+                    />
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600 dark:text-green-400" onClick={saveParafiaNazwa}>
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400" onClick={() => setEditingParafiaNazwa(false)}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-sm sm:text-xl font-bold">{currentParafia?.nazwa}</h1>
+                    {currentUser.typ === 'ksiadz' && (
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={(e) => { e.stopPropagation(); setParafiaNazwaInput(currentParafia?.nazwa || ''); setEditingParafiaNazwa(true); }}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+                <p className="text-[11px] sm:text-sm text-gray-600 dark:text-gray-300 truncate max-w-[130px] sm:max-w-none">{currentUser.imie} {currentUser.nazwisko || ''} ({currentUser.typ})</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2">
+              <Button variant="ghost" size="sm" onClick={toggleDarkMode} className="h-8 w-8 sm:h-9 sm:w-9 p-0">
+                {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 sm:h-9 px-2 sm:px-3">
+                <LogOut className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Wyloguj</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Linia 2: kod zaproszenia + kopiuj + QR */}
+          {currentUser.typ === 'ksiadz' && currentParafia && (
+            <div className="flex items-center justify-center gap-1.5 md:gap-2 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800">
+              <span className="text-xs text-gray-500 dark:text-gray-400">Kod zaproszenia:</span>
+              <code className="text-xs md:text-sm font-bold bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded tracking-wider">
+                {currentParafia.kod_zaproszenia}
+              </code>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                onClick={() => {
+                  navigator.clipboard.writeText(currentParafia.kod_zaproszenia);
+                  alert('Kod skopiowany!');
+                }}
+                title="Kopiuj kod"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                onClick={() => setShowQrModal(true)}
+                title="Pokaż kod QR"
+              >
+                <QrCode className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          )}
+
+          {/* Modal QR Code */}
+          <Dialog open={showQrModal} onOpenChange={setShowQrModal}>
+            <DialogContent className="max-w-sm text-center">
+              <DialogHeader>
+                <DialogTitle>Kod QR zaproszenia</DialogTitle>
+                <DialogDescription>
+                  Ministrant skanuje ten kod, aby dołączyć do parafii
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col items-center gap-4 py-4">
+                <div className="bg-white p-4 rounded-xl">
+                  <QRCodeSVG
+                    value={currentParafia?.kod_zaproszenia || ''}
+                    size={200}
+                    level="H"
+                  />
+                </div>
+                <code className="text-2xl font-bold tracking-widest">{currentParafia?.kod_zaproszenia}</code>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        {/* Belka koloru liturgicznego */}
+        {dzisLiturgiczny && (() => {
+          const KOLOR_BELKI: Record<string, { bg: string; text: string }> = {
+            zielony: { bg: 'bg-green-600', text: 'text-white' },
+            bialy: { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-gray-800 dark:text-gray-100' },
+            czerwony: { bg: 'bg-red-600', text: 'text-white' },
+            fioletowy: { bg: 'bg-purple-700', text: 'text-white' },
+            rozowy: { bg: 'bg-pink-400', text: 'text-white' },
+          };
+          const k = KOLOR_BELKI[dzisLiturgiczny.kolor] || KOLOR_BELKI.zielony;
+          return (
+            <div className={`${k.bg} ${k.text} px-2.5 sm:px-4 py-1 sm:py-1.5 text-[10px] sm:text-xs flex items-center justify-center gap-1.5 sm:gap-2`}>
+              <span className="font-semibold">{KOLORY_LITURGICZNE[dzisLiturgiczny.kolor]?.nazwa || dzisLiturgiczny.kolor}</span>
+              <span className="opacity-75">|</span>
+              <span className="truncate">{dzisLiturgiczny.nazwa || dzisLiturgiczny.okres}</span>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Nawigacja */}
+      <div className="max-w-7xl mx-auto px-2.5 py-3 sm:px-4 sm:py-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6">
+            <TabsTrigger value="tablica" className="relative" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
+              <MessageSquare className="w-4 h-4 sm:mr-2" />
+              Aktualności
+              {nieprzeczytanePowiadomienia > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  {nieprzeczytanePowiadomienia}
+                </span>
+              )}
+            </TabsTrigger>
+            {currentUser.typ === 'ksiadz' && (
+              <TabsTrigger value="ministranci">
+                <Users className="w-4 h-4 sm:mr-2" />
+                Ministranci
+                <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5">{members.filter(m => m.typ === 'ministrant').length}</span>
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="ranking">
+              <Trophy className="w-4 h-4 sm:mr-2" />
+              Ranking
+            </TabsTrigger>
+            <TabsTrigger value="sluzby">
+              <Star className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Wydarzenia</span><span className="sm:hidden">Wydarzenia</span>
+              {sluzby.length > 0 && <span className="ml-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full px-1.5">{sluzby.length}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="kalendarz">
+              <Calendar className="w-4 h-4 sm:mr-2" />
+              Kalendarz
+            </TabsTrigger>
+            <TabsTrigger value="poslugi">
+              <HandHelping className="w-4 h-4 sm:mr-2" />
+              Posługi
+            </TabsTrigger>
+            <TabsTrigger value="modlitwy">
+              <BookOpen className="w-4 h-4 sm:mr-2" />
+              Modlitwy
+            </TabsTrigger>
+            <TabsTrigger value="wskazowki">
+              <Lightbulb className="w-4 h-4 sm:mr-2" />
+              Wskazówki
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ==================== PANEL TABLICA OGŁOSZEŃ ==================== */}
+          <TabsContent value="tablica">
+            <div className="space-y-4">
+              {/* Nagłówek */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {selectedWatek && (
+                    <Button variant="ghost" size="sm" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
+                      <ArrowLeft className="w-4 h-4" />
+                    </Button>
+                  )}
+                  <h2 className="text-lg sm:text-xl font-bold truncate">
+                    {selectedWatek ? selectedWatek.tytul : 'Aktualności'}
+                  </h2>
+                </div>
+                {!selectedWatek && currentUser.typ === 'ministrant' && (
+                  <Button size="sm" variant="outline" onClick={() => {
+                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy' });
+                    setShowNewWatekModal(true);
+                  }}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Dyskusja
+                  </Button>
+                )}
+              </div>
+              {!selectedWatek && currentUser.typ === 'ksiadz' && (
+                <div className="flex gap-1.5 sm:gap-2">
+                  <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Dodaj ankietę
+                  </Button>
+                  <Button size="sm" variant="outline" className="border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800 dark:bg-teal-900/20 dark:text-teal-300 dark:hover:bg-teal-900/40" onClick={() => {
+                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+                    setShowNewWatekModal(true);
+                  }}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Ogłoszenie
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => {
+                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy' });
+                    setShowNewWatekModal(true);
+                  }}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Dyskusja
+                  </Button>
+                </div>
+              )}
+
+              {/* Baner informacyjny */}
+              {!selectedWatek && showInfoBanner && (
+                <Card className="border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20">
+                  <CardContent className="py-3 px-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <Church className="w-5 h-5 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-indigo-900 dark:text-indigo-200 space-y-1">
+                          <p className="font-semibold">Witaj w aplikacji dla ministrantów!</p>
+                          <p className="text-xs text-indigo-700 dark:text-indigo-300">
+                            Ogłoszenia i ankiety od księdza &middot; Wydarzenia &middot; Ranking i punkty &middot; Obecności &middot; Kalendarz liturgiczny
+                          </p>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex-shrink-0" onClick={() => setShowInfoBanner(false)}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Powiadomienia wymagające akcji */}
+              {!selectedWatek && powiadomienia.filter(p => p.wymaga_akcji && !p.przeczytane).length > 0 && (
+                <Card className="border-red-200 dark:border-red-700 bg-red-50 dark:bg-red-900/20">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
+                      <Bell className="w-4 h-4" />
+                      Wymagane odpowiedzi ({powiadomienia.filter(p => p.wymaga_akcji && !p.przeczytane).length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {powiadomienia.filter(p => p.wymaga_akcji && !p.przeczytane).map(p => {
+                      const ankieta = ankiety.find(a => a.id === p.odniesienie_id);
+                      const watek = ankieta ? tablicaWatki.find(w => w.id === ankieta.watek_id) : null;
+                      return (
+                        <div key={p.id} className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg p-3 border border-red-100 dark:border-red-800">
+                          <div>
+                            <p className="font-medium text-sm">{p.tytul}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{p.tresc}</p>
+                          </div>
+                          {watek && (
+                            <Button size="sm" variant="destructive" onClick={() => {
+                              setSelectedWatek(watek);
+                              loadWatekWiadomosci(watek.id);
+                            }}>
+                              Odpowiedz
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* === WIDOK WĄTKU (szczegóły) === */}
+              {selectedWatek && (() => {
+                const watekAnkieta = ankiety.find(a => a.watek_id === selectedWatek.id);
+                const watekOpcje = watekAnkieta ? ankietyOpcje.filter(o => o.ankieta_id === watekAnkieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc) : [];
+                const mojeOdpowiedzi = watekAnkieta ? ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id && o.respondent_id === currentUser.id) : [];
+                const wszystkieOdpowiedzi = watekAnkieta ? ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id) : [];
+                const autorWatku = members.find(m => m.profile_id === selectedWatek.autor_id);
+
+                return (
+                  <div className="space-y-4">
+                    {/* Info o wątku */}
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant={selectedWatek.kategoria === 'ogłoszenie' ? 'default' : selectedWatek.kategoria === 'ankieta' ? 'destructive' : 'secondary'}>
+                                {selectedWatek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : selectedWatek.kategoria === 'ankieta' ? 'Ankieta' : 'Dyskusja'}
+                              </Badge>
+                              {selectedWatek.zamkniety && <LockKeyhole className="w-4 h-4 text-red-500" />}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Ważna do: {watekAnkieta?.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) : 'bez terminu'}
+                            </p>
+                          </div>
+                          {currentUser.typ === 'ksiadz' && watekAnkieta && (
+                            <div className="flex flex-col gap-1.5 shrink-0">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className={`h-8 px-3 text-xs ${ukryjMinistrantow ? 'bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-950 dark:border-indigo-700 dark:text-indigo-300' : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-400 dark:bg-emerald-950 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900'}`}
+                                onClick={() => setUkryjMinistrantow(!ukryjMinistrantow)}
+                              >
+                                {ukryjMinistrantow ? <EyeOff className="w-3.5 h-3.5 mr-1.5" /> : <Eye className="w-3.5 h-3.5 mr-1.5" />}
+                                {ukryjMinistrantow ? 'Pokaż ministrantów' : 'Ukryj ministrantów'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-3 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
+                                onClick={() => deleteWatek(selectedWatek.id)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                                Usuń ankietę
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </CardHeader>
+                      {selectedWatek.tresc && (
+                        <CardContent>
+                          {renderTresc(selectedWatek.tresc || '')}
+                        </CardContent>
+                      )}
+                    </Card>
+
+                    {/* Ankieta */}
+                    {watekAnkieta && (
+                      <Card className="border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20">
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-base flex items-center gap-2">
+                              <BarChart3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                              {editingAnkietaId === watekAnkieta.id ? 'Edycja ankiety' : watekAnkieta.pytanie}
+                            </CardTitle>
+                            {currentUser.typ === 'ksiadz' && editingAnkietaId !== watekAnkieta.id && (
+                              <Button variant="ghost" size="sm" title="Edytuj ankietę" className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={() => startEditAnkieta(watekAnkieta)}>
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                          <CardDescription className="text-xs">
+                            {watekAnkieta.obowiazkowa && <Badge variant="destructive" className="mr-2">Obowiązkowa</Badge>}
+                            {!watekAnkieta.aktywna && <Badge variant="secondary" className="mr-2">Zamknięta</Badge>}
+                            {watekAnkieta.wyniki_ukryte ? <Badge variant="outline" className="mr-2">Wyniki ukryte</Badge> : <Badge variant="outline" className="mr-2 border-green-300 dark:border-green-700 text-green-700 dark:text-green-300">Wyniki jawne</Badge>}
+                            {watekAnkieta.termin && <>Termin: {new Date(watekAnkieta.termin).toLocaleDateString('pl-PL')}</>}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+
+                          {/* === TRYB EDYCJI KSIĘDZA === */}
+                          {currentUser.typ === 'ksiadz' && editingAnkietaId === watekAnkieta.id && (
+                            <div className="space-y-4">
+                              <div>
+                                <Label>Pytanie</Label>
+                                <Input
+                                  value={editAnkietaForm.pytanie}
+                                  onChange={(e) => setEditAnkietaForm({ ...editAnkietaForm, pytanie: e.target.value })}
+                                />
+                              </div>
+
+                              <div>
+                                <Label>Opcje odpowiedzi</Label>
+                                <div className="space-y-2 mt-1">
+                                  {editAnkietaForm.opcje.map((opcja, i) => (
+                                    <div key={opcja.id} className="flex gap-2">
+                                      <Input
+                                        value={opcja.tresc}
+                                        onChange={(e) => {
+                                          const nowe = [...editAnkietaForm.opcje];
+                                          nowe[i] = { ...nowe[i], tresc: e.target.value };
+                                          setEditAnkietaForm({ ...editAnkietaForm, opcje: nowe });
+                                        }}
+                                      />
+                                      {editAnkietaForm.opcje.length > 2 && (
+                                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400" onClick={() => deleteAnkietaOpcja(opcja.id)}>
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {editAnkietaForm.noweOpcje.map((opcja, i) => (
+                                    <div key={`new-${i}`} className="flex gap-2">
+                                      <Input
+                                        value={opcja}
+                                        placeholder="Nowa opcja..."
+                                        onChange={(e) => {
+                                          const nowe = [...editAnkietaForm.noweOpcje];
+                                          nowe[i] = e.target.value;
+                                          setEditAnkietaForm({ ...editAnkietaForm, noweOpcje: nowe });
+                                        }}
+                                      />
+                                      {editAnkietaForm.noweOpcje.length > 1 && (
+                                        <Button variant="ghost" size="sm" onClick={() => {
+                                          setEditAnkietaForm({ ...editAnkietaForm, noweOpcje: editAnkietaForm.noweOpcje.filter((_, idx) => idx !== i) });
+                                        }}>
+                                          <X className="w-4 h-4" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <Button variant="outline" size="sm" onClick={() => setEditAnkietaForm({ ...editAnkietaForm, noweOpcje: [...editAnkietaForm.noweOpcje, ''] })}>
+                                      <Plus className="w-4 h-4 mr-1" />
+                                      Dodaj opcję
+                                    </Button>
+                                </div>
+                              </div>
+
+                              <div>
+                                <Label>Termin (opcjonalnie)</Label>
+                                <Input
+                                  type="datetime-local"
+                                  value={editAnkietaForm.termin}
+                                  onChange={(e) => setEditAnkietaForm({ ...editAnkietaForm, termin: e.target.value })}
+                                />
+                              </div>
+
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <input type="checkbox" id="edit-obowiazkowa" checked={editAnkietaForm.obowiazkowa} onChange={(e) => setEditAnkietaForm({ ...editAnkietaForm, obowiazkowa: e.target.checked })} className="rounded border-gray-300 dark:border-gray-600" />
+                                  <Label htmlFor="edit-obowiazkowa" className="font-normal text-sm">Obowiązkowa</Label>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input type="checkbox" id="edit-wyniki-ukryte" checked={editAnkietaForm.wyniki_ukryte} onChange={(e) => setEditAnkietaForm({ ...editAnkietaForm, wyniki_ukryte: e.target.checked })} className="rounded border-gray-300 dark:border-gray-600" />
+                                  <Label htmlFor="edit-wyniki-ukryte" className="font-normal text-sm">Ukryj wyniki</Label>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input type="checkbox" id="edit-aktywna" checked={editAnkietaForm.aktywna} onChange={(e) => setEditAnkietaForm({ ...editAnkietaForm, aktywna: e.target.checked })} className="rounded border-gray-300 dark:border-gray-600" />
+                                  <Label htmlFor="edit-aktywna" className="font-normal text-sm">Aktywna (przyjmuje głosy)</Label>
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2">
+                                <Button onClick={saveEditAnkieta} className="flex-1">
+                                  <Check className="w-4 h-4 mr-2" />
+                                  Zapisz
+                                </Button>
+                                <Button variant="outline" onClick={() => setEditingAnkietaId(null)} className="flex-1">
+                                  Anuluj
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* === WIDOK MINISTRANTA === */}
+                          {currentUser.typ === 'ministrant' && (() => {
+                            const juzOdpowiedzial = mojeOdpowiedzi.length > 0;
+                            const pokazWyniki = juzOdpowiedzial && !watekAnkieta.wyniki_ukryte;
+                            const totalMinistranci = members.filter(m => m.typ === 'ministrant').length;
+
+                            return (
+                              <div className="space-y-2">
+                                {/* Przyciski głosowania */}
+                                {watekOpcje.map(opcja => {
+                                  const isSelected = mojeOdpowiedzi.some(o => o.opcja_id === opcja.id);
+                                  const odpowiedziOpcji = wszystkieOdpowiedzi.filter(o => o.opcja_id === opcja.id);
+                                  const count = odpowiedziOpcji.length;
+                                  const pct = totalMinistranci > 0 ? Math.round((count / totalMinistranci) * 100) : 0;
+                                  const osoby = odpowiedziOpcji.map(o => {
+                                    const m = members.find(mb => mb.profile_id === o.respondent_id);
+                                    return m ? `${m.imie} ${m.nazwisko || ''}`.trim() : '?';
+                                  });
+                                  const isTak = opcja.tresc.toLowerCase() === 'tak';
+                                  const isNie = opcja.tresc.toLowerCase() === 'nie';
+                                  const barColor = isTak ? 'bg-green-500 dark:bg-green-400' : isNie ? 'bg-red-500 dark:bg-red-400' : 'bg-indigo-500 dark:bg-indigo-400';
+                                  const selectedClass = isSelected
+                                    ? isTak ? 'bg-green-600 hover:bg-green-700 text-white' : isNie ? 'bg-red-600 hover:bg-red-700 text-white' : ''
+                                    : isTak ? 'border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-300 dark:hover:bg-green-950' : isNie ? 'border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950' : '';
+
+                                  return (
+                                    <div key={opcja.id} className="space-y-1">
+                                      <Button
+                                        variant={isSelected ? 'default' : 'outline'}
+                                        className={`w-full justify-between ${selectedClass}`}
+                                        onClick={() => odpowiedzAnkieta(watekAnkieta.id, opcja.id)}
+                                        disabled={!watekAnkieta.aktywna}
+                                      >
+                                        <span className="flex items-center gap-2">
+                                          {isSelected && <Check className="w-4 h-4" />}
+                                          {opcja.tresc}
+                                        </span>
+                                        {pokazWyniki && <span className="text-xs opacity-70">{count} ({pct}%)</span>}
+                                      </Button>
+                                      {pokazWyniki && (
+                                        <>
+                                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                                            <div className={`${barColor} h-2 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                                          </div>
+                                          {osoby.length > 0 && (
+                                            <div className="flex flex-wrap gap-1">
+                                              {osoby.map((imie, i) => (
+                                                <Badge key={i} variant="secondary" className={isTak ? 'text-xs bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300' : isNie ? 'text-xs bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300' : 'text-xs'}>{imie}</Badge>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Przycisk Akceptuj */}
+                                {juzOdpowiedzial && (
+                                  <Button
+                                    className="w-full mt-2 bg-green-600 hover:bg-green-700"
+                                    onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}
+                                  >
+                                    <Check className="w-4 h-4 mr-2" />
+                                    Akceptuj
+                                  </Button>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* === WIDOK KSIĘDZA — wyniki (gdy nie edytuje) === */}
+                          {currentUser.typ === 'ksiadz' && editingAnkietaId !== watekAnkieta.id && (() => {
+                            const totalMinistranci = members.filter(m => m.typ === 'ministrant').length;
+                            const respondenci = new Set(wszystkieOdpowiedzi.map(o => o.respondent_id));
+                            const brakOdpowiedzi = members.filter(m => m.typ === 'ministrant' && !respondenci.has(m.profile_id));
+                            const zmienione = wszystkieOdpowiedzi.filter(o => o.zmieniona);
+
+                            return (
+                              <div className="space-y-3">
+                                <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                  Odpowiedzi: {respondenci.size} / {totalMinistranci}
+                                  {zmienione.length > 0 && <span className="text-orange-500 ml-2">({zmienione.length} {zmienione.length === 1 ? 'zmiana' : 'zmian'})</span>}
+                                </p>
+
+                                {watekOpcje.map(opcja => {
+                                  const odpowiedziOpcji = wszystkieOdpowiedzi.filter(o => o.opcja_id === opcja.id);
+                                  const count = odpowiedziOpcji.length;
+                                  const pct = totalMinistranci > 0 ? Math.round((count / totalMinistranci) * 100) : 0;
+                                  const isTak = opcja.tresc.toLowerCase() === 'tak';
+                                  const isNie = opcja.tresc.toLowerCase() === 'nie';
+                                  const barColor = isTak ? 'bg-green-500 dark:bg-green-400' : isNie ? 'bg-red-500 dark:bg-red-400' : 'bg-indigo-500 dark:bg-indigo-400';
+                                  const labelColor = isTak ? 'text-green-700 dark:text-green-300' : isNie ? 'text-red-700 dark:text-red-300' : '';
+                                  const countColor = isTak ? 'text-green-600 dark:text-green-400' : isNie ? 'text-red-600 dark:text-red-400' : '';
+                                  const badgeClass = isTak ? 'text-xs bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800' : isNie ? 'text-xs bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800' : 'text-xs';
+
+                                  return (
+                                    <div key={opcja.id} className="space-y-1">
+                                      <div className="flex items-center justify-between">
+                                        <span className={`text-sm font-semibold ${labelColor}`}>{opcja.tresc}</span>
+                                        <span className={`text-sm font-bold ${countColor}`}>{count} ({pct}%)</span>
+                                      </div>
+                                      <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2.5">
+                                        <div className={`${barColor} h-2.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                                      </div>
+                                      {!ukryjMinistrantow && odpowiedziOpcji.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 pt-1">
+                                          {odpowiedziOpcji.map((odp, i) => {
+                                            const m = members.find(mb => mb.profile_id === odp.respondent_id);
+                                            const imie = m ? `${m.imie} ${m.nazwisko || ''}`.trim() : '?';
+                                            return odp.zmieniona ? (
+                                              <Badge key={i} variant="secondary" className="text-xs border border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300" title={`Zmieniona ${odp.zmieniona_at ? new Date(odp.zmieniona_at).toLocaleString('pl-PL') : ''}`}>
+                                                {imie} <span className="ml-1 text-[10px]">zmieniona</span>
+                                              </Badge>
+                                            ) : (
+                                              <Badge key={i} variant="secondary" className={badgeClass}>{imie}</Badge>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {!ukryjMinistrantow && brakOdpowiedzi.length > 0 && (
+                                  <div className="pt-3 border-t">
+                                    <p className="text-xs text-red-600 dark:text-red-400 font-semibold mb-1">Brak odpowiedzi:</p>
+                                    <div className="flex flex-wrap gap-1">
+                                      {brakOdpowiedzi.map(m => (
+                                        <Badge key={m.id} variant="outline" className="text-xs text-red-600 dark:text-red-400 border-red-200 dark:border-red-700">{m.imie} {m.nazwisko || ''}</Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {!ukryjMinistrantow && brakOdpowiedzi.length === 0 && (
+                                  <p className="text-xs text-green-600 dark:text-green-400 pt-2">Wszyscy odpowiedzieli!</p>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Wiadomości w wątku */}
+                    <div className="space-y-2">
+                      {tablicaWiadomosci.length > 0 && (
+                        <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">Komentarze ({tablicaWiadomosci.length})</p>
+                      )}
+                      {tablicaWiadomosci.map(msg => {
+                        const autor = members.find(m => m.profile_id === msg.autor_id);
+                        return (
+                          <div key={msg.id} className={`p-3 rounded-lg ${msg.autor_id === currentUser.id ? 'bg-indigo-100 dark:bg-indigo-900/30 ml-4 sm:ml-8' : 'bg-white dark:bg-gray-800 border mr-4 sm:mr-8'}`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-semibold">{msg.autor_id === currentUser.id ? 'Ty' : (autor ? `${autor.imie} ${autor.nazwisko || ''}`.trim() : 'Ksiądz')}</span>
+                              <span className="text-xs text-gray-400">{new Date(msg.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <p className="text-sm">{msg.tresc}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Pole do pisania wiadomości */}
+                    {!selectedWatek.zamkniety && (
+                      <div className="relative">
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm" className="h-9 w-9 p-0 flex-shrink-0" onClick={() => setShowEmojiPicker(showEmojiPicker === 'wiadomosc' ? null : 'wiadomosc')}>
+                            <Smile className="w-4 h-4 text-gray-400" />
+                          </Button>
+                          <Input
+                            placeholder="Napisz komentarz..."
+                            value={newWiadomoscTresc}
+                            onChange={(e) => setNewWiadomoscTresc(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendWiadomosc(); } }}
+                          />
+                          <Button onClick={sendWiadomosc} disabled={!newWiadomoscTresc.trim()}>
+                            <Send className="w-4 h-4" />
+                          </Button>
+                        </div>
+                        {showEmojiPicker === 'wiadomosc' && (
+                          <div className="absolute bottom-12 left-0 z-50">
+                            <Picker data={data} locale="pl" theme={darkMode ? 'dark' : 'light'} onEmojiSelect={(emoji: { native: string }) => { setNewWiadomoscTresc(prev => prev + emoji.native); setShowEmojiPicker(null); }} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {selectedWatek.zamkniety && (
+                      <p className="text-center text-sm text-gray-400 py-2">Wątek zamknięty — brak możliwości komentowania</p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* === LISTA WĄTKÓW === */}
+              {!selectedWatek && (
+                <div className="space-y-3">
+                  {tablicaWatki.filter(w => {
+                    const gd = w.grupa_docelowa;
+                    if (gd === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
+                    if (gd === 'ministranci' && currentUser.typ !== 'ministrant') return false;
+                    return true;
+                  }).length === 0 ? (
+                    <Card>
+                      <CardContent className="py-12 text-center">
+                        <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 dark:text-gray-400">Brak ogłoszeń</p>
+                        {currentUser.typ === 'ksiadz' && <p className="text-sm text-gray-400 mt-1">Utwórz pierwszy wątek lub ankietę!</p>}
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    tablicaWatki.filter(w => {
+                      const gd = w.grupa_docelowa;
+                      if (gd === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
+                      if (gd === 'ministranci' && currentUser.typ !== 'ministrant') return false;
+                      return true;
+                    }).map(watek => {
+                      const watekAnkieta = ankiety.find(a => a.watek_id === watek.id);
+                      const autorWatku = members.find(m => m.profile_id === watek.autor_id);
+                      const wiadomosciCount = 0; // Policzenie wiadomości wymagałoby joina — uproszczenie
+                      const mojaOdp = watekAnkieta ? ankietyOdpowiedzi.some(o => o.ankieta_id === watekAnkieta.id && o.respondent_id === currentUser.id) : false;
+
+                      return (
+                        <Card
+                          key={watek.id}
+                          className={`cursor-pointer hover:shadow-md transition-shadow ${watek.kategoria === 'ankieta' ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : watek.kategoria === 'ogłoszenie' ? 'border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20' : watek.przypiety ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : ''}`}
+                          onClick={() => {
+                            if (watek.kategoria === 'ogłoszenie') {
+                              setPreviewOgloszenie(watek);
+                              return;
+                            }
+                            setSelectedWatek(watek);
+                            loadWatekWiadomosci(watek.id);
+                            // Oznacz powiadomienia tego wątku jako przeczytane
+                            const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
+                            watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                          }}
+                        >
+                          <CardHeader className="pb-2">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  {watek.przypiety && <Pin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
+                                  <Badge variant={watek.kategoria === 'ankieta' ? 'destructive' : 'secondary'} className={`text-xs ${watek.kategoria === 'ogłoszenie' ? 'bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600' : ''}`}>
+                                    {watek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : watek.kategoria === 'ankieta' ? 'Ankieta' : 'Dyskusja'}
+                                  </Badge>
+                                  {watek.zamkniety && <LockKeyhole className="w-3 h-3 text-red-500" />}
+                                  {watekAnkieta && watekAnkieta.wyniki_ukryte && <EyeOff className="w-3 h-3 text-red-500" />}
+                                </div>
+                                {watek.kategoria !== 'ogłoszenie' && <CardTitle className="text-base">{watek.tytul}</CardTitle>}
+                                {watek.kategoria === 'ogłoszenie' && watek.tresc && (
+                                  <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 mt-1">{renderTresc(watek.tresc)}</div>
+                                )}
+                                {watekAnkieta && (
+                                  <CardDescription className="text-xs mt-1">
+                                    Ważna do: {watekAnkieta.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'bez terminu'}
+                                  </CardDescription>
+                                )}
+                                {watek.kategoria === 'dyskusja' && (
+                                  <CardDescription className="text-xs mt-1">
+                                    {autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} &middot; {new Date(watek.updated_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                  </CardDescription>
+                                )}
+                              </div>
+                              <div className="flex flex-col items-end gap-1">
+                                {/* Ankiety — oryginalne przyciski bez zmian */}
+                                {currentUser.typ === 'ksiadz' && watekAnkieta && (
+                                  <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className={`h-7 px-2 text-xs ${watek.przypiety ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-300' : 'text-gray-500 hover:text-amber-600 hover:border-amber-300'}`}
+                                        onClick={() => togglePrzypiety(watek.id, watek.przypiety)}
+                                      >
+                                        <Pin className="w-3 h-3 mr-1" />
+                                        {watek.przypiety ? 'Odepnij' : 'Przypnij'}
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
+                                        onClick={() => deleteWatek(watek.id)}
+                                      >
+                                        <Trash2 className="w-3 h-3 mr-1" />
+                                        Usuń
+                                      </Button>
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
+                                      onClick={() => {
+                                        setSelectedWatek(watek);
+                                        loadWatekWiadomosci(watek.id);
+                                        const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
+                                        watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                                      }}
+                                    >
+                                      Szczegóły
+                                    </Button>
+                                  </div>
+                                )}
+                                {/* Ogłoszenia */}
+                                {currentUser.typ === 'ksiadz' && !watekAnkieta && watek.kategoria === 'ogłoszenie' && (
+                                  <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+                                    {watek.tytul?.startsWith('[ADMIN]') ? (
+                                      <>
+                                        <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-700 mb-1">
+                                          <Shield className="w-3 h-3 mr-1" />
+                                          Admin
+                                        </Badge>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 w-full text-xs text-teal-600 border-teal-200 hover:bg-teal-50 hover:border-teal-400 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-950 dark:hover:border-teal-600"
+                                          onClick={() => setPreviewOgloszenie(watek)}
+                                        >
+                                          <Eye className="w-3 h-3 mr-1" />
+                                          Pogląd
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 w-full text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
+                                          onClick={() => deleteWatek(watek.id)}
+                                        >
+                                          <Trash2 className="w-3 h-3 mr-1" />
+                                          Usuń
+                                        </Button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="flex items-center gap-1">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className={`h-7 px-2 text-xs ${watek.przypiety ? 'bg-teal-50 border-teal-300 text-teal-700 dark:bg-teal-950 dark:border-teal-700 dark:text-teal-300' : 'text-gray-500 hover:text-amber-600 hover:border-amber-300'}`}
+                                            onClick={() => togglePrzypiety(watek.id, watek.przypiety)}
+                                          >
+                                            <Pin className="w-3 h-3 mr-1" />
+                                            {watek.przypiety ? 'Odepnij' : 'Przypnij'}
+                                          </Button>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 px-2 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
+                                            onClick={() => deleteWatek(watek.id)}
+                                          >
+                                            <Trash2 className="w-3 h-3 mr-1" />
+                                            Usuń
+                                          </Button>
+                                        </div>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
+                                          onClick={() => {
+                                            setEditingWatek(watek);
+                                            setNewWatekForm({ tytul: watek.tytul, tresc: watek.tresc || '', kategoria: watek.kategoria as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: watek.grupa_docelowa || 'wszyscy' });
+                                            setShowNewWatekModal(true);
+                                          }}
+                                        >
+                                          Edytuj
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 w-full text-xs text-teal-600 border-teal-200 hover:bg-teal-50 hover:border-teal-400 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-950 dark:hover:border-teal-600"
+                                          onClick={() => setPreviewOgloszenie(watek)}
+                                        >
+                                          <Eye className="w-3 h-3 mr-1" />
+                                          Pogląd
+                                        </Button>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                                {/* Dyskusje */}
+                                {currentUser.typ === 'ksiadz' && !watekAnkieta && watek.kategoria === 'dyskusja' && (
+                                  <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className={`h-7 px-2 text-xs ${watek.przypiety ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-300' : 'text-gray-500 hover:text-amber-600 hover:border-amber-300'}`}
+                                        onClick={() => togglePrzypiety(watek.id, watek.przypiety)}
+                                      >
+                                        <Pin className="w-3 h-3 mr-1" />
+                                        {watek.przypiety ? 'Odepnij' : 'Przypnij'}
+                                      </Button>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-red-500 border-red-200 hover:bg-red-50 hover:border-red-400 dark:border-red-800 dark:hover:bg-red-950 dark:hover:border-red-600"
+                                        onClick={() => deleteWatek(watek.id)}
+                                      >
+                                        <Trash2 className="w-3 h-3 mr-1" />
+                                        Usuń
+                                      </Button>
+                                    </div>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
+                                      onClick={() => {
+                                        setEditingWatek(watek);
+                                        setNewWatekForm({ tytul: watek.tytul, tresc: watek.tresc || '', kategoria: watek.kategoria as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: watek.grupa_docelowa || 'wszyscy' });
+                                        setShowNewWatekModal(true);
+                                      }}
+                                    >
+                                      Edytuj
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 w-full text-xs text-teal-600 border-teal-200 hover:bg-teal-50 hover:border-teal-400 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-950 dark:hover:border-teal-600"
+                                      onClick={() => setPreviewOgloszenie(watek)}
+                                    >
+                                      <Eye className="w-3 h-3 mr-1" />
+                                      Podgląd
+                                    </Button>
+                                  </div>
+                                )}
+                                {currentUser.typ === 'ministrant' && watekAnkieta && !mojaOdp && watekAnkieta.aktywna && (
+                                  <Badge variant="destructive" className="text-xs animate-pulse">Odpowiedz!</Badge>
+                                )}
+                                {currentUser.typ === 'ministrant' && watekAnkieta && mojaOdp && (
+                                  <CheckCircle className="w-5 h-5 text-green-500" />
+                                )}
+                              </div>
+                            </div>
+                            {watekAnkieta && (() => {
+                              const opcje = ankietyOpcje.filter(o => o.ankieta_id === watekAnkieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc);
+                              const odpowiedzi = ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id);
+                              const unikatoweOsoby = new Set(odpowiedzi.map(o => o.respondent_id)).size;
+                              const pokazWyniki = currentUser.typ === 'ksiadz' || (!watekAnkieta.wyniki_ukryte && mojaOdp);
+                              return pokazWyniki ? (
+                                <div className="flex items-center gap-3 flex-wrap mt-2">
+                                  {opcje.map(opcja => {
+                                    const count = odpowiedzi.filter(od => od.opcja_id === opcja.id).length;
+                                    const pct = unikatoweOsoby > 0 ? Math.round((count / unikatoweOsoby) * 100) : 0;
+                                    const isTak = opcja.tresc.toLowerCase() === 'tak';
+                                    const isNie = opcja.tresc.toLowerCase() === 'nie';
+                                    const bgColor = isTak ? 'bg-green-50 dark:bg-green-950' : isNie ? 'bg-red-50 dark:bg-red-950' : 'bg-indigo-50 dark:bg-indigo-950';
+                                    const textColor = isTak ? 'text-green-700 dark:text-green-300' : isNie ? 'text-red-700 dark:text-red-300' : 'text-gray-700 dark:text-gray-200';
+                                    const countColor = isTak ? 'text-green-600 dark:text-green-400' : isNie ? 'text-red-600 dark:text-red-400' : 'text-indigo-600 dark:text-indigo-400';
+                                    return (
+                                      <span key={opcja.id} className={`inline-flex items-center gap-1 rounded-full ${bgColor} px-2.5 py-0.5 text-sm font-medium`}>
+                                        <span className={textColor}>{opcja.tresc}:</span>
+                                        <span className={`font-bold ${countColor}`}>{count}</span>
+                                        <span className="text-gray-500 dark:text-gray-400">({pct}%)</span>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              ) : null;
+                            })()}
+                          </CardHeader>
+                          {watek.kategoria !== 'ogłoszenie' && watek.tresc && (
+                            <CardContent className="pt-0">
+                              <div className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2">{renderTresc(watek.tresc || '')}</div>
+                              {(watek.tresc.split('\n').length > 2 || watek.tresc.length > 100) && (
+                                <p className="text-xs text-indigo-500 dark:text-indigo-400 mt-1">Pokaż więcej...</p>
+                              )}
+                            </CardContent>
+                          )}
+                        </Card>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Panel Ranking Służby */}
+          <TabsContent value="ranking">
+            <div className="space-y-6">
+              {/* === WIDOK MINISTRANTA === */}
+              {currentUser.typ === 'ministrant' && (() => {
+                const myRanking = rankingData.find(r => r.ministrant_id === currentUser.id);
+                const totalPkt = myRanking ? Number(myRanking.total_pkt) : 0;
+                const currentRanga = getRanga(totalPkt);
+                const nextRanga = getNextRanga(totalPkt);
+                const myObecnosci = obecnosci.filter(o => o.ministrant_id === currentUser.id);
+                const myDyzury = dyzury.filter(d => d.ministrant_id === currentUser.id);
+                const myOdznaki = odznakiZdobyte.filter(o => o.ministrant_id === currentUser.id);
+                const myMinusowe = minusowePunkty.filter(m => m.ministrant_id === currentUser.id);
+                const totalMinusowe = myMinusowe.reduce((sum, m) => sum + Number(m.punkty), 0);
+                const myPosition = rankingData.findIndex(r => r.ministrant_id === currentUser.id) + 1;
+
+                return (
+                  <div className="space-y-6">
+                    {/* Profil ministranta */}
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="flex items-center justify-between mb-4 gap-3">
+                          <div className="min-w-0">
+                            <h3 className="text-lg sm:text-xl font-bold truncate">{currentUser.imie} {currentUser.nazwisko || ''}</h3>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge style={{ backgroundColor: currentRanga ? KOLOR_KLASY[currentRanga.kolor]?.bg.replace('bg-', '').replace('-100', '') : undefined }} className={currentRanga ? `${KOLOR_KLASY[currentRanga.kolor]?.bg} ${KOLOR_KLASY[currentRanga.kolor]?.text}` : ''}>
+                                {currentRanga?.nazwa || 'Ready'}
+                              </Badge>
+                              <span className="text-2xl font-bold">{totalPkt} pkt</span>
+                            </div>
+                          </div>
+                          {myPosition > 0 && (
+                            <div className="text-right">
+                              <div className="text-3xl font-bold">#{myPosition}</div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400">w parafii</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Pasek postępu do następnej rangi */}
+                        {nextRanga && (
+                          <div className="mb-4">
+                            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-300 mb-1">
+                              <span>{currentRanga?.nazwa}</span>
+                              <span>{nextRanga.nazwa} ({nextRanga.min_pkt} pkt)</span>
+                            </div>
+                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3">
+                              <div
+                                className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all"
+                                style={{ width: `${Math.min(100, ((totalPkt - (currentRanga?.min_pkt || 0)) / (nextRanga.min_pkt - (currentRanga?.min_pkt || 0))) * 100)}%` }}
+                              />
+                            </div>
+                            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                              Brakuje {nextRanga.min_pkt - totalPkt} pkt do {nextRanga.nazwa}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Statystyki */}
+                        <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+                          <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                            <Flame className="w-5 h-5 mx-auto text-orange-500 mb-1" />
+                            <div className="font-bold">{myRanking?.streak_tyg || 0} tyg.</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Seria</div>
+                          </div>
+                          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                            <Calendar className="w-5 h-5 mx-auto text-green-500 mb-1" />
+                            <div className="font-bold">{myRanking?.total_obecnosci || 0}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Dni służby</div>
+                          </div>
+                          <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+                            <Target className="w-5 h-5 mx-auto text-red-500 mb-1" />
+                            <div className="font-bold">{totalMinusowe}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Minusowe</div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Przyciski akcji */}
+                    <div className="flex gap-3">
+                      <Button onClick={() => setShowZglosModal(true)} className="flex-1">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Zgłoś obecność
+                      </Button>
+                      <Button variant="outline" onClick={() => setShowDyzuryModal(true)} className="flex-1">
+                        <Clock className="w-4 h-4 mr-2" />
+                        Moje dyżury
+                      </Button>
+                    </div>
+
+                    {/* Dyżury */}
+                    {myDyzury.length > 0 && (
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Shield className="w-4 h-4" />
+                            Twoje dyżury
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex flex-wrap gap-2">
+                            {myDyzury.map(d => (
+                              <Badge key={d.id} variant="secondary" className="text-sm">
+                                {DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
+                              </Badge>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Historia zgłoszeń */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Historia zgłoszeń</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {myObecnosci.length === 0 ? (
+                          <p className="text-gray-500 dark:text-gray-400 text-sm">Brak zgłoszeń. Zacznij służyć i zdobywaj punkty!</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {myObecnosci.slice(0, 15).map(o => {
+                              const d = new Date(o.data);
+                              const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+                              const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay());
+                              return (
+                                <div key={o.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg ${o.status === 'zatwierdzona' ? 'bg-green-50 dark:bg-green-900/20' : o.status === 'odrzucona' ? 'bg-red-50 dark:bg-red-900/20' : 'bg-yellow-50 dark:bg-yellow-900/20'}`}>
+                                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                                    {o.status === 'zatwierdzona' && <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />}
+                                    {o.status === 'oczekuje' && <Hourglass className="w-4 h-4 text-yellow-600 dark:text-yellow-400 shrink-0" />}
+                                    {o.status === 'odrzucona' && <X className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />}
+                                    <span className="text-xs sm:text-sm truncate">
+                                      {dayName} {d.toLocaleDateString('pl-PL')}
+                                      {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
+                                    </span>
+                                    {o.typ === 'nabożeństwo' && (
+                                      <Badge variant="secondary" className="text-xs">{o.nazwa_nabożeństwa}</Badge>
+                                    )}
+                                  </div>
+                                  <span className={`font-bold text-sm ${o.status === 'zatwierdzona' ? 'text-green-700 dark:text-green-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? 'oczekuje' : 'odrzucona'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Minusowe punkty */}
+                    {myMinusowe.length > 0 && (
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base text-red-700 dark:text-red-300 flex items-center gap-2">
+                            <Target className="w-4 h-4" />
+                            Minusowe punkty
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            {myMinusowe.map(m => (
+                              <div key={m.id} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                                <span className="text-sm">{new Date(m.data).toLocaleDateString('pl-PL')} — {m.powod}</span>
+                                <span className="font-bold text-red-700 dark:text-red-300">{m.punkty} pkt</span>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Ranking parafii */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Trophy className="w-4 h-4 text-amber-500" />
+                          Ranking parafii
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {rankingData.length === 0 ? (
+                          <p className="text-gray-500 dark:text-gray-400 text-sm">Brak danych w rankingu.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {rankingData.map((r, i) => {
+                              const member = members.find(m => m.profile_id === r.ministrant_id);
+                              const ranga = getRanga(Number(r.total_pkt));
+                              const isMe = r.ministrant_id === currentUser.id;
+                              return (
+                                <div key={r.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg ${isMe ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700' : 'bg-gray-50 dark:bg-gray-800'}`}>
+                                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                    <span className="font-bold text-base sm:text-lg w-7 sm:w-8 shrink-0">
+                                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                                    </span>
+                                    <div>
+                                      <span className="font-medium">{isMe ? `► ${currentUser.imie} ${currentUser.nazwisko || ''}`.trim() : member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
+                                      {ranga && (
+                                        <Badge className={`ml-2 text-xs ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
+                                          {ranga.nazwa}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="font-bold">{Number(r.total_pkt)} pkt</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Rangi — drabinka */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-blue-500" />
+                          Rangi ({rangiConfig.length})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-1">
+                          {rangiConfig.map((r, i) => {
+                            const isCurrentRanga = currentRanga?.id === r.id;
+                            const isPast = totalPkt >= r.min_pkt;
+                            return (
+                              <div key={r.id} className={`flex items-center justify-between p-2 rounded-lg ${isCurrentRanga ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 font-bold' : isPast ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-50 dark:bg-gray-800 opacity-70'}`}>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs w-5 text-gray-400">{i + 1}.</span>
+                                  <Badge className={`${KOLOR_KLASY[r.kolor]?.bg} ${KOLOR_KLASY[r.kolor]?.text}`}>{r.nazwa}</Badge>
+                                  {isCurrentRanga && <span className="text-xs text-blue-600 dark:text-blue-400">← Twoja ranga</span>}
+                                </div>
+                                <span className="text-sm">{r.min_pkt} pkt</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Odznaki */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Award className="w-4 h-4 text-purple-500" />
+                          Odznaki ({myOdznaki.length}/{odznakiConfig.filter(o => o.aktywna).length})
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 gap-2">
+                          {odznakiConfig.filter(o => o.aktywna).map(odznaka => {
+                            const zdobyta = myOdznaki.find(z => z.odznaka_config_id === odznaka.id);
+                            return (
+                              <div key={odznaka.id} className={`flex items-center gap-3 p-3 rounded-lg ${zdobyta ? 'bg-purple-50 border border-purple-200 dark:border-purple-700' : 'bg-gray-50 dark:bg-gray-800 opacity-60'}`}>
+                                {zdobyta ? <Unlock className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" /> : <Lock className="w-5 h-5 text-gray-400 shrink-0" />}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between">
+                                    <div className="font-medium text-sm">{odznaka.nazwa}</div>
+                                    {odznaka.bonus_pkt > 0 && (
+                                      <Badge variant="outline" className="text-xs shrink-0 ml-2">+{odznaka.bonus_pkt} pkt</Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">{odznaka.opis}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Punktacja — za co są punkty */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Star className="w-4 h-4 text-amber-500" />
+                          Jak zdobywać punkty?
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* Msze */}
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Msze (pon-sob)</h4>
+                          <div className="space-y-1">
+                            {punktacjaConfig.filter(p => p.klucz.startsWith('msza_')).map(p => (
+                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
+                                <span className="font-bold">{p.wartosc} pkt</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Nabożeństwa */}
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nabożeństwa</h4>
+                          <div className="space-y-1">
+                            {punktacjaConfig.filter(p => p.klucz.startsWith('nabożeństwo_')).map(p => (
+                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
+                                <span className="font-bold">{p.wartosc} pkt</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Mnożniki */}
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Mnożniki sezonowe</h4>
+                          <div className="space-y-1">
+                            {punktacjaConfig.filter(p => p.klucz.startsWith('mnoznik_')).map(p => (
+                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
+                                <span className="font-bold">x{p.wartosc}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Bonusy za serie */}
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Bonusy za serie</h4>
+                          <div className="space-y-1">
+                            {punktacjaConfig.filter(p => p.klucz.startsWith('bonus_seria_')).map(p => (
+                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
+                                <span className="font-bold text-green-700 dark:text-green-300">+{p.wartosc} pkt</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Ranking miesięczny */}
+                        {punktacjaConfig.filter(p => p.klucz.startsWith('ranking_')).length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Bonusy za ranking miesięczny</h4>
+                            <div className="space-y-1">
+                              {punktacjaConfig.filter(p => p.klucz.startsWith('ranking_')).map(p => (
+                                <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                                  <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
+                                  <span className="font-bold text-amber-700 dark:text-amber-300">+{p.wartosc} pkt</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Minusowe */}
+                        <div>
+                          <h4 className="text-sm font-medium text-red-700 dark:text-red-300 mb-1">Minusowe punkty</h4>
+                          <div className="space-y-1">
+                            {punktacjaConfig.filter(p => p.klucz.startsWith('minus_')).map(p => (
+                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
+                                <span className="font-bold text-red-600 dark:text-red-400">{p.wartosc} pkt</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Ogólne zasady */}
+                        <div className="border-t pt-3">
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Ogólne zasady</h4>
+                          <ul className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                            <li>• Niedziela jest <strong>obowiązkowa</strong> — 0 pkt</li>
+                            <li>• Zgłoszenie max <strong>{getConfigValue('limit_dni_zgloszenie', 2)} dni</strong> od daty służby</li>
+                            <li>• Nieobecność na dyżurze: <strong>{getConfigValue('minus_nieobecnosc_dyzur', -5)} pkt</strong></li>
+                            <li>• Ksiądz zatwierdza każde zgłoszenie</li>
+                            <li>• Nabożeństwa dają punkty niezależnie od mszy</li>
+                          </ul>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                );
+              })()}
+
+              {/* === WIDOK KSIĘDZA === */}
+              {currentUser.typ === 'ksiadz' && (
+                <div className="space-y-6">
+                  {/* Przycisk ustawień */}
+                  <div className="flex justify-end">
+                    <Button variant="outline" onClick={() => setShowRankingSettings(!showRankingSettings)}>
+                      <Settings className="w-4 h-4 mr-2" />
+                      Ustawienia punktacji
+                      {showRankingSettings ? <ChevronUp className="w-4 h-4 ml-2" /> : <ChevronDown className="w-4 h-4 ml-2" />}
+                    </Button>
+                  </div>
+
+                  {/* Panel ustawień (rozwijany) */}
+                  {showRankingSettings && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Settings className="w-5 h-5" />
+                          Ustawienia punktacji
+                        </CardTitle>
+                        <CardDescription>Edytuj wartości punktowe, rangi i odznaki</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {/* Jeśli brak danych — przycisk inicjalizacji */}
+                        {punktacjaConfig.length === 0 && rangiConfig.length === 0 && odznakiConfig.length === 0 && (
+                          <div className="text-center py-6 space-y-3">
+                            <p className="text-gray-500 dark:text-gray-400">Brak konfiguracji punktacji. Kliknij poniżej, aby zainicjalizować domyślne punkty, rangi i odznaki.</p>
+                            <Button onClick={initRankingConfig}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Zainicjalizuj konfigurację
+                            </Button>
+                          </div>
+                        )}
+
+                        {(punktacjaConfig.length > 0 || rangiConfig.length > 0 || odznakiConfig.length > 0) && (
+                        <>
+                        <div className="flex gap-2 mb-4 flex-wrap">
+                          {(['punkty', 'rangi', 'odznaki', 'ogolne'] as const).map(tab => (
+                            <Button key={tab} variant={rankingSettingsTab === tab ? 'default' : 'outline'} size="sm" onClick={() => setRankingSettingsTab(tab)}>
+                              {tab === 'punkty' ? 'Punkty' : tab === 'rangi' ? 'Rangi' : tab === 'odznaki' ? 'Odznaki' : 'Ogólne'}
+                            </Button>
+                          ))}
+                        </div>
+
+                        {/* Edycja punktów */}
+                        {rankingSettingsTab === 'punkty' && (
+                          <div className="space-y-4">
+                            {[
+                              { label: 'Punkty za msze', prefix: 'msza_', step: 1 },
+                              { label: 'Nabożeństwa', prefix: 'nabożeństwo_', step: 1 },
+                              { label: 'Mnożniki sezonowe', prefix: 'mnoznik_', step: 0.1 },
+                              { label: 'Bonusy za serie', prefix: 'bonus_seria_', step: 1 },
+                              { label: 'Ranking miesięczny', prefix: 'ranking_', step: 1 },
+                              { label: 'Minusowe punkty', prefix: 'minus_', step: 1 },
+                            ].map(({ label, prefix, step }) => {
+                              const items = punktacjaConfig.filter(p => p.klucz.startsWith(prefix));
+                              if (items.length === 0) return null;
+                              return (
+                                <div key={prefix}>
+                                  <h4 className="font-medium text-sm text-gray-500 dark:text-gray-400 mb-2">{label}</h4>
+                                  {items.map(p => (
+                                    <div key={p.klucz} className="flex items-center gap-2 mb-2">
+                                      <Input
+                                        className="flex-1 text-sm"
+                                        value={p.opis}
+                                        onChange={(e) => {
+                                          setPunktacjaConfig(prev => prev.map(x => x.klucz === p.klucz ? { ...x, opis: e.target.value } : x));
+                                        }}
+                                        onBlur={() => updateConfigOpis(p.klucz, p.opis)}
+                                      />
+                                      <Input
+                                        type="number"
+                                        step={step}
+                                        className="w-20"
+                                        value={p.wartosc}
+                                        onChange={(e) => updateConfigValue(p.klucz, Number(e.target.value))}
+                                      />
+                                      <span className="text-xs text-gray-400 w-8">{prefix.startsWith('mnoznik') ? 'x' : 'pkt'}</span>
+                                      <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deletePunktacja(p.id)}>
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+
+                            {/* Dodaj nowy wpis */}
+                            <div className="border-t pt-4">
+                              {!showNewPunktacjaForm ? (
+                                <Button variant="outline" size="sm" onClick={() => setShowNewPunktacjaForm(true)}>
+                                  <Plus className="w-4 h-4 mr-2" />
+                                  Dodaj nowy wpis punktacji
+                                </Button>
+                              ) : (
+                                <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                  <div className="flex gap-2">
+                                    <Input
+                                      placeholder="Klucz (np. msza_custom)"
+                                      className="flex-1"
+                                      value={newPunktacjaForm.klucz}
+                                      onChange={(e) => setNewPunktacjaForm(prev => ({ ...prev, klucz: e.target.value }))}
+                                    />
+                                    <Input
+                                      type="number"
+                                      placeholder="Wartość"
+                                      className="w-24"
+                                      value={newPunktacjaForm.wartosc || ''}
+                                      onChange={(e) => setNewPunktacjaForm(prev => ({ ...prev, wartosc: Number(e.target.value) }))}
+                                    />
+                                  </div>
+                                  <Input
+                                    placeholder="Opis (np. Msza — specjalna)"
+                                    value={newPunktacjaForm.opis}
+                                    onChange={(e) => setNewPunktacjaForm(prev => ({ ...prev, opis: e.target.value }))}
+                                  />
+                                  <div className="flex gap-2">
+                                    <Button size="sm" onClick={async () => {
+                                      if (newPunktacjaForm.klucz && newPunktacjaForm.opis) {
+                                        await addPunktacja(newPunktacjaForm.klucz, newPunktacjaForm.wartosc, newPunktacjaForm.opis);
+                                        setNewPunktacjaForm({ klucz: '', wartosc: 0, opis: '' });
+                                        setShowNewPunktacjaForm(false);
+                                      }
+                                    }}>
+                                      <Check className="w-4 h-4 mr-1" />
+                                      Dodaj
+                                    </Button>
+                                    <Button variant="ghost" size="sm" onClick={() => setShowNewPunktacjaForm(false)}>
+                                      Anuluj
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Edycja rang */}
+                        {rankingSettingsTab === 'rangi' && (
+                          <div className="space-y-3">
+                            {rangiConfig.map(r => (
+                              <div key={r.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
+                                <Select value={r.kolor} onValueChange={(val) => {
+                                  setRangiConfig(prev => prev.map(x => x.id === r.id ? { ...x, kolor: val } : x));
+                                  updateRangaKolor(r.id, val);
+                                }}>
+                                  <SelectTrigger className={`w-10 h-8 p-0 ${KOLOR_KLASY[r.kolor]?.bg}`}>
+                                    <span />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.keys(KOLOR_KLASY).map(k => (
+                                      <SelectItem key={k} value={k}>
+                                        <span className={`inline-block w-4 h-4 rounded ${KOLOR_KLASY[k]?.bg} mr-2`} />
+                                        {k}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  className="flex-1"
+                                  value={r.nazwa}
+                                  onChange={(e) => {
+                                    setRangiConfig(prev => prev.map(x => x.id === r.id ? { ...x, nazwa: e.target.value } : x));
+                                  }}
+                                  onBlur={() => updateRanga(r.id, r.nazwa, r.min_pkt)}
+                                />
+                                <span className="text-xs text-gray-500 dark:text-gray-400">od</span>
+                                <Input
+                                  type="number"
+                                  className="w-24"
+                                  value={r.min_pkt}
+                                  onChange={(e) => {
+                                    setRangiConfig(prev => prev.map(x => x.id === r.id ? { ...x, min_pkt: Number(e.target.value) } : x));
+                                  }}
+                                  onBlur={() => updateRanga(r.id, r.nazwa, r.min_pkt)}
+                                />
+                                <span className="text-xs text-gray-500 dark:text-gray-400">pkt</span>
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deleteRanga(r.id)}>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            ))}
+                            <Button variant="outline" size="sm" onClick={addRanga}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Dodaj rangę
+                            </Button>
+                          </div>
+                        )}
+
+                        {/* Edycja odznak */}
+                        {rankingSettingsTab === 'odznaki' && (
+                          <div className="space-y-3">
+                            {odznakiConfig.map(o => (
+                              <div key={o.id} className={`p-3 rounded-lg space-y-2 ${o.aktywna ? 'bg-gray-50 dark:bg-gray-800' : 'bg-gray-100 dark:bg-gray-700 opacity-60'}`}>
+                                {editingOdznakaId === o.id ? (
+                                  <div className="space-y-2">
+                                    <Input
+                                      value={o.nazwa}
+                                      placeholder="Nazwa odznaki"
+                                      onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, nazwa: e.target.value } : x))}
+                                    />
+                                    <Input
+                                      value={o.opis}
+                                      placeholder="Opis odznaki"
+                                      onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, opis: e.target.value } : x))}
+                                    />
+                                    <div className="flex gap-2">
+                                      <div className="flex-1">
+                                        <Label className="text-xs text-gray-500 dark:text-gray-400">Typ warunku</Label>
+                                        <Select value={o.warunek_typ} onValueChange={(val) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, warunek_typ: val } : x))}>
+                                          <SelectTrigger className="h-8 text-xs">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {['total_obecnosci', 'pelny_tydzien', 'ranking_miesieczny', 'sezon_adwent', 'sezon_wielki_post', 'triduum', 'nabożeństwo_droga_krzyzowa', 'nabożeństwo_rozaniec', 'nabożeństwo_majowe', 'rekord_parafii', 'zero_minusowych_tyg', 'streak_tyg'].map(t => (
+                                              <SelectItem key={t} value={t}>{t}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs text-gray-500 dark:text-gray-400">Wartość</Label>
+                                        <Input
+                                          type="number"
+                                          className="w-20 h-8"
+                                          value={o.warunek_wartosc}
+                                          onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, warunek_wartosc: Number(e.target.value) } : x))}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs text-gray-500 dark:text-gray-400">Bonus pkt</Label>
+                                        <Input
+                                          type="number"
+                                          className="w-20 h-8"
+                                          value={o.bonus_pkt}
+                                          onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, bonus_pkt: Number(e.target.value) } : x))}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button size="sm" onClick={async () => {
+                                        await updateOdznaka(o.id, { nazwa: o.nazwa, opis: o.opis, warunek_typ: o.warunek_typ, warunek_wartosc: o.warunek_wartosc, bonus_pkt: o.bonus_pkt });
+                                        setEditingOdznakaId(null);
+                                      }}>
+                                        <Check className="w-4 h-4 mr-1" />
+                                        Zapisz
+                                      </Button>
+                                      <Button variant="ghost" size="sm" onClick={() => { setEditingOdznakaId(null); loadRankingData(); }}>
+                                        Anuluj
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Award className="w-4 h-4 text-purple-500" />
+                                        <span className="font-medium text-sm">{o.nazwa}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <Badge variant="outline" className="text-xs">+{o.bonus_pkt} pkt</Badge>
+                                        <Button variant="ghost" size="sm" className="px-2" onClick={() => updateOdznaka(o.id, { aktywna: !o.aktywna })}>
+                                          {o.aktywna ? <Unlock className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <Lock className="w-3.5 h-3.5 text-gray-400" />}
+                                        </Button>
+                                        <Button variant="ghost" size="sm" className="px-2" onClick={() => setEditingOdznakaId(o.id)}>
+                                          <Pencil className="w-3.5 h-3.5" />
+                                        </Button>
+                                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deleteOdznaka(o.id)}>
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">{o.opis}</div>
+                                    <div className="text-xs text-gray-400">Warunek: {o.warunek_typ} &ge; {o.warunek_wartosc}</div>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                            <Button variant="outline" size="sm" onClick={addOdznaka}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Dodaj odznakę
+                            </Button>
+                          </div>
+                        )}
+
+                        {/* Ogólne */}
+                        {rankingSettingsTab === 'ogolne' && (
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <div className="text-sm font-medium">Limit dni na zgłoszenie</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">Ile dni po służbie ministrant może zgłosić obecność</div>
+                              </div>
+                              <Input
+                                type="number"
+                                className="w-20"
+                                value={getConfigValue('limit_dni_zgloszenie', 2)}
+                                onChange={(e) => updateConfigValue('limit_dni_zgloszenie', Number(e.target.value))}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Oczekujące zgłoszenia */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Hourglass className="w-4 h-4 text-yellow-500" />
+                          Oczekujące zgłoszenia ({obecnosci.filter(o => o.status === 'oczekuje').length})
+                        </CardTitle>
+                        {obecnosci.filter(o => o.status === 'oczekuje').length > 1 && (
+                          <Button size="sm" onClick={zatwierdzWszystkie} className="px-2 sm:px-3">
+                            <Check className="w-4 h-4 sm:mr-1" />
+                            <span className="hidden sm:inline">Zatwierdź wszystkie</span>
+                          </Button>
+                        )}
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {obecnosci.filter(o => o.status === 'oczekuje').length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Brak oczekujących zgłoszeń.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {obecnosci.filter(o => o.status === 'oczekuje').map(o => {
+                            const member = members.find(m => m.profile_id === o.ministrant_id);
+                            const d = new Date(o.data);
+                            const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+                            const isDyzur = dyzury.some(dy => dy.ministrant_id === o.ministrant_id && dy.dzien_tygodnia === d.getDay());
+                            return (
+                              <div key={o.id} className="flex items-center justify-between gap-2 p-2 sm:p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
+                                <div className="min-w-0">
+                                  <div className="font-medium text-sm sm:text-base truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</div>
+                                  <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                                    {dayName} {d.toLocaleDateString('pl-PL')} {o.godzina && `• ${o.godzina}`}
+                                    {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
+                                  </div>
+                                  <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                                    {o.typ === 'nabożeństwo' ? o.nazwa_nabożeństwa : 'Msza'}
+                                    {' • '}{o.punkty_finalne} pkt {o.mnoznik > 1 ? `(${o.punkty_bazowe} × ${o.mnoznik})` : ''}
+                                  </div>
+                                </div>
+                                <div className="flex gap-1.5 sm:gap-2 shrink-0">
+                                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => zatwierdzObecnosc(o.id)}>
+                                    <Check className="w-4 h-4" />
+                                  </Button>
+                                  <Button size="sm" variant="destructive" onClick={() => odrzucObecnosc(o.id)}>
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Grafik dyżurów */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Shield className="w-4 h-4" />
+                        Grafik dyżurów
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {dyzury.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Żaden ministrant nie ustawił jeszcze dyżurów.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {DNI_TYGODNIA_FULL.map((dzien, i) => {
+                            const dzienIdx = i === 6 ? 0 : i + 1; // Convert Mon=0..Sun=6 to Sun=0..Sat=6
+                            const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
+                            if (dyzuryDnia.length === 0) return null;
+                            return (
+                              <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                                <span className="font-medium text-sm w-28">{dzien}:</span>
+                                <div className="flex flex-wrap gap-1">
+                                  {dyzuryDnia.map(d => {
+                                    const member = members.find(m => m.profile_id === d.ministrant_id);
+                                    return <Badge key={d.id} variant="secondary">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</Badge>;
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Ranking parafii */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Trophy className="w-4 h-4 text-amber-500" />
+                        Ranking parafii
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {rankingData.length === 0 ? (
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Brak danych w rankingu.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {rankingData.map((r, i) => {
+                            const member = members.find(m => m.profile_id === r.ministrant_id);
+                            const ranga = getRanga(Number(r.total_pkt));
+                            return (
+                              <div key={r.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
+                                <div className="flex items-center gap-3">
+                                  <span className="font-bold text-lg w-8">
+                                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                                  </span>
+                                  <div>
+                                    <span className="font-medium">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
+                                    {ranga && (
+                                      <Badge className={`ml-2 text-xs ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
+                                        {ranga.nazwa}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <span className="font-bold">{Number(r.total_pkt)} pkt</span>
+                                  {Number(r.total_minusowe) < 0 && (
+                                    <span className="text-xs text-red-600 dark:text-red-400 ml-2">{r.total_minusowe} min.</span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Statystyki */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Statystyki miesiąca</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+                        <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                          <div className="font-bold text-lg">{obecnosci.filter(o => o.status === 'zatwierdzona').length}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Zatwierdzone</div>
+                        </div>
+                        <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+                          <div className="font-bold text-lg">{obecnosci.filter(o => o.status === 'odrzucona').length}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Odrzucone</div>
+                        </div>
+                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
+                          <div className="font-bold text-lg">{minusowePunkty.length}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Minusowe</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Panel Wydarzenia */}
+          <TabsContent value="sluzby">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-bold">Wydarzenia</h2>
+                {currentUser.typ === 'ksiadz' && (
+                  <Button onClick={() => {
+                    setSelectedSluzba(null);
+                    setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+                    setShowSluzbaModal(true);
+                  }}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Dodaj wydarzenie
+                  </Button>
+                )}
+              </div>
+
+              <div className="grid gap-4">
+                {sluzby.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
+                      Brak zaplanowanych wydarzeń
+                    </CardContent>
+                  </Card>
+                ) : (
+                  sluzby.map(sluzba => {
+                    const isMySluzba = isSluzbaAssignedToMe(sluzba);
+                    const myFunkcje = getMyFunkcje(sluzba);
+                    const needsAcceptance = hasUnacceptedFunkcje(sluzba);
+
+                    return (
+                      <Card key={sluzba.id} className={isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : ''}>
+                        <CardHeader>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <CardTitle>{sluzba.nazwa}</CardTitle>
+                              <CardDescription>
+                                {new Date(sluzba.data).toLocaleDateString('pl-PL')} • {sluzba.godzina}
+                              </CardDescription>
+                            </div>
+                            {currentUser.typ === 'ksiadz' && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Edytuj wydarzenie"
+                                onClick={() => handleEditSluzba(sluzba)}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          {/* Widok księdza — pełna lista funkcji */}
+                          {currentUser.typ === 'ksiadz' && (
+                            <div className="space-y-2">
+                              {sluzba.funkcje
+                                .filter(f => f.aktywna)
+                                .map((funkcja) => (
+                                  <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded border">
+                                    <span className="font-medium text-sm shrink-0">{funkcja.typ}:</span>
+                                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                                      <span className="text-sm truncate">
+                                        {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
+                                      </span>
+                                      {funkcja.ministrant_id && (
+                                        funkcja.zaakceptowana ? (
+                                          <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                        ) : (
+                                          <Hourglass className="w-4 h-4 text-amber-600" />
+                                        )
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+
+                          {/* Widok ministranta — tylko jego funkcje */}
+                          {currentUser.typ === 'ministrant' && (() => {
+                            const dniDoWydarzenia = Math.ceil((new Date(sluzba.data).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+
+                            return (
+                              <div className="space-y-2">
+                                {isMySluzba ? (
+                                  <>
+                                    {myFunkcje.map((f) => (
+                                      <div key={f.id} className="space-y-2">
+                                        <div className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border">
+                                          <span className="font-medium">Twoja funkcja: {f.typ}</span>
+                                          {f.zaakceptowana ? (
+                                            <Badge className="bg-green-100 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">Zaakceptowana</Badge>
+                                          ) : (
+                                            <Badge variant="outline" className="text-amber-600 border-amber-300 dark:border-amber-700">Oczekuje</Badge>
+                                          )}
+                                        </div>
+                                        {f.zaakceptowana && (
+                                          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 space-y-2">
+                                            <p className="text-sm text-indigo-800 dark:text-indigo-200">{FUNKCJE_OPISY[f.typ as FunkcjaType] || 'Brak opisu funkcji.'}</p>
+                                            <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                                              {dniDoWydarzenia === 0 ? 'Wydarzenie dzisiaj!' :
+                                               dniDoWydarzenia === 1 ? 'Wydarzenie jutro!' :
+                                               dniDoWydarzenia < 0 ? 'Wydarzenie już się odbyło' :
+                                               `Do wydarzenia: ${dniDoWydarzenia} ${dniDoWydarzenia < 5 ? 'dni' : 'dni'}`}
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                    {needsAcceptance && (
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleAcceptSluzba(sluzba)}
+                                        className="w-full mt-2"
+                                      >
+                                        <Check className="w-4 h-4 mr-1" />
+                                        Akceptuję wydarzenie
+                                      </Button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p className="text-sm text-gray-400 text-center py-2">Nie jesteś przypisany do tego wydarzenia</p>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Panel Ministranci (tylko ksiądz) */}
+          {currentUser.typ === 'ksiadz' && (
+            <TabsContent value="ministranci">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center flex-wrap gap-2">
+                  <h2 className="text-xl sm:text-2xl font-bold">Ministranci</h2>
+                  <div className="flex gap-1.5 sm:gap-2 flex-wrap">
+                    <Button size="sm" onClick={() => setShowInviteModal(true)} className="px-2 sm:px-3">
+                      <Mail className="w-4 h-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Zaproś email</span>
+                    </Button>
+                    <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setShowEmailModal(true); }} variant="outline" className="px-2 sm:px-3">
+                      <Send className="w-4 h-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Mail zbiorczy</span>
+                    </Button>
+                    <Button size="sm" onClick={() => setShowGrupyEditModal(true)} variant="outline" className="px-2 sm:px-3">
+                      <Pencil className="w-4 h-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Edytuj grupy</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Nieprzypisani */}
+                {members.filter(m => !m.grupa && m.typ === 'ministrant').length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="text-lg font-bold">⚠️ Nieprzypisani</h3>
+                    </div>
+                    <div className="grid gap-3">
+                      {members.filter(m => !m.grupa && m.typ === 'ministrant').map(member => (
+                        <Card key={member.id} className="border-amber-400 dark:border-amber-600">
+                          <CardContent className="py-3 sm:py-4">
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="min-w-0">
+                                <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''}</p>
+                                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
+                              </div>
+                              <Button
+                                size="sm"
+                                className="shrink-0 px-2 sm:px-3"
+                                onClick={() => {
+                                  setSelectedMember(member);
+                                  setShowGrupaModal(true);
+                                }}
+                              >
+                                <Users className="w-4 h-4 sm:mr-1" />
+                                <span className="hidden sm:inline">Przypisz grupę</span>
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Grupy */}
+                {grupy.map(grupa => {
+                  const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant');
+                  const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
+
+                  return groupMembers.length > 0 && (
+                    <div key={grupa.id}>
+                      <div className={`flex items-center justify-between mb-2 p-2 ${kolory.bg} rounded`}>
+                        <h3 className={`text-lg font-bold ${kolory.text}`}>
+                          {grupa.emoji} {grupa.nazwa}
+                        </h3>
+                        <Badge variant="secondary">{groupMembers.length}</Badge>
+                      </div>
+                      <div className="grid gap-3 mb-6">
+                        {groupMembers.map(member => (
+                          <Card key={member.id}>
+                            <CardContent className="py-3 sm:py-4">
+                              <div className="flex justify-between items-start gap-2">
+                                <div className="min-w-0">
+                                  <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''}</p>
+                                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
+                                  {member.role.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                      {member.role.map(r => {
+                                        const posluga = poslugi.find(p => p.slug === r);
+                                        return (
+                                          <Badge key={r} variant="outline" className="flex items-center gap-1">
+                                            {posluga?.obrazek_url ? (
+                                              <img src={posluga.obrazek_url} alt={posluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
+                                            ) : posluga?.emoji} {posluga?.nazwa}
+                                          </Badge>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    title="Zmień grupę"
+                                    onClick={() => {
+                                      setSelectedMember(member);
+                                      setShowGrupaModal(true);
+                                    }}
+                                  >
+                                    <Users className="w-4 h-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    title="Przypisz posługi"
+                                    onClick={() => {
+                                      setSelectedMember(member);
+                                      setShowPoslugiModal(true);
+                                    }}
+                                  >
+                                    <Bell className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+              </div>
+            </TabsContent>
+          )}
+
+          {/* Panel Posługi */}
+          <TabsContent value="poslugi">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center gap-2">
+                <h2 className="text-xl sm:text-2xl font-bold">Posługi Liturgiczne</h2>
+                {currentUser.typ === 'ksiadz' && (
+                  <Button onClick={() => setShowAddPoslugaModal(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Dodaj posługę
+                  </Button>
+                )}
+              </div>
+              {currentUser.typ === 'ksiadz' && (
+                <Card>
+                  <CardContent className="py-4">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      Posługi można przypisywać ministrantom w panelu &quot;Ministranci&quot; klikając ikonę dzwonka przy każdym ministranciem.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+              <div className="grid gap-3">
+                {poslugi.map(posluga => {
+                  const kolory = KOLOR_KLASY[posluga.kolor] || KOLOR_KLASY.gray;
+                  const isExpanded = expandedPosluga === posluga.id;
+                  const hasDetails = !!(posluga.dlugi_opis || (posluga.zdjecia && posluga.zdjecia.length > 0) || posluga.youtube_url);
+                  const youtubeEmbed = posluga.youtube_url ? getYoutubeEmbedUrl(posluga.youtube_url) : null;
+                  return (
+                    <Card key={posluga.id}>
+                      <CardHeader
+                        className={hasDetails ? 'cursor-pointer' : ''}
+                        onClick={() => hasDetails && setExpandedPosluga(isExpanded ? null : posluga.id)}
+                      >
+                        <div className="flex items-center gap-3 sm:gap-4">
+                          {posluga.obrazek_url ? (
+                            <img src={posluga.obrazek_url} alt={posluga.nazwa} className="h-14 sm:h-20 max-w-18 sm:max-w-24 object-contain shrink-0" />
+                          ) : (
+                            <div className={`w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-white ${kolory.border} border-2 flex items-center justify-center text-2xl sm:text-3xl shrink-0 overflow-hidden`}>
+                              {posluga.emoji}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <CardTitle className="text-lg">{posluga.nazwa}</CardTitle>
+                            <CardDescription>{posluga.opis}</CardDescription>
+                            {hasDetails && (
+                              <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
+                                <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                <span>{isExpanded ? 'Zwiń' : 'Szczegóły'}</span>
+                              </div>
+                            )}
+                          </div>
+                          {currentUser.typ === 'ksiadz' && (
+                            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Edytuj posługę"
+                                onClick={() => {
+                                  setEditingPosluga({ ...posluga });
+                                  setEditGalleryFiles([]);
+                                  setEditGalleryPreviews([]);
+                                  setShowPoslugaEditModal(true);
+                                }}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Usuń posługę"
+                                onClick={() => handleDeletePosluga(posluga.id)}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </CardHeader>
+                      {isExpanded && (
+                        <CardContent className="pt-0 space-y-4">
+                          <div className="border-t pt-4" />
+                          {posluga.dlugi_opis && (
+                            <div>
+                              <p className="text-sm whitespace-pre-wrap">{posluga.dlugi_opis}</p>
+                            </div>
+                          )}
+                          {posluga.zdjecia && posluga.zdjecia.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <ImageIcon className="w-4 h-4 text-gray-500" />
+                                <span className="text-sm font-medium text-gray-500">Zdjęcia</span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {posluga.zdjecia.map((url, i) => (
+                                  <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                                    <img src={url} alt={`${posluga.nazwa} ${i + 1}`} className="w-full h-32 sm:h-40 object-cover rounded-lg border hover:opacity-90 transition-opacity" />
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {youtubeEmbed && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Video className="w-4 h-4 text-gray-500" />
+                                <span className="text-sm font-medium text-gray-500">Film</span>
+                              </div>
+                              <div className="aspect-video rounded-lg overflow-hidden">
+                                <iframe
+                                  src={youtubeEmbed}
+                                  className="w-full h-full"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                  allowFullScreen
+                                  title={posluga.nazwa}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Panel Kalendarz Liturgiczny */}
+          <TabsContent value="kalendarz">
+            <div className="space-y-4">
+              <h2 className="text-xl sm:text-2xl font-bold">Kalendarz Liturgiczny</h2>
+
+              {/* Nawigacja miesięczna */}
+              <div className="flex items-center justify-between">
+                <Button
+                  variant="outline"
+                  onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                >
+                  ←
+                </Button>
+                <h3 className="text-xl font-bold">
+                  {MIESIACE[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}
+                </h3>
+                <Button
+                  variant="outline"
+                  onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                >
+                  →
+                </Button>
+              </div>
+
+              {/* Legenda kolorów */}
+              <div className="flex flex-wrap gap-3 text-xs">
+                {Object.entries(KOLORY_LITURGICZNE).map(([key, val]) => (
+                  <div key={key} className="flex items-center gap-1">
+                    <div className={`w-3 h-3 rounded-full ${val.dot}`} />
+                    <span>{val.nazwa}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Siatka kalendarza */}
+              {(() => {
+                const year = calendarMonth.getFullYear();
+                const month = calendarMonth.getMonth();
+                const days = getLiturgicalMonth(year, month);
+                const firstDayOfMonth = new Date(year, month, 1);
+                // poniedziałek = 0, niedziela = 6
+                const startDow = (firstDayOfMonth.getDay() + 6) % 7;
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+                const cells: (DzienLiturgiczny | null)[] = [];
+                for (let i = 0; i < startDow; i++) cells.push(null);
+                days.forEach(d => cells.push(d));
+                while (cells.length % 7 !== 0) cells.push(null);
+
+                return (
+                  <div>
+                    {/* Nagłówki dni tygodnia */}
+                    <div className="grid grid-cols-7 gap-1 mb-1">
+                      {DNI_TYGODNIA.map(d => (
+                        <div key={d} className="text-center text-xs font-bold text-gray-500 dark:text-gray-400 py-1">
+                          {d}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Komórki kalendarza */}
+                    <div className="grid grid-cols-7 gap-1">
+                      {cells.map((day, idx) => {
+                        if (!day) {
+                          return <div key={`empty-${idx}`} className="h-16 sm:h-20 md:h-24" />;
+                        }
+
+                        const kolory = KOLORY_LITURGICZNE[day.kolor] || KOLORY_LITURGICZNE.zielony;
+                        const isToday = day.date === todayStr;
+                        const isUroczystosc = day.ranga === 'uroczystosc' || day.ranga === 'swieto';
+                        const dayNum = new Date(day.date).getDate();
+
+                        return (
+                          <button
+                            key={day.date}
+                            onClick={() => setSelectedDay(day)}
+                            className={`h-16 sm:h-20 md:h-24 rounded-lg p-1 text-left transition-all hover:ring-2 hover:ring-indigo-400 ${kolory.bg} ${kolory.border} border ${isToday ? 'ring-2 ring-indigo-600 ring-offset-1' : ''}`}
+                          >
+                            <div className="flex items-center gap-1">
+                              <div className={`w-2 h-2 rounded-full ${kolory.dot} shrink-0`} />
+                              <span className={`text-sm font-bold ${kolory.text}`}>{dayNum}</span>
+                            </div>
+                            {day.nazwa && (
+                              <p className={`text-[10px] md:text-xs leading-tight mt-0.5 ${kolory.text} ${isUroczystosc ? 'font-semibold' : ''} line-clamp-2`}>
+                                {day.nazwa}
+                              </p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Dialog szczegółów dnia */}
+            <Dialog open={!!selectedDay} onOpenChange={(open) => { if (!open) setSelectedDay(null); }}>
+              <DialogContent>
+                {selectedDay && (() => {
+                  const kolory = KOLORY_LITURGICZNE[selectedDay.kolor] || KOLORY_LITURGICZNE.zielony;
+                  const dateObj = new Date(selectedDay.date);
+                  const dow = (dateObj.getDay() + 6) % 7;
+                  return (
+                    <>
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-3">
+                          <div className={`w-4 h-4 rounded-full ${kolory.dot}`} />
+                          {dateObj.getDate()} {MIESIACE[dateObj.getMonth()]} {dateObj.getFullYear()}
+                        </DialogTitle>
+                        <DialogDescription>
+                          {DNI_TYGODNIA_FULL[dow]}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className={`p-4 rounded-lg ${kolory.bg} ${kolory.border} border`}>
+                          {selectedDay.nazwa ? (
+                            <p className={`text-lg font-bold ${kolory.text}`}>{selectedDay.nazwa}</p>
+                          ) : (
+                            <p className={`text-lg ${kolory.text}`}>Dzień powszedni</p>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Okres</p>
+                            <p className="font-medium">{selectedDay.okres}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Ranga</p>
+                            <p className="font-medium">{RANGI[selectedDay.ranga]}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Kolor liturgiczny</p>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-4 h-4 rounded-full ${kolory.dot}`} />
+                              <p className="font-medium">{kolory.nazwa}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+
+          {/* Panel Modlitwy */}
+          <TabsContent value="modlitwy">
+            <div className="space-y-4">
+              <h2 className="text-xl sm:text-2xl font-bold">Modlitwy</h2>
+              <Accordion type="single" collapsible>
+                <AccordionItem value="przed">
+                  <AccordionTrigger className="text-lg font-semibold">
+                    Modlitwa ministranta przed Mszą
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <Card>
+                      <CardContent className="py-4 whitespace-pre-line">
+                        {MODLITWY.przed}
+                      </CardContent>
+                    </Card>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="po">
+                  <AccordionTrigger className="text-lg font-semibold">
+                    Modlitwa po Mszy Świętej
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <Card>
+                      <CardContent className="py-4 whitespace-pre-line">
+                        {MODLITWY.po}
+                      </CardContent>
+                    </Card>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="lacina">
+                  <AccordionTrigger className="text-lg font-semibold">
+                    Odpowiedzi ministrantów (łacina)
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <Card>
+                      <CardContent className="py-4 whitespace-pre-line font-mono text-sm">
+                        {MODLITWY.lacina}
+                      </CardContent>
+                    </Card>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </div>
+          </TabsContent>
+
+          {/* Panel Wskazówki */}
+          <TabsContent value="wskazowki">
+            <div className="space-y-4">
+              <h2 className="text-xl sm:text-2xl font-bold">Wskazówki dla Ministrantów</h2>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Przed Mszą Świętą</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="list-disc list-inside space-y-1">
+                    {WSKAZOWKI.przed.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Podczas Mszy Świętej</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="list-disc list-inside space-y-1">
+                    {WSKAZOWKI.podczas.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Funkcje podczas Mszy</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {WSKAZOWKI.funkcje.map((f, i) => (
+                      <div key={i}>
+                        <p className="font-semibold">{f.nazwa}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{f.opis}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Ważne zasady</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="list-disc list-inside space-y-1">
+                    {WSKAZOWKI.zasady.map((z, i) => (
+                      <li key={i}>{z}</li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Modal zaproszenia email */}
+      <Dialog open={showInviteModal} onOpenChange={setShowInviteModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Wyślij zaproszenie email</DialogTitle>
+            <DialogDescription>
+              Wpisz adres email ministranta, który chcesz zaprosić
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="ministrant@email.pl"
+              />
+            </div>
+            <Button onClick={handleSendInvite} className="w-full">
+              Wyślij zaproszenie
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal tworzenia/edycji wydarzenia */}
+      <Dialog open={showSluzbaModal} onOpenChange={(open) => {
+        setShowSluzbaModal(open);
+        if (!open) {
+          setSelectedSluzba(null);
+          setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedSluzba ? 'Edytuj wydarzenie' : 'Dodaj wydarzenie'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nazwa wydarzenia *</Label>
+              <Input
+                value={sluzbaForm.nazwa}
+                onChange={(e) => setSluzbaForm({ ...sluzbaForm, nazwa: e.target.value })}
+                placeholder="Msza Święta"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Data *</Label>
+                <Input
+                  type="date"
+                  value={sluzbaForm.data}
+                  onChange={(e) => setSluzbaForm({ ...sluzbaForm, data: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Godzina *</Label>
+                <Input
+                  type="time"
+                  value={sluzbaForm.godzina}
+                  onChange={(e) => setSluzbaForm({ ...sluzbaForm, godzina: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="mb-2 block">Przypisz funkcje</Label>
+              <div className="space-y-2">
+                {FUNKCJE_TYPES.map(funkcja => (
+                  <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
+                    <Select
+                      value={sluzbaForm.funkcje[funkcja] || 'UNASSIGNED'}
+                      onValueChange={(v) => setSluzbaForm({
+                        ...sluzbaForm,
+                        funkcje: { ...sluzbaForm.funkcje, [funkcja]: v }
+                      })}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="-- Nie przypisano --" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                        <SelectItem value="BEZ">🚫 Bez {funkcja}</SelectItem>
+                        {members.filter(m => m.typ === 'ministrant').map(m => (
+                          <SelectItem key={m.profile_id} value={m.profile_id}>
+                            {m.imie} {m.nazwisko || ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={handleCreateSluzba} className="flex-1">
+                {selectedSluzba ? 'Zapisz zmiany' : 'Utwórz wydarzenie'}
+              </Button>
+              {selectedSluzba && (
+                <Button variant="destructive" onClick={handleDeleteSluzba}>
+                  <X className="w-4 h-4 mr-1" />
+                  Usuń wydarzenie
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal posług */}
+      <Dialog open={showPoslugiModal} onOpenChange={(open) => {
+        setShowPoslugiModal(open);
+        if (!open) setSelectedMember(null);
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Przypisz posługi - {selectedMember?.imie} {selectedMember?.nazwisko || ''}</DialogTitle>
+            <DialogDescription>
+              Zaznacz posługi, które będzie pełnił ministrant
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {poslugi.map(posluga => {
+              const kolory = KOLOR_KLASY[posluga.kolor] || KOLOR_KLASY.gray;
+              return (
+                <div key={posluga.id} className="flex items-start gap-3 p-3 border rounded">
+                  <input
+                    type="checkbox"
+                    checked={selectedMember?.role.includes(posluga.slug) || false}
+                    onChange={(e) => {
+                      if (!selectedMember) return;
+                      const newRole = e.target.checked
+                        ? [...selectedMember.role, posluga.slug]
+                        : selectedMember.role.filter(r => r !== posluga.slug);
+                      setSelectedMember({ ...selectedMember, role: newRole });
+                    }}
+                    className="mt-1"
+                  />
+                  <div className={`w-10 h-10 rounded-full ${kolory.bg} flex items-center justify-center text-lg shrink-0 overflow-hidden`}>
+                    {posluga.obrazek_url ? (
+                      <img src={posluga.obrazek_url} alt={posluga.nazwa} className="w-full h-full object-cover" />
+                    ) : posluga.emoji}
+                  </div>
+                  <div>
+                    <p className="font-semibold">{posluga.nazwa}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">{posluga.opis}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button onClick={handleUpdatePoslugi} className="flex-1">
+              <Check className="w-4 h-4 mr-2" />
+              Zapisz
+            </Button>
+            <Button variant="outline" onClick={() => setShowPoslugiModal(false)} className="flex-1">
+              Anuluj
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal zmiany grupy */}
+      <Dialog open={showGrupaModal} onOpenChange={(open) => {
+        setShowGrupaModal(open);
+        if (!open) setSelectedMember(null);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Zmień grupę - {selectedMember?.imie} {selectedMember?.nazwisko || ''}</DialogTitle>
+            <DialogDescription>
+              Wybierz grupę dla ministranta
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            {grupy.map(grupa => {
+              const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
+              return (
+                <Button
+                  key={grupa.id}
+                  onClick={() => handleUpdateGrupa(grupa.id)}
+                  className={`h-auto py-4 justify-start ${kolory.bg} ${kolory.hover} ${kolory.text}`}
+                >
+                  <div className="text-left">
+                    <p className="font-bold">{grupa.emoji} {grupa.nazwa}</p>
+                    <p className="text-sm">{grupa.opis}</p>
+                  </div>
+                </Button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal maila zbiorczego - multi-select */}
+      <Dialog open={showEmailModal} onOpenChange={setShowEmailModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Wyślij maila zbiorczego</DialogTitle>
+            <DialogDescription>
+              Zaznacz grupy, do których chcesz wysłać wiadomość
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {grupy.map(grupa => {
+              const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant');
+              const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
+              const isSelected = emailSelectedGrupy.includes(grupa.id);
+
+              return groupMembers.length > 0 && (
+                <button
+                  key={grupa.id}
+                  onClick={() => {
+                    setEmailSelectedGrupy(prev =>
+                      prev.includes(grupa.id)
+                        ? prev.filter(g => g !== grupa.id)
+                        : [...prev, grupa.id]
+                    );
+                  }}
+                  className={`w-full h-auto py-4 px-4 rounded-lg flex items-center justify-between transition-all ${kolory.bg} ${kolory.text} ${isSelected ? `ring-2 ring-offset-2 ${kolory.border}` : 'opacity-70'}`}
+                >
+                  <span className="font-bold flex items-center gap-2">
+                    <input type="checkbox" checked={isSelected} readOnly className="w-4 h-4" />
+                    {grupa.emoji} {grupa.nazwa}
+                  </span>
+                  <Badge variant="secondary">{groupMembers.length} osób</Badge>
+                </button>
+              );
+            })}
+          </div>
+          {emailSelectedGrupy.length > 0 && (
+            <Button
+              className="w-full mt-2"
+              onClick={() => {
+                const emails = members
+                  .filter(m => emailSelectedGrupy.includes(m.grupa || '') && m.typ === 'ministrant')
+                  .map(m => m.email)
+                  .join(',');
+                window.location.href = `mailto:${emails}`;
+                setShowEmailModal(false);
+              }}
+            >
+              <Mail className="w-4 h-4 mr-2" />
+              Wyślij do {emailSelectedGrupy.length} {emailSelectedGrupy.length === 1 ? 'grupy' : 'grup'}
+            </Button>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal edycji grup */}
+      <Dialog open={showGrupyEditModal} onOpenChange={setShowGrupyEditModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Zarządzaj grupami</DialogTitle>
+            <DialogDescription>
+              Edytuj nazwy, dodawaj lub usuwaj grupy ministrantów
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {grupy.map(grupa => {
+              const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
+              return (
+                <div key={grupa.id} className={`flex items-center gap-3 p-3 rounded-lg border ${kolory.border}`}>
+                  <span className="text-xl">{grupa.emoji}</span>
+                  <Input
+                    value={grupa.nazwa}
+                    onChange={(e) => handleRenameGrupa(grupa.id, e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Usuń grupę"
+                    onClick={() => handleDeleteGrupa(grupa.id)}
+                  >
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="border-t pt-4 mt-4">
+            <h4 className="font-semibold mb-3">Dodaj nową grupę</h4>
+            <div className="space-y-3">
+              <div>
+                <Label>Nazwa grupy</Label>
+                <Input
+                  value={newGrupaForm.nazwa}
+                  onChange={(e) => setNewGrupaForm({ ...newGrupaForm, nazwa: e.target.value })}
+                  placeholder="Np. Schola liturgiczna"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Emoji</Label>
+                  <Input
+                    value={newGrupaForm.emoji}
+                    onChange={(e) => setNewGrupaForm({ ...newGrupaForm, emoji: e.target.value })}
+                    placeholder="⚪"
+                  />
+                </div>
+                <div>
+                  <Label>Kolor</Label>
+                  <Select value={newGrupaForm.kolor} onValueChange={(v) => setNewGrupaForm({ ...newGrupaForm, kolor: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(KOLOR_KLASY).map(k => (
+                        <SelectItem key={k} value={k}>{k}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label>Opis</Label>
+                <Input
+                  value={newGrupaForm.opis}
+                  onChange={(e) => setNewGrupaForm({ ...newGrupaForm, opis: e.target.value })}
+                  placeholder="Krótki opis grupy"
+                />
+              </div>
+              <Button onClick={handleAddGrupa} className="w-full">
+                <Plus className="w-4 h-4 mr-2" />
+                Dodaj grupę
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal edycji posługi */}
+      <Dialog open={showPoslugaEditModal} onOpenChange={(open) => {
+        setShowPoslugaEditModal(open);
+        if (!open) {
+          setEditingPosluga(null);
+          setEditPoslugaFile(null);
+          setEditPoslugaPreview('');
+          setEditGalleryFiles([]);
+          setEditGalleryPreviews([]);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edytuj posługę</DialogTitle>
+          </DialogHeader>
+          {editingPosluga && (
+            <div className="space-y-4">
+              <div>
+                <Label>Nazwa</Label>
+                <Input
+                  value={editingPosluga.nazwa}
+                  onChange={(e) => setEditingPosluga({ ...editingPosluga, nazwa: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Krótki opis</Label>
+                <Input
+                  value={editingPosluga.opis}
+                  onChange={(e) => setEditingPosluga({ ...editingPosluga, opis: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Emoji</Label>
+                  <Input
+                    value={editingPosluga.emoji}
+                    onChange={(e) => setEditingPosluga({ ...editingPosluga, emoji: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Kolor</Label>
+                  <Select value={editingPosluga.kolor} onValueChange={(v) => setEditingPosluga({ ...editingPosluga, kolor: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(KOLOR_KLASY).map(k => (
+                        <SelectItem key={k} value={k}>{k}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label>Własny obrazek (zamiast emoji)</Label>
+                <div className="flex items-center gap-3 mt-1">
+                  {(editPoslugaPreview || editingPosluga.obrazek_url) && (
+                    <img src={editPoslugaPreview || editingPosluga.obrazek_url} alt={editingPosluga.nazwa} className="w-12 h-12 rounded-full object-cover border" />
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setEditPoslugaFile(file);
+                      setEditPoslugaPreview(URL.createObjectURL(file));
+                    }}
+                  />
+                  {(editPoslugaPreview || editingPosluga.obrazek_url) && (
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setEditPoslugaFile(null);
+                      setEditPoslugaPreview('');
+                      setEditingPosluga({ ...editingPosluga, obrazek_url: undefined });
+                    }}>
+                      Usuń
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="font-semibold mb-3">Karta szczegółów</h3>
+
+                <div className="space-y-4">
+                  <div>
+                    <Label>Długi opis</Label>
+                    <textarea
+                      className="w-full min-h-[120px] p-3 border rounded-md bg-background text-sm resize-y"
+                      value={editingPosluga.dlugi_opis || ''}
+                      onChange={(e) => setEditingPosluga({ ...editingPosluga, dlugi_opis: e.target.value })}
+                      placeholder="Szczegółowy opis posługi, historia, wymagania..."
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Zdjęcia do galerii</Label>
+                    {((editingPosluga.zdjecia && editingPosluga.zdjecia.length > 0) || editGalleryPreviews.length > 0) && (
+                      <div className="grid grid-cols-3 gap-2 mt-2 mb-2">
+                        {(editingPosluga.zdjecia || []).map((url, i) => (
+                          <div key={`existing-${i}`} className="relative group">
+                            <img src={url} alt={`Zdjęcie ${i + 1}`} className="w-full h-24 object-cover rounded border" />
+                            <button
+                              type="button"
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => {
+                                const updated = (editingPosluga.zdjecia || []).filter((_, idx) => idx !== i);
+                                setEditingPosluga({ ...editingPosluga, zdjecia: updated });
+                                deletePoslugaImage(url);
+                              }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {editGalleryPreviews.map((preview, i) => (
+                          <div key={`new-${i}`} className="relative group">
+                            <img src={preview} alt={`Nowe ${i + 1}`} className="w-full h-24 object-cover rounded border border-green-300" />
+                            <button
+                              type="button"
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => {
+                                setEditGalleryFiles(editGalleryFiles.filter((_, idx) => idx !== i));
+                                setEditGalleryPreviews(editGalleryPreviews.filter((_, idx) => idx !== i));
+                              }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+                        setEditGalleryFiles([...editGalleryFiles, ...files]);
+                        setEditGalleryPreviews([...editGalleryPreviews, ...files.map(f => URL.createObjectURL(f))]);
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Link do YouTube</Label>
+                    <Input
+                      value={editingPosluga.youtube_url || ''}
+                      onChange={(e) => setEditingPosluga({ ...editingPosluga, youtube_url: e.target.value })}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                    />
+                    {editingPosluga.youtube_url && getYoutubeEmbedUrl(editingPosluga.youtube_url) && (
+                      <div className="aspect-video rounded-lg overflow-hidden mt-2">
+                        <iframe
+                          src={getYoutubeEmbedUrl(editingPosluga.youtube_url)!}
+                          className="w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          title="Podgląd"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <Button onClick={handleUpdatePoslugaDetails} className="w-full">
+                <Check className="w-4 h-4 mr-2" />
+                Zapisz zmiany
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal dodawania posługi */}
+      <Dialog open={showAddPoslugaModal} onOpenChange={(open) => {
+        setShowAddPoslugaModal(open);
+        if (!open) {
+          setNewGalleryFiles([]);
+          setNewGalleryPreviews([]);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Dodaj nową posługę</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nazwa posługi *</Label>
+              <Input
+                value={newPoslugaForm.nazwa}
+                onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, nazwa: e.target.value })}
+                placeholder="Np. Ministrant wody"
+              />
+            </div>
+            <div>
+              <Label>Krótki opis</Label>
+              <Input
+                value={newPoslugaForm.opis}
+                onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, opis: e.target.value })}
+                placeholder="Krótki opis posługi"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Emoji</Label>
+                <Input
+                  value={newPoslugaForm.emoji}
+                  onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, emoji: e.target.value })}
+                  placeholder="⭐"
+                />
+              </div>
+              <div>
+                <Label>Kolor</Label>
+                <Select value={newPoslugaForm.kolor} onValueChange={(v) => setNewPoslugaForm({ ...newPoslugaForm, kolor: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.keys(KOLOR_KLASY).map(k => (
+                      <SelectItem key={k} value={k}>{k}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Własny obrazek (zamiast emoji)</Label>
+              <div className="flex items-center gap-3 mt-1">
+                {newPoslugaPreview && (
+                  <img src={newPoslugaPreview} alt="podgląd" className="w-12 h-12 rounded-full object-cover border" />
+                )}
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setNewPoslugaFile(file);
+                    setNewPoslugaPreview(URL.createObjectURL(file));
+                  }}
+                />
+                {newPoslugaPreview && (
+                  <Button variant="ghost" size="sm" onClick={() => {
+                    setNewPoslugaFile(null);
+                    setNewPoslugaPreview('');
+                  }}>
+                    Usuń
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
+            </div>
+
+            <div className="border-t pt-4">
+              <h3 className="font-semibold mb-3">Karta szczegółów</h3>
+
+              <div className="space-y-4">
+                <div>
+                  <Label>Długi opis</Label>
+                  <textarea
+                    className="w-full min-h-[120px] p-3 border rounded-md bg-background text-sm resize-y"
+                    value={newPoslugaForm.dlugi_opis}
+                    onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, dlugi_opis: e.target.value })}
+                    placeholder="Szczegółowy opis posługi, historia, wymagania..."
+                  />
+                </div>
+
+                <div>
+                  <Label>Zdjęcia do galerii</Label>
+                  {newGalleryPreviews.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 mt-2 mb-2">
+                      {newGalleryPreviews.map((preview, i) => (
+                        <div key={i} className="relative group">
+                          <img src={preview} alt={`Nowe ${i + 1}`} className="w-full h-24 object-cover rounded border" />
+                          <button
+                            type="button"
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => {
+                              setNewGalleryFiles(newGalleryFiles.filter((_, idx) => idx !== i));
+                              setNewGalleryPreviews(newGalleryPreviews.filter((_, idx) => idx !== i));
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length === 0) return;
+                      setNewGalleryFiles([...newGalleryFiles, ...files]);
+                      setNewGalleryPreviews([...newGalleryPreviews, ...files.map(f => URL.createObjectURL(f))]);
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <Label>Link do YouTube</Label>
+                  <Input
+                    value={newPoslugaForm.youtube_url}
+                    onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, youtube_url: e.target.value })}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                  />
+                  {newPoslugaForm.youtube_url && getYoutubeEmbedUrl(newPoslugaForm.youtube_url) && (
+                    <div className="aspect-video rounded-lg overflow-hidden mt-2">
+                      <iframe
+                        src={getYoutubeEmbedUrl(newPoslugaForm.youtube_url)!}
+                        className="w-full h-full"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title="Podgląd"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <Button onClick={handleAddPosluga} className="w-full">
+              <Plus className="w-4 h-4 mr-2" />
+              Dodaj posługę
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal zgłoszenia obecności */}
+      <Dialog open={showZglosModal} onOpenChange={setShowZglosModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Zgłoś obecność</DialogTitle>
+            <DialogDescription>
+              Zaznacz dzień, w którym służyłeś. Masz {getConfigValue('limit_dni_zgloszenie', 2)} dni od daty służby na zgłoszenie.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Data służby *</Label>
+              <Input
+                type="date"
+                value={zglosForm.data}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setZglosForm({ ...zglosForm, data: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Godzina (opcjonalnie)</Label>
+              <Input
+                type="time"
+                value={zglosForm.godzina}
+                onChange={(e) => setZglosForm({ ...zglosForm, godzina: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Typ</Label>
+              <Select value={zglosForm.typ} onValueChange={(v) => setZglosForm({ ...zglosForm, typ: v as 'msza' | 'nabożeństwo' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="msza">Msza św.</SelectItem>
+                  <SelectItem value="nabożeństwo">Nabożeństwo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {zglosForm.typ === 'nabożeństwo' && (
+              <div>
+                <Label>Rodzaj nabożeństwa</Label>
+                <Select value={zglosForm.nazwa_nabożeństwa} onValueChange={(v) => setZglosForm({ ...zglosForm, nazwa_nabożeństwa: v })}>
+                  <SelectTrigger><SelectValue placeholder="Wybierz..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="droga_krzyzowa">Droga Krzyżowa</SelectItem>
+                    <SelectItem value="gorzkie_zale">Gorzkie Żale</SelectItem>
+                    <SelectItem value="majowe">Nabożeństwo Majowe</SelectItem>
+                    <SelectItem value="rozaniec">Różaniec</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {zglosForm.data && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
+                {(() => {
+                  const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa);
+                  const finalne = Math.round(bazowe * mnoznik);
+                  return (
+                    <div className="flex justify-between items-center">
+                      <span>Punkty za tę służbę:</span>
+                      <span className="font-bold text-lg">{finalne} pkt {mnoznik > 1 && <span className="text-xs text-gray-500 dark:text-gray-400">({bazowe} × {mnoznik})</span>}</span>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+            <Button onClick={zglosObecnosc} className="w-full" disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa)}>
+              <Send className="w-4 h-4 mr-2" />
+              Wyślij zgłoszenie
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pogląd ogłoszenia - widok ministranta */}
+      <Dialog open={!!previewOgloszenie} onOpenChange={(open) => { if (!open) setPreviewOgloszenie(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Podgląd</DialogTitle>
+            <DialogDescription>Tak wygląda ogłoszenie w panelu ministranta</DialogDescription>
+          </DialogHeader>
+          {previewOgloszenie && (
+            <Card className="border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2 mb-1">
+                  {previewOgloszenie.przypiety && <Pin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
+                  <Badge className="text-xs bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600">
+                    Ogłoszenie
+                  </Badge>
+                  {previewOgloszenie.grupa_docelowa !== 'wszyscy' && previewOgloszenie.grupa_docelowa?.split(',').map(g => g.trim()).filter(Boolean).map(g => (
+                    <Badge key={g} variant="outline" className="text-xs">{grupy.find(gr => gr.nazwa === g)?.emoji} {g}</Badge>
+                  ))}
+                </div>
+                {previewOgloszenie.tresc && (
+                  <div className="text-sm text-gray-700 dark:text-gray-300 mt-1">{renderTresc(previewOgloszenie.tresc)}</div>
+                )}
+              </CardHeader>
+            </Card>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal nowego wątku */}
+      <Dialog open={showNewWatekModal} onOpenChange={(open) => {
+        setShowNewWatekModal(open);
+        if (!open) {
+          setEditingWatek(null);
+          setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingWatek ? (newWatekForm.kategoria === 'ogłoszenie' ? 'Edytuj ogłoszenie' : 'Edytuj wątek') : newWatekForm.kategoria === 'ogłoszenie' ? 'Nowe ogłoszenie' : 'Nowa dyskusja'}</DialogTitle>
+            <DialogDescription>
+              {editingWatek ? (newWatekForm.kategoria === 'ogłoszenie' ? 'Zmień treść ogłoszenia' : 'Zmień treść wątku') : newWatekForm.kategoria === 'ogłoszenie' ? 'Napisz ogłoszenie dla ministrantów' : 'Rozpocznij nową dyskusję'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {newWatekForm.kategoria === 'dyskusja' && (
+              <div>
+                <Label>Tytuł *</Label>
+                <Input
+                  value={newWatekForm.tytul}
+                  onChange={(e) => setNewWatekForm({ ...newWatekForm, tytul: e.target.value })}
+                  placeholder="Tytuł dyskusji"
+                />
+              </div>
+            )}
+            <div className="relative">
+              <Label className="mb-1 block">Treść {newWatekForm.kategoria === 'ogłoszenie' ? '*' : ''}</Label>
+              {/* Toolbar */}
+              {tiptapEditor && (
+                <div className="flex flex-wrap items-center gap-0.5 p-1 border border-b-0 border-input rounded-t-md bg-muted/50">
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('bold') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleBold().run()}><Bold className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('italic') ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleItalic().run()}><Italic className="w-3.5 h-3.5" /></Button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('heading', { level: 1 }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleHeading({ level: 1 }).run()}><Heading1 className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('heading', { level: 2 }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive('heading', { level: 3 }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 className="w-3.5 h-3.5" /></Button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive({ textAlign: 'left' }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().setTextAlign('left').run()}><AlignLeft className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive({ textAlign: 'center' }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().setTextAlign('center').run()}><AlignCenter className="w-3.5 h-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${tiptapEditor.isActive({ textAlign: 'right' }) ? 'bg-accent' : ''}`} onClick={() => tiptapEditor.chain().focus().setTextAlign('right').run()}><AlignRight className="w-3.5 h-3.5" /></Button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  {/* Kolory */}
+                  {['#000000', '#dc2626', '#2563eb', '#16a34a', '#9333ea', '#ea580c'].map(color => (
+                    <button key={color} type="button" className={`w-5 h-5 rounded-full border-2 ${tiptapEditor.isActive('textStyle', { color }) ? 'border-foreground scale-110' : 'border-transparent'}`} style={{ backgroundColor: color }} onClick={() => tiptapEditor.chain().focus().setColor(color).run()} />
+                  ))}
+                  <button type="button" className="w-5 h-5 rounded-full border-2 border-dashed border-gray-400 flex items-center justify-center text-[8px]" onClick={() => tiptapEditor.chain().focus().unsetColor().run()}>✕</button>
+                  <div className="w-px h-5 bg-border mx-0.5" />
+                  {/* Wstaw plik */}
+                  <label>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 gap-1 cursor-pointer" asChild>
+                      <span>{isUploadingInline ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}<span className="text-[10px]">Wstaw plik</span></span>
+                    </Button>
+                    <input type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" disabled={isUploadingInline} onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadAndInsertFile(file); e.target.value = ''; }} />
+                  </label>
+                  {/* YouTube */}
+                  <Button type="button" variant="ghost" size="sm" className={`h-7 px-2 gap-1 ${showYoutubeInput ? 'bg-accent' : ''}`} onClick={() => { setShowYoutubeInput(!showYoutubeInput); setYoutubeUrl(''); }}><Youtube className="w-3.5 h-3.5" /><span className="text-[10px]">Wstaw filmik</span></Button>
+                  {/* Emoji */}
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowEmojiPicker(showEmojiPicker === 'watek' ? null : 'watek')}><Smile className="w-3.5 h-3.5" /></Button>
+                </div>
+              )}
+              {/* YouTube input */}
+              {showYoutubeInput && (
+                <div className="flex items-center gap-1 p-1.5 border-x border-input bg-red-50 dark:bg-red-950/20">
+                  <Youtube className="w-4 h-4 text-red-500 shrink-0" />
+                  <input
+                    type="text"
+                    className="flex-1 px-2 py-1 text-xs rounded border border-input bg-background"
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (youtubeUrl.trim()) {
+                          tiptapEditor?.chain().focus().setYoutubeVideo({ src: youtubeUrl.trim() }).run();
+                          setYoutubeUrl('');
+                          setShowYoutubeInput(false);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowYoutubeInput(false);
+                        setYoutubeUrl('');
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => {
+                    if (youtubeUrl.trim()) {
+                      tiptapEditor?.chain().focus().setYoutubeVideo({ src: youtubeUrl.trim() }).run();
+                      setYoutubeUrl('');
+                      setShowYoutubeInput(false);
+                    }
+                  }}>Wstaw</Button>
+                </div>
+              )}
+              {/* Edytor */}
+              <div className="w-full rounded-b-md border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                <EditorContent editor={tiptapEditor} />
+              </div>
+              {showEmojiPicker === 'watek' && (
+                <div className="absolute z-50 mt-1">
+                  <Picker data={data} locale="pl" theme={darkMode ? 'dark' : 'light'} onEmojiSelect={(emoji: { native: string }) => {
+                    tiptapEditor?.chain().focus().insertContent(emoji.native).run();
+                    setShowEmojiPicker(null);
+                  }} />
+                </div>
+              )}
+            </div>
+            {currentUser?.typ === 'ksiadz' && (
+              <div>
+                <Label className="mb-2 block">Grupa docelowa</Label>
+                <div className="flex flex-wrap gap-2">
+                  {[{ nazwa: 'wszyscy', emoji: '👥' }, ...grupy].map(grupa => {
+                    const isWszyscy = grupa.nazwa === 'wszyscy';
+                    const selected = isWszyscy
+                      ? newWatekForm.grupa_docelowa === 'wszyscy'
+                      : newWatekForm.grupa_docelowa !== 'wszyscy' && newWatekForm.grupa_docelowa.split(',').map(s => s.trim()).includes(grupa.nazwa);
+                    return (
+                      <button
+                        key={grupa.nazwa}
+                        type="button"
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                          selected
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background text-foreground border-input hover:bg-accent'
+                        }`}
+                        onClick={() => {
+                          if (isWszyscy) {
+                            setNewWatekForm(prev => ({ ...prev, grupa_docelowa: 'wszyscy' }));
+                          } else {
+                            setNewWatekForm(prev => {
+                              const current = prev.grupa_docelowa === 'wszyscy' ? [] : prev.grupa_docelowa.split(',').map(s => s.trim()).filter(Boolean);
+                              const next = selected ? current.filter(g => g !== grupa.nazwa) : [...current, grupa.nazwa];
+                              return { ...prev, grupa_docelowa: next.length === 0 ? 'wszyscy' : next.join(',') };
+                            });
+                          }
+                        }}
+                      >
+                        {selected ? <Check className="w-3.5 h-3.5" /> : null}
+                        <span>{grupa.emoji} {isWszyscy ? 'Wszyscy' : grupa.nazwa}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={newWatekForm.kategoria === 'ogłoszenie' ? (tiptapEditor ? tiptapEditor.isEmpty : (!newWatekForm.tresc || newWatekForm.tresc === '<p></p>')) : !newWatekForm.tytul.trim()}>
+              <Send className="w-4 h-4 mr-2" />
+              {editingWatek ? 'Zapisz zmiany' : 'Opublikuj'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal nowej ankiety */}
+      <Dialog open={showNewAnkietaModal} onOpenChange={setShowNewAnkietaModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Nowa ankieta</DialogTitle>
+            <DialogDescription>
+              Utwórz ankietę — ministranci dostaną powiadomienie i będą musieli odpowiedzieć
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Pytanie *</Label>
+              <Input
+                value={newAnkietaForm.pytanie}
+                onChange={(e) => setNewAnkietaForm({ ...newAnkietaForm, pytanie: e.target.value })}
+                placeholder="Czy będziesz w sobotę na zbiórce?"
+              />
+            </div>
+            <div>
+              <Label>Typ ankiety</Label>
+              <Select value={newAnkietaForm.typ} onValueChange={(v) => setNewAnkietaForm({ ...newAnkietaForm, typ: v as 'tak_nie' | 'jednokrotny' | 'wielokrotny' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tak_nie">Tak / Nie</SelectItem>
+                  <SelectItem value="jednokrotny">Jednokrotny wybór</SelectItem>
+                  <SelectItem value="wielokrotny">Wielokrotny wybór</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {newAnkietaForm.typ !== 'tak_nie' && (
+              <div className="space-y-2">
+                <Label>Opcje odpowiedzi</Label>
+                {newAnkietaForm.opcje.map((opcja, i) => (
+                  <div key={i} className="flex gap-2">
+                    <Input
+                      value={opcja}
+                      onChange={(e) => {
+                        const nowe = [...newAnkietaForm.opcje];
+                        nowe[i] = e.target.value;
+                        setNewAnkietaForm({ ...newAnkietaForm, opcje: nowe });
+                      }}
+                      placeholder={`Opcja ${i + 1}`}
+                    />
+                    {newAnkietaForm.opcje.length > 2 && (
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        const nowe = newAnkietaForm.opcje.filter((_, idx) => idx !== i);
+                        setNewAnkietaForm({ ...newAnkietaForm, opcje: nowe });
+                      }}>
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {newAnkietaForm.opcje.length < 6 && (
+                  <Button variant="outline" size="sm" onClick={() => setNewAnkietaForm({ ...newAnkietaForm, opcje: [...newAnkietaForm.opcje, ''] })}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Dodaj opcję
+                  </Button>
+                )}
+              </div>
+            )}
+            <div>
+              <Label>Termin odpowiedzi (opcjonalnie)</Label>
+              <Input
+                type="datetime-local"
+                value={newAnkietaForm.termin}
+                onChange={(e) => setNewAnkietaForm({ ...newAnkietaForm, termin: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="obowiazkowa"
+                checked={newAnkietaForm.obowiazkowa}
+                onChange={(e) => setNewAnkietaForm({ ...newAnkietaForm, obowiazkowa: e.target.checked })}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              <Label htmlFor="obowiazkowa" className="font-normal">Obowiązkowa (ministranci dostaną powiadomienie)</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="wyniki_ukryte"
+                checked={newAnkietaForm.wyniki_ukryte}
+                onChange={(e) => setNewAnkietaForm({ ...newAnkietaForm, wyniki_ukryte: e.target.checked })}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              <Label htmlFor="wyniki_ukryte" className="font-normal">Ukryj wyniki (ministranci nie widzą kto jak głosował)</Label>
+            </div>
+            <Button onClick={createAnkieta} className="w-full" disabled={!newAnkietaForm.pytanie.trim()}>
+              <Vote className="w-4 h-4 mr-2" />
+              Utwórz ankietę
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal dyżurów */}
+      <Dialog open={showDyzuryModal} onOpenChange={setShowDyzuryModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Moje dyżury</DialogTitle>
+            <DialogDescription>
+              Wybierz stałe dni tygodnia, w które pełnisz dyżur. Dyżury pojawią się w Kalendarzu liturgicznym.
+              Nieobecność na dyżurze: {getConfigValue('minus_nieobecnosc_dyzur', -5)} pkt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {DNI_TYGODNIA_FULL.map((dzien, i) => {
+              const dzienIdx = i === 6 ? 0 : i + 1;
+              const isActive = dyzury.some(d => d.ministrant_id === currentUser?.id && d.dzien_tygodnia === dzienIdx);
+              return (
+                <Button
+                  key={i}
+                  variant={isActive ? 'default' : 'outline'}
+                  className="w-full justify-start"
+                  onClick={() => toggleDyzur(dzienIdx)}
+                >
+                  {isActive ? <Check className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  {dzien}
+                  {dzienIdx === 0 && <span className="ml-auto text-xs opacity-60">obowiązkowa — 0 pkt</span>}
+                </Button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

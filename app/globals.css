@@ -246,6 +246,33 @@
   border-radius: 8px;
   margin: 8px 0;
 }
+.tiptap-content div[data-youtube-video][data-width] {
+  display: inline-block;
+}
+.tiptap-content div[data-youtube-video][data-width] iframe {
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 3/2;
+}
+.tiptap-content div[data-youtube-video][data-float="left"] {
+  float: left;
+  margin: 4px 16px 8px 0;
+  max-width: 50%;
+}
+.tiptap-content div[data-youtube-video][data-float="right"] {
+  float: right;
+  margin: 4px 0 8px 16px;
+  max-width: 50%;
+}
+.tiptap-content div[data-youtube-video][data-float="center"] {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0;
+}
+.tiptap-youtube-wrapper[style*="float: left"] + *,
+.tiptap-youtube-wrapper[style*="float: right"] + * {
+  display: block;
+}
 .tiptap-content blockquote {
   border-left: 3px solid #d1d5db;
   padding-left: 1rem;

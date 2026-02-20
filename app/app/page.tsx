@@ -1664,6 +1664,26 @@ export default function MinistranciApp() {
     }
   }, [currentUser?.parafia_id, loadTablicaData]);
 
+  // Odświeżaj dane gdy użytkownik wraca do aplikacji (np. po kliknięciu w push)
+  useEffect(() => {
+    if (!currentUser?.parafia_id) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadRankingData();
+        loadTablicaData();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [currentUser?.parafia_id, loadRankingData, loadTablicaData]);
+
+  // Polling co 30s żeby wykryć zatwierdzone zgłoszenia w tle
+  useEffect(() => {
+    if (!currentUser?.parafia_id || currentUser.typ !== 'ministrant') return;
+    const interval = setInterval(() => loadRankingData(), 30000);
+    return () => clearInterval(interval);
+  }, [currentUser?.parafia_id, currentUser?.typ, loadRankingData]);
+
   // Wykryj nowo zatwierdzone zgłoszenia i pokaż celebrację
   useEffect(() => {
     if (currentUser?.typ !== 'ministrant' || obecnosci.length === 0) {

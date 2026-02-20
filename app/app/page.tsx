@@ -2690,7 +2690,8 @@ export default function MinistranciApp() {
 
   // ==================== PUSH NOTIFICATIONS ====================
   const registerPushSubscription = useCallback(async () => {
-    if (!currentUser?.id || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    if (!currentUser?.id || typeof window === 'undefined') return;
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
     try {
       const registration = await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready;
@@ -2698,7 +2699,6 @@ export default function MinistranciApp() {
       if (!subscription) {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
-        // Convert VAPID key from base64url to Uint8Array
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
         const padding = '='.repeat((4 - vapidKey.length % 4) % 4);
         const base64 = (vapidKey + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -2715,8 +2715,8 @@ export default function MinistranciApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentUser.id, subscription: subscription.toJSON() }),
       });
-    } catch (err) {
-      console.error('Push registration failed:', err);
+    } catch {
+      // Push not supported in this browser — ignore silently
     }
   }, [currentUser?.id]);
 

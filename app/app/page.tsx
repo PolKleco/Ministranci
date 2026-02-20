@@ -3648,9 +3648,14 @@ export default function MinistranciApp() {
                 <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5">{members.filter(m => m.typ === 'ministrant').length}</span>
               </TabsTrigger>
             )}
-            <TabsTrigger value="ranking" className={tc}>
+            <TabsTrigger value="ranking" className={`${tc} relative`}>
               <Trophy className="w-4 h-4 sm:mr-2" />
               Ranking
+              {currentUser.typ === 'ksiadz' && obecnosci.filter(o => o.status === 'oczekuje').length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                  {obecnosci.filter(o => o.status === 'oczekuje').length}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="sluzby" className={tc}>
               <Star className="w-4 h-4 sm:mr-2" />

@@ -17,7 +17,7 @@ webpush.setVapidDetails(
 
 export async function POST(request: NextRequest) {
   try {
-    const { parafia_id, grupa_docelowa, title, body, url, kategoria, autor_id } = await request.json();
+    const { parafia_id, grupa_docelowa, title, body, url, kategoria, autor_id, target_user_id } = await request.json();
 
     if (!parafia_id || !title) {
       return NextResponse.json({ error: 'Missing parafia_id or title' }, { status: 400 });
@@ -26,7 +26,10 @@ export async function POST(request: NextRequest) {
     // Get target user IDs
     let targetUserIds: string[] = [];
 
-    if (!grupa_docelowa || grupa_docelowa === 'wszyscy') {
+    // If targeting a specific user, skip group logic
+    if (target_user_id) {
+      targetUserIds = [target_user_id];
+    } else if (!grupa_docelowa || grupa_docelowa === 'wszyscy') {
       const { data: members } = await supabaseAdmin
         .from('parafia_members')
         .select('profile_id')

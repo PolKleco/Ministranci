@@ -8,7 +8,7 @@ import {
   UserPlus, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
-  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw,
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles,
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type
 } from 'lucide-react';
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
@@ -671,6 +671,8 @@ export default function MinistranciApp() {
   const [newPunktacjaForm, setNewPunktacjaForm] = useState({ klucz: '', wartosc: 0, opis: '' });
   const [showNewPunktacjaForm, setShowNewPunktacjaForm] = useState(false);
   const [editingOdznakaId, setEditingOdznakaId] = useState<string | null>(null);
+  const [celebration, setCelebration] = useState<{ punkty: number; total: number } | null>(null);
+  const prevObecnosciRef = useRef<Obecnosc[]>([]);
 
   // ==================== STAN — TABLICA OGŁOSZEŃ ====================
   const [tablicaWatki, setTablicaWatki] = useState<TablicaWatek[]>([]);
@@ -1366,6 +1368,25 @@ export default function MinistranciApp() {
     // Sprawdź odznaki
     await sprawdzOdznaki(obecnosc.ministrant_id, obecnosc.parafia_id, newTotalObecnosci, newTotalPkt, streakTyg);
 
+    // Push notification do ministranta
+    if (currentParafia) {
+      const ministrant = members.find(m => m.profile_id === obecnosc.ministrant_id);
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parafia_id: currentParafia.id,
+          grupa_docelowa: 'wszyscy',
+          title: `Brawo! +${obecnosc.punkty_finalne} pkt`,
+          body: `Twoje zgłoszenie zostało zatwierdzone! Masz już ${newTotalPkt} pkt ${ministrant ? ministrant.imie : ''}`,
+          url: '/app',
+          kategoria: 'zatwierdzenie',
+          autor_id: currentUser.id,
+          target_user_id: obecnosc.ministrant_id,
+        }),
+      }).catch(() => {});
+    }
+
     loadRankingData();
   };
 
@@ -1642,6 +1663,29 @@ export default function MinistranciApp() {
       loadTablicaData();
     }
   }, [currentUser?.parafia_id, loadTablicaData]);
+
+  // Wykryj nowo zatwierdzone zgłoszenia i pokaż celebrację
+  useEffect(() => {
+    if (currentUser?.typ !== 'ministrant' || obecnosci.length === 0) {
+      prevObecnosciRef.current = obecnosci;
+      return;
+    }
+    const prev = prevObecnosciRef.current;
+    if (prev.length > 0) {
+      const myObecnosci = obecnosci.filter(o => o.ministrant_id === currentUser.id);
+      const myPrev = prev.filter(o => o.ministrant_id === currentUser.id);
+      const newlyApproved = myObecnosci.filter(o =>
+        o.status === 'zatwierdzona' && myPrev.find(p => p.id === o.id)?.status === 'oczekuje'
+      );
+      if (newlyApproved.length > 0) {
+        const punkty = newlyApproved.reduce((sum, o) => sum + o.punkty_finalne, 0);
+        const myRanking = rankingData.find(r => r.ministrant_id === currentUser.id);
+        setCelebration({ punkty, total: myRanking ? Number(myRanking.total_pkt) : punkty });
+        setTimeout(() => setCelebration(null), 5000);
+      }
+    }
+    prevObecnosciRef.current = obecnosci;
+  }, [obecnosci, currentUser?.typ, currentUser?.id, rankingData]);
 
   // Inicjalizacja Tiptap edytora przy otwarciu modala
   const editorInitialized = useRef(false);
@@ -6095,6 +6139,58 @@ export default function MinistranciApp() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Celebracja — zatwierdzone zgłoszenie */}
+      {celebration && (
+        <div className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center">
+          {/* Konfetti */}
+          <div className="absolute inset-0 overflow-hidden">
+            {Array.from({ length: 50 }).map((_, i) => (
+              <div
+                key={i}
+                className="absolute animate-confetti"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  top: '-10px',
+                  animationDelay: `${Math.random() * 2}s`,
+                  animationDuration: `${2 + Math.random() * 3}s`,
+                }}
+              >
+                <div
+                  className="w-2.5 h-2.5 rounded-sm"
+                  style={{
+                    backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF8C00', '#7C4DFF', '#00E676'][i % 10],
+                    transform: `rotate(${Math.random() * 360}deg)`,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          {/* Karta */}
+          <div className="pointer-events-auto animate-celebration-card bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border-2 border-yellow-400 dark:border-yellow-500 p-6 sm:p-8 mx-4 max-w-sm text-center">
+            <div className="text-5xl mb-3">
+              <PartyPopper className="w-12 h-12 mx-auto text-yellow-500 animate-bounce" />
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-1">Brawo!</h3>
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Sparkles className="w-5 h-5 text-yellow-500" />
+              <span className="text-3xl sm:text-4xl font-extrabold text-green-600 dark:text-green-400">+{celebration.punkty}</span>
+              <Sparkles className="w-5 h-5 text-yellow-500" />
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">punktów za służbę</p>
+            <div className="bg-indigo-50 dark:bg-indigo-900/30 rounded-xl p-3">
+              <p className="text-xs text-indigo-600 dark:text-indigo-300">Łącznie masz już</p>
+              <p className="text-2xl font-bold text-indigo-700 dark:text-indigo-200">{celebration.total} pkt</p>
+            </div>
+            <button
+              className="pointer-events-auto mt-4 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              onClick={() => setCelebration(null)}
+            >
+              Zamknij
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal tworzenia/edycji wydarzenia */}
       <Dialog open={showSluzbaModal} onOpenChange={(open) => {

@@ -181,6 +181,8 @@
 /* Tiptap editor styles */
 .tiptap-content {
   outline: none;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 .tiptap-content p {
   margin: 0.25rem 0;
@@ -279,10 +281,44 @@
   margin: 0.5rem 0;
   color: #6b7280;
 }
-.tiptap-content ::after {
+.tiptap-content > p::after,
+.tiptap-content > div::after,
+.tiptap-content > blockquote::after {
   content: '';
   display: table;
   clear: both;
+}
+
+/* Edytor posługi — prosty, bez floatów i clearfixów */
+.tiptap-posluga {
+  outline: none;
+  overflow-wrap: break-word;
+}
+.tiptap-posluga p {
+  margin: 0.25rem 0;
+}
+.tiptap-posluga h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0.5rem 0 0.25rem;
+}
+.tiptap-posluga h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.25rem;
+}
+.tiptap-posluga ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.tiptap-posluga ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.tiptap-posluga strong,
+.tiptap-posluga em,
+.tiptap-posluga u {
+  display: inline;
 }
 
 /* Safe area support for notched devices */

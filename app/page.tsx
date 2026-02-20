@@ -619,23 +619,40 @@ export default function LandingPage() {
 
       {/* ─── Footer ─── */}
       <footer className="border-t border-white/[0.04] py-10 px-6">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Church className="w-4 h-4 text-amber-400/50" />
-            <span className={`${cinzel.className} text-slate-500 font-semibold text-sm`}>
-              Ministranci
-            </span>
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Church className="w-4 h-4 text-amber-400/50" />
+              <span className={`${cinzel.className} text-slate-500 font-semibold text-sm`}>
+                Ministranci
+              </span>
+            </div>
+            <p className="text-slate-700 text-xs">
+              Stworzone z miłością do służby liturgicznej
+            </p>
+            <Link
+              href="/app"
+              className="text-amber-400/50 hover:text-amber-400 text-sm transition-colors flex items-center gap-1"
+            >
+              Zaloguj się
+              <ChevronRight className="w-3 h-3" />
+            </Link>
           </div>
-          <p className="text-slate-700 text-xs">
-            Stworzone z miłością do służby liturgicznej
-          </p>
-          <Link
-            href="/app"
-            className="text-amber-400/50 hover:text-amber-400 text-sm transition-colors flex items-center gap-1"
-          >
-            Zaloguj się
-            <ChevronRight className="w-3 h-3" />
-          </Link>
+          <div className="flex items-center justify-center gap-4 mt-6 pt-6 border-t border-white/[0.03]">
+            <Link
+              href="/polityka-prywatnosci"
+              className="text-slate-600 hover:text-slate-400 text-xs transition-colors"
+            >
+              Polityka prywatności
+            </Link>
+            <span className="text-slate-800">|</span>
+            <Link
+              href="/regulamin"
+              className="text-slate-600 hover:text-slate-400 text-xs transition-colors"
+            >
+              Regulamin
+            </Link>
+          </div>
         </div>
       </footer>
     </div>

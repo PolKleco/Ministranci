@@ -9,7 +9,8 @@ create table profiles (
   email text unique not null,
   imie text not null,
   nazwisko text not null default '',
-  typ text not null check (typ in ('ksiadz', 'ministrant')),
+  typ text not null check (typ in ('ksiadz', 'ministrant', 'nowy')),
+  diecezja text default null,
   parafia_id uuid,
   created_at timestamptz default now()
 );
@@ -153,14 +154,64 @@ create policy "User can delete own zaproszenia" on zaproszenia for delete using 
 
 create or replace function public.handle_new_user()
 returns trigger as $$
+declare
+  v_imie text;
+  v_nazwisko text;
+  v_typ text;
+  v_diecezja text;
+  v_provider text;
+  v_full_name text;
 begin
-  insert into public.profiles (id, email, imie, nazwisko, typ)
+  v_provider := coalesce(new.raw_app_meta_data->>'provider', 'email');
+
+  if v_provider = 'email' then
+    -- Rejestracja email: używamy pól przekazanych w signUp
+    v_imie := coalesce(new.raw_user_meta_data->>'imie', '');
+    v_nazwisko := coalesce(new.raw_user_meta_data->>'nazwisko', '');
+    v_typ := coalesce(new.raw_user_meta_data->>'typ', 'ministrant');
+    v_diecezja := new.raw_user_meta_data->>'diecezja';
+  else
+    -- Rejestracja OAuth: wyciągamy imię/nazwisko z metadanych providera
+    v_imie := coalesce(
+      new.raw_user_meta_data->>'given_name',
+      new.raw_user_meta_data->>'first_name',
+      ''
+    );
+    v_nazwisko := coalesce(
+      new.raw_user_meta_data->>'family_name',
+      new.raw_user_meta_data->>'last_name',
+      ''
+    );
+
+    -- Fallback: jeśli imię puste, próbujemy podzielić full_name
+    if v_imie = '' then
+      v_full_name := coalesce(
+        new.raw_user_meta_data->>'full_name',
+        new.raw_user_meta_data->>'name',
+        ''
+      );
+      if v_full_name != '' then
+        v_imie := split_part(v_full_name, ' ', 1);
+        v_nazwisko := coalesce(
+          nullif(trim(substring(v_full_name from position(' ' in v_full_name) + 1)), ''),
+          ''
+        );
+      end if;
+    end if;
+
+    -- Użytkownicy OAuth zaczynają jako 'nowy' (wymagają uzupełnienia profilu)
+    v_typ := 'nowy';
+    v_diecezja := null;
+  end if;
+
+  insert into public.profiles (id, email, imie, nazwisko, typ, diecezja)
   values (
     new.id,
-    new.email,
-    coalesce(new.raw_user_meta_data->>'imie', ''),
-    coalesce(new.raw_user_meta_data->>'nazwisko', ''),
-    coalesce(new.raw_user_meta_data->>'typ', 'ministrant')
+    coalesce(new.email, ''),
+    v_imie,
+    v_nazwisko,
+    v_typ,
+    v_diecezja
   );
   return new;
 end;
@@ -485,9 +536,12 @@ create table tablica_watki (
     check (grupa_docelowa in ('wszyscy', 'mlodsi', 'starsi', 'lektorzy')),
   przypiety boolean default false,
   zamkniety boolean default false,
+  archiwum_data timestamptz default null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- MIGRACJA: ALTER TABLE tablica_watki ADD COLUMN archiwum_data timestamptz DEFAULT NULL;
 
 -- 17. Wiadomości w wątkach (odpowiedzi/komentarze)
 create table tablica_wiadomosci (
@@ -792,6 +846,30 @@ create trigger on_watek_deleted_cleanup
 
 
 -- =============================================
+-- PUSH SUBSCRIPTIONS — Web Push Notifications
+-- =============================================
+
+create table push_subscriptions (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references profiles(id) on delete cascade not null,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz default now(),
+  unique(user_id, endpoint)
+);
+
+alter table push_subscriptions enable row level security;
+
+create policy "User can view own push_subscriptions" on push_subscriptions
+  for select using (auth.uid() = user_id);
+create policy "User can insert own push_subscriptions" on push_subscriptions
+  for insert with check (auth.uid() = user_id);
+create policy "User can delete own push_subscriptions" on push_subscriptions
+  for delete using (auth.uid() = user_id);
+
+
+-- =============================================
 -- POSŁUGI LITURGICZNE — persystencja w Supabase
 -- =============================================
 
@@ -834,16 +912,13 @@ begin
   insert into poslugi (parafia_id, slug, nazwa, opis, emoji, kolor, kolejnosc) values
     (p_parafia_id, 'ceremoniarz', 'Ceremoniarz', 'Koordynuje służbę liturgiczną, ustawia procesje', '👑', 'amber', 1),
     (p_parafia_id, 'krucyferariusz', 'Krucyferariusz', 'Niesie krzyż procesyjny', '✝️', 'red', 2),
-    (p_parafia_id, 'ministrant_oltarza', 'Ministrant ołtarza', 'Przygotowuje ołtarz, podaje ampułki', '⛪', 'blue', 3),
-    (p_parafia_id, 'ministrant_ksiegi', 'Ministrant księgi', 'Trzyma mszał i podaje księgi', '📖', 'emerald', 4),
+    (p_parafia_id, 'turyferariusz', 'Turyferariusz', 'Obsługuje kadzidło (trybularz)', '💨', 'purple', 3),
+    (p_parafia_id, 'nawikulariusz', 'Nawikulariusz', 'Podaje kadzidło do trybularza', '🚢', 'cyan', 4),
     (p_parafia_id, 'ministrant_swiatla', 'Ministrant światła', 'Niesie świece w procesjach', '🕯️', 'yellow', 5),
-    (p_parafia_id, 'ministrant_darow', 'Ministrant darów', 'Przynosi chleb, wino i wodę', '🍞', 'orange', 6),
-    (p_parafia_id, 'ministrant_kadzidla', 'Ministrant kadzidła', 'Obsługuje kadzidło', '💨', 'purple', 7),
-    (p_parafia_id, 'nawikulariusz', 'Nawikulariusz', 'Podaje kadzidło do trybularza', '🚢', 'cyan', 8),
-    (p_parafia_id, 'lektor', 'Lektor', 'Proklamuje czytania biblijne', '📜', 'indigo', 9),
-    (p_parafia_id, 'psalterzysta', 'Psałterzysta', 'Wykonuje psalm responsoryjny', '🎵', 'pink', 10),
-    (p_parafia_id, 'kantor', 'Kantor', 'Prowadzi śpiew i wezwania', '🎶', 'rose', 11),
-    (p_parafia_id, 'ministrant_dzwonkow', 'Ministrant dzwonków', 'Dzwoni dzwonkami', '🔔', 'green', 12)
+    (p_parafia_id, 'ministrant_ksiegi', 'Ministrant księgi', 'Trzyma mszał i podaje księgi', '📖', 'emerald', 6),
+    (p_parafia_id, 'ministrant_oltarza', 'Ministrant ołtarza', 'Przygotowuje ołtarz, podaje ampułki', '⛪', 'blue', 7),
+    (p_parafia_id, 'ministrant_dzwonkow', 'Ministrant gongu i dzwonków', 'Dzwoni dzwonkami i gongiem', '🔔', 'green', 8),
+    (p_parafia_id, 'lektor', 'Lektor', 'Proklamuje czytania biblijne', '📜', 'indigo', 9)
   on conflict (parafia_id, slug) do nothing;
 end;
 $$ language plpgsql security definer;

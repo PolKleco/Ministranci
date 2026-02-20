@@ -8,7 +8,7 @@ import {
   UserPlus, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
-  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip,
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw,
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type
 } from 'lucide-react';
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
@@ -53,6 +53,53 @@ import {
   type DzienLiturgiczny,
 } from '@/lib/kalendarz-liturgiczny';
 
+// ==================== DIECEZJE W POLSCE ====================
+
+const DIECEZJE_POLSKIE = [
+  'Archidiecezja białostocka',
+  'Archidiecezja częstochowska',
+  'Archidiecezja gdańska',
+  'Archidiecezja gnieźnieńska',
+  'Archidiecezja katowicka',
+  'Archidiecezja krakowska',
+  'Archidiecezja lubelska',
+  'Archidiecezja łódzka',
+  'Archidiecezja poznańska',
+  'Archidiecezja przemyska',
+  'Archidiecezja szczecińsko-kamieńska',
+  'Archidiecezja warmińska',
+  'Archidiecezja warszawska',
+  'Archidiecezja wrocławska',
+  'Diecezja bielsko-żywiecka',
+  'Diecezja bydgoska',
+  'Diecezja drohiczyńska',
+  'Diecezja elbląska',
+  'Diecezja ełcka',
+  'Diecezja gliwicka',
+  'Diecezja kaliska',
+  'Diecezja kielecka',
+  'Diecezja koszalińsko-kołobrzeska',
+  'Diecezja legnicka',
+  'Diecezja łomżyńska',
+  'Diecezja łowicka',
+  'Diecezja opolska',
+  'Diecezja pelplińska',
+  'Diecezja płocka',
+  'Diecezja radomska',
+  'Diecezja rzeszowska',
+  'Diecezja sandomierska',
+  'Diecezja siedlecka',
+  'Diecezja sosnowiecka',
+  'Diecezja świdnicka',
+  'Diecezja tarnowska',
+  'Diecezja toruńska',
+  'Diecezja warszawsko-praska',
+  'Diecezja włocławska',
+  'Diecezja zamojsko-lubaczowska',
+  'Diecezja zielonogórsko-gorzowska',
+  'Ordynariat Polowy',
+];
+
 // ==================== TYPY ====================
 
 type UserType = 'ksiadz' | 'ministrant';
@@ -72,7 +119,7 @@ interface Profile {
   email: string;
   imie: string;
   nazwisko: string;
-  typ: UserType;
+  typ: UserType | 'nowy';
   parafia_id: string | null;
 }
 
@@ -235,6 +282,7 @@ interface TablicaWatek {
   grupa_docelowa: string;
   przypiety: boolean;
   zamkniety: boolean;
+  archiwum_data: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -307,34 +355,31 @@ const DEFAULT_GRUPY: GrupaConfig[] = [
 const DEFAULT_POSLUGI: Posluga[] = [
   { id: 'ceremoniarz', slug: 'ceremoniarz', nazwa: 'Ceremoniarz', opis: 'Koordynuje służbę liturgiczną, ustawia procesje', emoji: '👑', kolor: 'amber', kolejnosc: 1 },
   { id: 'krucyferariusz', slug: 'krucyferariusz', nazwa: 'Krucyferariusz', opis: 'Niesie krzyż procesyjny', emoji: '✝️', kolor: 'red', kolejnosc: 2 },
-  { id: 'ministrant_oltarza', slug: 'ministrant_oltarza', nazwa: 'Ministrant ołtarza', opis: 'Przygotowuje ołtarz, podaje ampułki', emoji: '⛪', kolor: 'blue', kolejnosc: 3 },
-  { id: 'ministrant_ksiegi', slug: 'ministrant_ksiegi', nazwa: 'Ministrant księgi', opis: 'Trzyma mszał i podaje księgi', emoji: '📖', kolor: 'emerald', kolejnosc: 4 },
+  { id: 'turyferariusz', slug: 'turyferariusz', nazwa: 'Turyferariusz', opis: 'Obsługuje kadzidło (trybularz)', emoji: '💨', kolor: 'purple', kolejnosc: 3 },
+  { id: 'nawikulariusz', slug: 'nawikulariusz', nazwa: 'Nawikulariusz', opis: 'Podaje kadzidło do trybularza', emoji: '🚢', kolor: 'cyan', kolejnosc: 4 },
   { id: 'ministrant_swiatla', slug: 'ministrant_swiatla', nazwa: 'Ministrant światła', opis: 'Niesie świece w procesjach', emoji: '🕯️', kolor: 'yellow', kolejnosc: 5 },
-  { id: 'ministrant_darow', slug: 'ministrant_darow', nazwa: 'Ministrant darów', opis: 'Przynosi chleb, wino i wodę', emoji: '🍞', kolor: 'orange', kolejnosc: 6 },
-  { id: 'ministrant_kadzidla', slug: 'ministrant_kadzidla', nazwa: 'Ministrant kadzidła', opis: 'Obsługuje kadzidło', emoji: '💨', kolor: 'purple', kolejnosc: 7 },
-  { id: 'nawikulariusz', slug: 'nawikulariusz', nazwa: 'Nawikulariusz', opis: 'Podaje kadzidło do trybularza', emoji: '🚢', kolor: 'cyan', kolejnosc: 8 },
-  { id: 'lektor', slug: 'lektor', nazwa: 'Lektor', opis: 'Proklamuje czytania biblijne', emoji: '📜', kolor: 'indigo', kolejnosc: 9 },
-  { id: 'psalterzysta', slug: 'psalterzysta', nazwa: 'Psałterzysta', opis: 'Wykonuje psalm responsoryjny', emoji: '🎵', kolor: 'pink', kolejnosc: 10 },
-  { id: 'kantor', slug: 'kantor', nazwa: 'Kantor', opis: 'Prowadzi śpiew i wezwania', emoji: '🎶', kolor: 'rose', kolejnosc: 11 },
-  { id: 'ministrant_dzwonkow', slug: 'ministrant_dzwonkow', nazwa: 'Ministrant dzwonków', opis: 'Dzwoni dzwonkami', emoji: '🔔', kolor: 'green', kolejnosc: 12 }
+  { id: 'ministrant_ksiegi', slug: 'ministrant_ksiegi', nazwa: 'Ministrant księgi', opis: 'Trzyma mszał i podaje księgi', emoji: '📖', kolor: 'emerald', kolejnosc: 6 },
+  { id: 'ministrant_oltarza', slug: 'ministrant_oltarza', nazwa: 'Ministrant ołtarza', opis: 'Przygotowuje ołtarz, podaje ampułki', emoji: '⛪', kolor: 'blue', kolejnosc: 7 },
+  { id: 'ministrant_dzwonkow', slug: 'ministrant_dzwonkow', nazwa: 'Ministrant gongu i dzwonków', opis: 'Dzwoni dzwonkami i gongiem', emoji: '🔔', kolor: 'green', kolejnosc: 8 },
+  { id: 'lektor', slug: 'lektor', nazwa: 'Lektor', opis: 'Proklamuje czytania biblijne', emoji: '📜', kolor: 'indigo', kolejnosc: 9 }
 ];
 
-const KOLOR_KLASY: Record<string, { bg: string; text: string; hover: string; border: string }> = {
-  amber: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-900 dark:text-amber-200', hover: 'hover:bg-amber-200 dark:hover:bg-amber-800/40', border: 'border-amber-300 dark:border-amber-700' },
-  blue: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-900 dark:text-blue-200', hover: 'hover:bg-blue-200 dark:hover:bg-blue-800/40', border: 'border-blue-300 dark:border-blue-700' },
-  green: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-900 dark:text-green-200', hover: 'hover:bg-green-200 dark:hover:bg-green-800/40', border: 'border-green-300 dark:border-green-700' },
-  purple: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-900 dark:text-purple-200', hover: 'hover:bg-purple-200 dark:hover:bg-purple-800/40', border: 'border-purple-300 dark:border-purple-700' },
-  red: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-900 dark:text-red-200', hover: 'hover:bg-red-200 dark:hover:bg-red-800/40', border: 'border-red-300 dark:border-red-700' },
-  emerald: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-900 dark:text-emerald-200', hover: 'hover:bg-emerald-200 dark:hover:bg-emerald-800/40', border: 'border-emerald-300 dark:border-emerald-700' },
-  yellow: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-900 dark:text-yellow-200', hover: 'hover:bg-yellow-200 dark:hover:bg-yellow-800/40', border: 'border-yellow-300 dark:border-yellow-700' },
-  orange: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-900 dark:text-orange-200', hover: 'hover:bg-orange-200 dark:hover:bg-orange-800/40', border: 'border-orange-300 dark:border-orange-700' },
-  cyan: { bg: 'bg-cyan-100 dark:bg-cyan-900/30', text: 'text-cyan-900 dark:text-cyan-200', hover: 'hover:bg-cyan-200 dark:hover:bg-cyan-800/40', border: 'border-cyan-300 dark:border-cyan-700' },
-  indigo: { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-900 dark:text-indigo-200', hover: 'hover:bg-indigo-200 dark:hover:bg-indigo-800/40', border: 'border-indigo-300 dark:border-indigo-700' },
-  pink: { bg: 'bg-pink-100 dark:bg-pink-900/30', text: 'text-pink-900 dark:text-pink-200', hover: 'hover:bg-pink-200 dark:hover:bg-pink-800/40', border: 'border-pink-300 dark:border-pink-700' },
-  rose: { bg: 'bg-rose-100 dark:bg-rose-900/30', text: 'text-rose-900 dark:text-rose-200', hover: 'hover:bg-rose-200 dark:hover:bg-rose-800/40', border: 'border-rose-300 dark:border-rose-700' },
-  gray: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-900 dark:text-gray-100', hover: 'hover:bg-gray-200 dark:hover:bg-gray-600', border: 'border-gray-300 dark:border-gray-600' },
-  brown: { bg: 'bg-orange-200 dark:bg-orange-900/30', text: 'text-orange-950 dark:text-orange-200', hover: 'hover:bg-orange-300 dark:hover:bg-orange-800/40', border: 'border-orange-400 dark:border-orange-700' },
-  teal: { bg: 'bg-teal-100 dark:bg-teal-900/30', text: 'text-teal-900 dark:text-teal-200', hover: 'hover:bg-teal-200 dark:hover:bg-teal-800/40', border: 'border-teal-300 dark:border-teal-700' },
+const KOLOR_KLASY: Record<string, { bg: string; text: string; hover: string; border: string; cardBg: string }> = {
+  amber: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-900 dark:text-amber-200', hover: 'hover:bg-amber-200 dark:hover:bg-amber-800/40', border: 'border-amber-300 dark:border-amber-700', cardBg: 'bg-amber-50 dark:bg-amber-900/10' },
+  blue: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-900 dark:text-blue-200', hover: 'hover:bg-blue-200 dark:hover:bg-blue-800/40', border: 'border-blue-300 dark:border-blue-700', cardBg: 'bg-blue-50 dark:bg-blue-900/10' },
+  green: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-900 dark:text-green-200', hover: 'hover:bg-green-200 dark:hover:bg-green-800/40', border: 'border-green-300 dark:border-green-700', cardBg: 'bg-green-50 dark:bg-green-900/10' },
+  purple: { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-900 dark:text-purple-200', hover: 'hover:bg-purple-200 dark:hover:bg-purple-800/40', border: 'border-purple-300 dark:border-purple-700', cardBg: 'bg-purple-50 dark:bg-purple-900/10' },
+  red: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-900 dark:text-red-200', hover: 'hover:bg-red-200 dark:hover:bg-red-800/40', border: 'border-red-300 dark:border-red-700', cardBg: 'bg-red-50 dark:bg-red-900/10' },
+  emerald: { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-900 dark:text-emerald-200', hover: 'hover:bg-emerald-200 dark:hover:bg-emerald-800/40', border: 'border-emerald-300 dark:border-emerald-700', cardBg: 'bg-emerald-50 dark:bg-emerald-900/10' },
+  yellow: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-900 dark:text-yellow-200', hover: 'hover:bg-yellow-200 dark:hover:bg-yellow-800/40', border: 'border-yellow-300 dark:border-yellow-700', cardBg: 'bg-yellow-50 dark:bg-yellow-900/10' },
+  orange: { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-900 dark:text-orange-200', hover: 'hover:bg-orange-200 dark:hover:bg-orange-800/40', border: 'border-orange-300 dark:border-orange-700', cardBg: 'bg-orange-50 dark:bg-orange-900/10' },
+  cyan: { bg: 'bg-cyan-100 dark:bg-cyan-900/30', text: 'text-cyan-900 dark:text-cyan-200', hover: 'hover:bg-cyan-200 dark:hover:bg-cyan-800/40', border: 'border-cyan-300 dark:border-cyan-700', cardBg: 'bg-cyan-50 dark:bg-cyan-900/10' },
+  indigo: { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-900 dark:text-indigo-200', hover: 'hover:bg-indigo-200 dark:hover:bg-indigo-800/40', border: 'border-indigo-300 dark:border-indigo-700', cardBg: 'bg-indigo-50 dark:bg-indigo-900/10' },
+  pink: { bg: 'bg-pink-100 dark:bg-pink-900/30', text: 'text-pink-900 dark:text-pink-200', hover: 'hover:bg-pink-200 dark:hover:bg-pink-800/40', border: 'border-pink-300 dark:border-pink-700', cardBg: 'bg-pink-50 dark:bg-pink-900/10' },
+  rose: { bg: 'bg-rose-100 dark:bg-rose-900/30', text: 'text-rose-900 dark:text-rose-200', hover: 'hover:bg-rose-200 dark:hover:bg-rose-800/40', border: 'border-rose-300 dark:border-rose-700', cardBg: 'bg-rose-50 dark:bg-rose-900/10' },
+  gray: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-900 dark:text-gray-100', hover: 'hover:bg-gray-200 dark:hover:bg-gray-600', border: 'border-gray-300 dark:border-gray-600', cardBg: 'bg-gray-50 dark:bg-gray-800/50' },
+  brown: { bg: 'bg-orange-200 dark:bg-orange-900/30', text: 'text-orange-950 dark:text-orange-200', hover: 'hover:bg-orange-300 dark:hover:bg-orange-800/40', border: 'border-orange-400 dark:border-orange-700', cardBg: 'bg-orange-50 dark:bg-orange-900/10' },
+  teal: { bg: 'bg-teal-100 dark:bg-teal-900/30', text: 'text-teal-900 dark:text-teal-200', hover: 'hover:bg-teal-200 dark:hover:bg-teal-800/40', border: 'border-teal-300 dark:border-teal-700', cardBg: 'bg-teal-50 dark:bg-teal-900/10' },
 };
 
 // ==================== MODLITWY ====================
@@ -513,6 +558,7 @@ export default function MinistranciApp() {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [isLogin, setIsLogin] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset-sent'>('login');
 
   // Stany formularzy
   const [email, setEmail] = useState('');
@@ -520,6 +566,42 @@ export default function MinistranciApp() {
   const [imie, setImie] = useState('');
   const [nazwisko, setNazwisko] = useState('');
   const [userType, setUserType] = useState<UserType>('ministrant');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [diecezja, setDiecezja] = useState('');
+  const [diecezjaSearch, setDiecezjaSearch] = useState('');
+  const [diecezjaOpen, setDiecezjaOpen] = useState(false);
+  const diecezjaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!diecezjaOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (diecezjaRef.current && !diecezjaRef.current.contains(e.target as Node)) {
+        setDiecezjaOpen(false);
+        setDiecezjaSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [diecezjaOpen]);
+
+  // Walidacja i błędy auth
+  const [showPassword, setShowPassword] = useState(false);
+  const [authErrors, setAuthErrors] = useState<{
+    email?: string;
+    password?: string;
+    imie?: string;
+    nazwisko?: string;
+    diecezja?: string;
+    general?: string;
+  }>({});
+
+  // OAuth — uzupełnianie profilu
+  const [showProfileCompletion, setShowProfileCompletion] = useState(false);
+  const [profileCompletionForm, setProfileCompletionForm] = useState({
+    imie: '',
+    nazwisko: '',
+    typ: 'ministrant' as UserType,
+  });
 
   // Stan parafii
   const [currentParafia, setCurrentParafia] = useState<Parafia | null>(null);
@@ -575,6 +657,14 @@ export default function MinistranciApp() {
   const [rankingData, setRankingData] = useState<RankingEntry[]>([]);
   const [showZglosModal, setShowZglosModal] = useState(false);
   const [showDyzuryModal, setShowDyzuryModal] = useState(false);
+  const [showEditProfilModal, setShowEditProfilModal] = useState(false);
+  const [editProfilForm, setEditProfilForm] = useState({ imie: '', nazwisko: '', email: '' });
+  const [editDyzury, setEditDyzury] = useState(false);
+  const [showGrafikModal, setShowGrafikModal] = useState(false);
+  const [showDyzuryAdminModal, setShowDyzuryAdminModal] = useState(false);
+  const [searchMinistrant, setSearchMinistrant] = useState('');
+  const [showDodajPunktyModal, setShowDodajPunktyModal] = useState(false);
+  const [dodajPunktyForm, setDodajPunktyForm] = useState({ punkty: '', powod: '' });
   const [showRankingSettings, setShowRankingSettings] = useState(false);
   const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo', nazwa_nabożeństwa: '', godzina: '' });
   const [rankingSettingsTab, setRankingSettingsTab] = useState<'punkty' | 'rangi' | 'odznaki' | 'ogolne'>('punkty');
@@ -594,8 +684,9 @@ export default function MinistranciApp() {
   const [editingWatek, setEditingWatek] = useState<TablicaWatek | null>(null);
   const [previewOgloszenie, setPreviewOgloszenie] = useState<TablicaWatek | null>(null);
   const [showNewAnkietaModal, setShowNewAnkietaModal] = useState(false);
-  const [newWatekForm, setNewWatekForm] = useState({ tytul: '', tresc: '', kategoria: 'ogłoszenie' as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: 'wszyscy' });
-  const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''] });
+  const [newWatekForm, setNewWatekForm] = useState({ tytul: '', tresc: '', kategoria: 'ogłoszenie' as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: 'wszyscy', archiwum_data: '' });
+  const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''], archiwum_data: '' });
+  const [showArchiwum, setShowArchiwum] = useState(false);
   const [newWiadomoscTresc, setNewWiadomoscTresc] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
   const [showInfoBanner, setShowInfoBanner] = useState(true);
@@ -682,6 +773,18 @@ export default function MinistranciApp() {
     },
   });
 
+  const poslugaEditor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit,
+      TiptapUnderline,
+    ],
+    content: '',
+    editorProps: {
+      attributes: { class: 'tiptap-posluga min-h-[100px] max-h-[200px] overflow-auto px-3 py-2 text-sm outline-none' },
+    },
+  });
+
   useEffect(() => {
     const saved = localStorage.getItem('darkMode');
     if (saved === 'true') {
@@ -738,6 +841,15 @@ export default function MinistranciApp() {
 
     if (profile) {
       setCurrentUser(profile as Profile);
+      // Sprawdź czy profil wymaga uzupełnienia (użytkownik OAuth z typ='nowy')
+      if (profile.typ === 'nowy' || !profile.imie) {
+        setProfileCompletionForm({
+          imie: profile.imie || '',
+          nazwisko: profile.nazwisko || '',
+          typ: 'ministrant',
+        });
+        setShowProfileCompletion(true);
+      }
     }
     setLoading(false);
   }, []);
@@ -931,7 +1043,17 @@ export default function MinistranciApp() {
       supabase.from('powiadomienia').select('*').eq('odbiorca_id', currentUser.id).order('created_at', { ascending: false }),
     ]);
 
-    if (watkiData) setTablicaWatki(watkiData as TablicaWatek[]);
+    if (watkiData) {
+      const watki = watkiData as TablicaWatek[];
+      // Auto-usuwanie wątków zarchiwizowanych ponad 1 miesiąc temu
+      const now = new Date();
+      const miesiacTemu = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      const doUsuniecia = watki.filter(w => w.archiwum_data && new Date(w.archiwum_data) < miesiacTemu);
+      if (doUsuniecia.length > 0) {
+        await Promise.all(doUsuniecia.map(w => supabase.from('tablica_watki').delete().eq('id', w.id)));
+      }
+      setTablicaWatki(watki.filter(w => !doUsuniecia.some(d => d.id === w.id)));
+    }
     if (ankietyData) setAnkiety(ankietyData as Ankieta[]);
     if (opcjeData) setAnkietyOpcje(opcjeData as AnkietaOpcja[]);
     if (odpowiedziData) setAnkietyOdpowiedzi(odpowiedziData as AnkietaOdpowiedz[]);
@@ -1247,6 +1369,41 @@ export default function MinistranciApp() {
     loadRankingData();
   };
 
+  const dodajPunktyRecznie = async () => {
+    if (!selectedMember || !currentUser?.parafia_id) return;
+    const pkt = parseInt(dodajPunktyForm.punkty);
+    if (!pkt || pkt === 0) return;
+
+    const { data: existing } = await supabase.from('ranking')
+      .select('*')
+      .eq('ministrant_id', selectedMember.profile_id)
+      .eq('parafia_id', currentUser.parafia_id)
+      .single();
+
+    if (existing) {
+      const newTotal = Number(existing.total_pkt) + pkt;
+      const ranga = getRanga(newTotal);
+      await supabase.from('ranking').update({
+        total_pkt: newTotal,
+        ranga: ranga?.nazwa || existing.ranga,
+        updated_at: new Date().toISOString(),
+      }).eq('id', existing.id);
+    } else {
+      const ranga = getRanga(pkt);
+      await supabase.from('ranking').insert({
+        ministrant_id: selectedMember.profile_id,
+        parafia_id: currentUser.parafia_id,
+        total_pkt: pkt,
+        total_obecnosci: 0,
+        ranga: ranga?.nazwa || 'Ready',
+      });
+    }
+
+    setShowDodajPunktyModal(false);
+    setDodajPunktyForm({ punkty: '', powod: '' });
+    loadRankingData();
+  };
+
   const odrzucObecnosc = async (obecnoscId: string) => {
     await supabase.from('obecnosci').update({
       status: 'odrzucona',
@@ -1272,6 +1429,66 @@ export default function MinistranciApp() {
     } else {
       await supabase.from('dyzury').insert({
         ministrant_id: currentUser.id,
+        parafia_id: currentUser.parafia_id,
+        dzien_tygodnia: dzienTygodnia,
+      });
+    }
+    loadRankingData();
+  };
+
+  const handleSaveProfile = async () => {
+    if (!currentUser || !editProfilForm.imie.trim()) {
+      alert('Imię jest wymagane!');
+      return;
+    }
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        imie: editProfilForm.imie.trim(),
+        nazwisko: editProfilForm.nazwisko.trim(),
+        email: editProfilForm.email.trim(),
+      })
+      .eq('id', currentUser.id);
+
+    if (profileError) {
+      alert('Błąd zapisu profilu: ' + profileError.message);
+      return;
+    }
+
+    // Zaktualizuj też w tabeli members
+    if (currentUser.parafia_id) {
+      await supabase
+        .from('members')
+        .update({
+          imie: editProfilForm.imie.trim(),
+          nazwisko: editProfilForm.nazwisko.trim(),
+          email: editProfilForm.email.trim(),
+        })
+        .eq('profile_id', currentUser.id)
+        .eq('parafia_id', currentUser.parafia_id);
+    }
+
+    setCurrentUser({
+      ...currentUser,
+      imie: editProfilForm.imie.trim(),
+      nazwisko: editProfilForm.nazwisko.trim(),
+      email: editProfilForm.email.trim(),
+    });
+    setShowEditProfilModal(false);
+    loadParafiaData();
+  };
+
+  const toggleDyzurAdmin = async (ministrantId: string, dzienTygodnia: number) => {
+    if (!currentUser?.parafia_id) return;
+
+    const existing = dyzury.find(d => d.ministrant_id === ministrantId && d.dzien_tygodnia === dzienTygodnia);
+
+    if (existing) {
+      await supabase.from('dyzury').delete().eq('id', existing.id);
+    } else {
+      await supabase.from('dyzury').insert({
+        ministrant_id: ministrantId,
         parafia_id: currentUser.parafia_id,
         dzien_tygodnia: dzienTygodnia,
       });
@@ -1452,40 +1669,74 @@ export default function MinistranciApp() {
 
   // ==================== AUTENTYKACJA ====================
 
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleAuth = async () => {
-    if (!email || !password) {
-      alert('Wypełnij wszystkie pola!');
+    const errors: typeof authErrors = {};
+
+    if (!email.trim()) {
+      errors.email = 'Wpisz adres e-mail';
+    } else if (!validateEmail(email.trim())) {
+      errors.email = 'Nieprawidłowy format adresu e-mail';
+    }
+
+    if (!password) {
+      errors.password = 'Wpisz hasło';
+    } else if (password.length < 6) {
+      errors.password = 'Hasło musi mieć co najmniej 6 znaków';
+    }
+
+    if (!isLogin) {
+      if (!imie.trim()) errors.imie = 'Wpisz swoje imię';
+      if (!nazwisko.trim()) errors.nazwisko = 'Wpisz swoje nazwisko';
+      if (userType === 'ksiadz' && !diecezja) errors.diecezja = 'Wybierz swoją diecezję';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setAuthErrors(errors);
       return;
     }
 
+    setAuthErrors({});
     setAuthLoading(true);
 
     if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) {
-        alert('Nieprawidłowy email lub hasło!');
+        if (error.message.includes('Invalid login credentials')) {
+          setAuthErrors({ general: 'Nieprawidłowy e-mail lub hasło. Spróbuj ponownie.' });
+        } else {
+          setAuthErrors({ general: 'Błąd logowania. Spróbuj ponownie później.' });
+        }
         setAuthLoading(false);
         return;
       }
     } else {
-      if (!imie || !nazwisko) {
-        alert('Podaj imię i nazwisko!');
+      if (!acceptedTerms) {
+        setAuthErrors({ general: 'Musisz zaakceptować regulamin i politykę prywatności.' });
         setAuthLoading(false);
         return;
       }
 
       const { error } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
         options: {
-          data: { imie, nazwisko, typ: userType }
+          data: { imie: imie.trim(), nazwisko: nazwisko.trim(), typ: userType, ...(userType === 'ksiadz' && diecezja ? { diecezja } : {}) }
         }
       });
 
       if (error) {
-        alert(error.message === 'User already registered'
-          ? 'Użytkownik o tym emailu już istnieje!'
-          : `Błąd: ${error.message}`);
+        if (error.message === 'User already registered') {
+          setAuthErrors({ email: 'Użytkownik o tym adresie e-mail już istnieje.' });
+        } else if (error.message.includes('password')) {
+          setAuthErrors({ password: 'Hasło jest za słabe. Użyj co najmniej 6 znaków.' });
+        } else {
+          setAuthErrors({ general: error.message });
+        }
         setAuthLoading(false);
         return;
       }
@@ -1494,9 +1745,89 @@ export default function MinistranciApp() {
     setAuthLoading(false);
   };
 
+  const handleResetPassword = async () => {
+    const errors: typeof authErrors = {};
+
+    if (!email.trim()) {
+      errors.email = 'Wpisz adres e-mail, na który wyślemy link do resetowania hasła';
+    } else if (!validateEmail(email.trim())) {
+      errors.email = 'Nieprawidłowy format adresu e-mail';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setAuthErrors(errors);
+      return;
+    }
+
+    setAuthErrors({});
+    setAuthLoading(true);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/app`,
+    });
+
+    if (error) {
+      setAuthErrors({ general: 'Nie udało się wysłać wiadomości. Spróbuj ponownie.' });
+      setAuthLoading(false);
+      return;
+    }
+
+    setAuthMode('reset-sent');
+    setAuthLoading(false);
+  };
+
+  const handleOAuthLogin = async (provider: 'google' | 'facebook' | 'apple') => {
+    setAuthLoading(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/app`,
+      },
+    });
+    if (error) {
+      alert(`Błąd logowania: ${error.message}`);
+      setAuthLoading(false);
+    }
+  };
+
+  const handleCompleteProfile = async () => {
+    if (!currentUser) return;
+    if (!profileCompletionForm.imie.trim()) {
+      alert('Imię jest wymagane!');
+      return;
+    }
+    if (!acceptedTerms) {
+      alert('Musisz zaakceptować regulamin i politykę prywatności!');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        imie: profileCompletionForm.imie.trim(),
+        nazwisko: profileCompletionForm.nazwisko.trim(),
+        typ: profileCompletionForm.typ,
+      })
+      .eq('id', currentUser.id);
+
+    if (error) {
+      alert('Błąd zapisu profilu: ' + error.message);
+      return;
+    }
+
+    setCurrentUser({
+      ...currentUser,
+      imie: profileCompletionForm.imie.trim(),
+      nazwisko: profileCompletionForm.nazwisko.trim(),
+      typ: profileCompletionForm.typ,
+    });
+    setShowProfileCompletion(false);
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setCurrentUser(null);
+    setShowProfileCompletion(false);
     setEmail('');
     setPassword('');
     setImie('');
@@ -1926,7 +2257,7 @@ export default function MinistranciApp() {
       kolor: newPoslugaForm.kolor,
       obrazek_url: obrazekUrl || null,
       kolejnosc: poslugi.length,
-      dlugi_opis: newPoslugaForm.dlugi_opis || '',
+      dlugi_opis: poslugaEditor?.getHTML() || '',
       zdjecia: zdjeciaUrls,
       youtube_url: newPoslugaForm.youtube_url || '',
     });
@@ -1937,6 +2268,7 @@ export default function MinistranciApp() {
     }
 
     await loadPoslugi();
+    if (poslugaEditor) poslugaEditor.commands.clearContent();
     setNewPoslugaForm({ nazwa: '', opis: '', emoji: '⭐', kolor: 'gray', dlugi_opis: '', youtube_url: '' });
     setNewPoslugaFile(null);
     setNewPoslugaPreview('');
@@ -1972,7 +2304,7 @@ export default function MinistranciApp() {
         emoji: editingPosluga.emoji,
         kolor: editingPosluga.kolor,
         obrazek_url: obrazekUrl || null,
-        dlugi_opis: editingPosluga.dlugi_opis || '',
+        dlugi_opis: poslugaEditor?.getHTML() || editingPosluga.dlugi_opis || '',
         zdjecia: zdjeciaUrls,
         youtube_url: editingPosluga.youtube_url || '',
       })
@@ -2098,11 +2430,16 @@ export default function MinistranciApp() {
       alert('Błąd: nie załadowano danych użytkownika lub parafii.');
       return;
     }
+    if (!newWatekForm.archiwum_data) {
+      alert('Podaj termin przeniesienia do archiwum!');
+      return;
+    }
     const tresc = tiptapEditor?.getHTML() || newWatekForm.tresc;
     const { tytul, kategoria, grupa_docelowa } = newWatekForm;
     // Dla ogłoszenia tytuł generujemy z treści
+    const plainTresc = tresc.replace(/<[^>]+>/g, '').trim();
     const finalTytul = kategoria === 'ogłoszenie'
-      ? (tresc.trim().substring(0, 50) + (tresc.trim().length > 50 ? '...' : '') || 'Ogłoszenie')
+      ? (plainTresc.substring(0, 50) + (plainTresc.length > 50 ? '...' : '') || 'Ogłoszenie')
       : tytul.trim();
     if (!finalTytul) { alert('Podaj tytuł!'); return; }
     if (kategoria === 'ogłoszenie' && !tresc.trim()) { alert('Podaj treść ogłoszenia!'); return; }
@@ -2115,12 +2452,30 @@ export default function MinistranciApp() {
         tresc: tresc.trim(),
         kategoria,
         grupa_docelowa,
+        archiwum_data: newWatekForm.archiwum_data || null,
       }).select().single();
 
       if (error) { alert('Błąd: ' + error.message); return; }
 
+      // Push notification (fire and forget)
+      if (inserted && currentParafia) {
+        fetch('/api/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parafia_id: currentParafia.id,
+            grupa_docelowa,
+            title: kategoria === 'ogłoszenie' ? 'Nowe ogłoszenie' : 'Nowa dyskusja',
+            body: finalTytul,
+            url: '/app',
+            kategoria,
+            autor_id: currentUser.id,
+          }),
+        }).catch(console.error);
+      }
+
       setShowNewWatekModal(false);
-      setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+      setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
       await loadTablicaData();
     } catch (err) {
       alert('Nieoczekiwany błąd: ' + (err instanceof Error ? err.message : String(err)));
@@ -2131,8 +2486,9 @@ export default function MinistranciApp() {
     if (!editingWatek) return;
     const tresc = tiptapEditor?.getHTML() || newWatekForm.tresc;
     const { tytul, kategoria, grupa_docelowa } = newWatekForm;
+    const plainTresc = tresc.replace(/<[^>]+>/g, '').trim();
     const finalTytul = kategoria === 'ogłoszenie'
-      ? (tresc.trim().substring(0, 50) + (tresc.trim().length > 50 ? '...' : '') || 'Ogłoszenie')
+      ? (plainTresc.substring(0, 50) + (plainTresc.length > 50 ? '...' : '') || 'Ogłoszenie')
       : tytul.trim();
     if (!finalTytul) { alert('Podaj tytuł!'); return; }
     if (kategoria === 'ogłoszenie' && !tresc.trim()) { alert('Podaj treść ogłoszenia!'); return; }
@@ -2142,13 +2498,14 @@ export default function MinistranciApp() {
       tresc: tresc.trim(),
       kategoria,
       grupa_docelowa,
+      archiwum_data: newWatekForm.archiwum_data || null,
     }).eq('id', editingWatek.id);
 
     if (error) { alert('Błąd: ' + error.message); return; }
     const editedId = editingWatek.id;
     setShowNewWatekModal(false);
     setEditingWatek(null);
-    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
     await loadTablicaData();
     // Odśwież selectedWatek jeśli edytowaliśmy aktualnie otwarty wątek
     if (selectedWatek?.id === editedId) {
@@ -2160,6 +2517,10 @@ export default function MinistranciApp() {
   const createAnkieta = async () => {
     if (!currentUser || !currentParafia) {
       alert('Błąd: nie załadowano danych użytkownika lub parafii.');
+      return;
+    }
+    if (!newAnkietaForm.archiwum_data) {
+      alert('Podaj termin przeniesienia do archiwum!');
       return;
     }
     const { pytanie, typ, obowiazkowa, termin, opcje } = newAnkietaForm;
@@ -2180,6 +2541,7 @@ export default function MinistranciApp() {
         tresc: '',
         kategoria: 'ankieta' as const,
         grupa_docelowa: 'wszyscy',
+        archiwum_data: newAnkietaForm.archiwum_data || null,
       }).select().single();
 
       if (watekErr || !watek) { alert('Błąd tworzenia wątku: ' + (watekErr?.message || 'Brak danych')); return; }
@@ -2206,8 +2568,25 @@ export default function MinistranciApp() {
         if (opcjeErr) { alert('Błąd dodawania opcji: ' + opcjeErr.message); return; }
       }
 
+      // Push notification for ankieta (fire and forget)
+      if (watek && currentParafia) {
+        fetch('/api/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parafia_id: currentParafia.id,
+            grupa_docelowa: 'wszyscy',
+            title: obowiazkowa ? 'Nowa ankieta (obowiązkowa)' : 'Nowa ankieta',
+            body: pytanie.trim(),
+            url: '/app',
+            kategoria: 'ankieta',
+            autor_id: currentUser.id,
+          }),
+        }).catch(console.error);
+      }
+
       setShowNewAnkietaModal(false);
-      setNewAnkietaForm({ pytanie: '', typ: 'tak_nie', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''] });
+      setNewAnkietaForm({ pytanie: '', typ: 'tak_nie', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''], archiwum_data: '' });
       await loadTablicaData();
     } catch (err) {
       alert('Nieoczekiwany błąd: ' + (err instanceof Error ? err.message : String(err)));
@@ -2230,6 +2609,10 @@ export default function MinistranciApp() {
     if (!currentUser) return;
     // Sprawdź czy ministrant już wcześniej odpowiadał (zmiana odpowiedzi)
     const ankieta = ankiety.find(a => a.id === ankietaId);
+    if (ankieta?.termin && new Date(ankieta.termin) < new Date()) {
+      alert('Termin odpowiedzi na tę ankietę już minął!');
+      return;
+    }
     const miałPoprzednia = ankietyOdpowiedzi.some(o => o.ankieta_id === ankietaId && o.respondent_id === currentUser.id);
 
     if (ankieta && ankieta.typ !== 'wielokrotny') {
@@ -2283,16 +2666,20 @@ export default function MinistranciApp() {
 
   const deleteWatek = async (watekId: string) => {
     if (!confirm('Czy na pewno chcesz usunąć ten wątek?')) return;
-    // Usuń powiadomienia powiązane z wątkiem
-    await supabase.from('powiadomienia').delete().eq('odniesienie_typ', 'watek').eq('odniesienie_id', watekId);
-    // Usuń powiadomienia powiązane z ankietą tego wątku
-    const watekAnkieta = ankiety.find(a => a.watek_id === watekId);
-    if (watekAnkieta) {
-      await supabase.from('powiadomienia').delete().eq('odniesienie_typ', 'ankieta').eq('odniesienie_id', watekAnkieta.id);
-    }
-    // Usuń wątek (kaskada: ankiety, opcje, odpowiedzi, wiadomości)
-    await supabase.from('tablica_watki').delete().eq('id', watekId);
+    // Przenieś do archiwum — ustaw archiwum_data na teraz
+    await supabase.from('tablica_watki').update({ archiwum_data: new Date().toISOString() }).eq('id', watekId);
     setSelectedWatek(null);
+    await loadTablicaData();
+  };
+
+  const permanentDeleteWatek = async (watekId: string) => {
+    if (!confirm('Czy na pewno chcesz trwale usunąć ten wątek? Tej operacji nie można cofnąć.')) return;
+    await supabase.from('tablica_watki').delete().eq('id', watekId);
+    await loadTablicaData();
+  };
+
+  const restoreWatek = async (watekId: string) => {
+    await supabase.from('tablica_watki').update({ archiwum_data: null }).eq('id', watekId);
     await loadTablicaData();
   };
 
@@ -2300,6 +2687,38 @@ export default function MinistranciApp() {
     await supabase.from('powiadomienia').update({ przeczytane: true }).eq('id', id);
     await loadTablicaData();
   };
+
+  // ==================== PUSH NOTIFICATIONS ====================
+  const registerPushSubscription = useCallback(async () => {
+    if (!currentUser?.id || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return;
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+        });
+      }
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: currentUser.id, subscription: subscription.toJSON() }),
+      });
+    } catch (err) {
+      console.error('Push registration failed:', err);
+    }
+  }, [currentUser?.id]);
+
+  // Rejestracja push notifications po zalogowaniu
+  useEffect(() => {
+    if (currentUser?.id && currentParafia?.id) {
+      registerPushSubscription();
+    }
+  }, [currentUser?.id, currentParafia?.id, registerPushSubscription]);
 
   const startEditAnkieta = (ankieta: Ankieta) => {
     const opcje = ankietyOpcje.filter(o => o.ankieta_id === ankieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc);
@@ -2369,6 +2788,17 @@ export default function MinistranciApp() {
 
   const nieprzeczytanePowiadomienia = powiadomienia.filter(p => !p.przeczytane).length;
 
+  const archiwalneWatki = useMemo(() => {
+    const now = new Date();
+    return tablicaWatki.filter(w => {
+      if (!w.archiwum_data || new Date(w.archiwum_data) > now) return false;
+      const gd = w.grupa_docelowa;
+      if (gd === 'ksieza' && currentUser?.typ !== 'ksiadz') return false;
+      if (gd === 'ministranci' && currentUser?.typ !== 'ministrant') return false;
+      return true;
+    });
+  }, [tablicaWatki, currentUser?.typ]);
+
   // ==================== RENDERY ====================
 
   const getMemberName = (id: string | null) => {
@@ -2403,9 +2833,9 @@ export default function MinistranciApp() {
     );
   }
 
-  // ==================== EKRAN LOGOWANIA ====================
+  // ==================== EKRAN UZUPEŁNIANIA PROFILU (OAuth) ====================
 
-  if (!currentUser) {
+  if (currentUser && showProfileCompletion) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -2413,88 +2843,462 @@ export default function MinistranciApp() {
             <div className="flex items-center justify-center mb-4">
               <Church className="w-12 h-12 text-indigo-600 dark:text-indigo-400" />
             </div>
-            <CardTitle className="text-center text-2xl">
-              {isLogin ? 'Zaloguj się' : 'Zarejestruj się'}
-            </CardTitle>
+            <CardTitle className="text-center text-2xl">Dokończ rejestrację</CardTitle>
             <CardDescription className="text-center">
-              Aplikacja dla ministrantów
+              Uzupełnij swoje dane, aby korzystać z aplikacji
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="completion-imie">Imię *</Label>
               <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="twoj@email.pl"
+                id="completion-imie"
+                value={profileCompletionForm.imie}
+                onChange={(e) => setProfileCompletionForm({ ...profileCompletionForm, imie: e.target.value })}
+                placeholder="Jan"
               />
             </div>
-
             <div>
-              <Label htmlFor="password">Hasło</Label>
+              <Label htmlFor="completion-nazwisko">Nazwisko</Label>
               <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                id="completion-nazwisko"
+                value={profileCompletionForm.nazwisko}
+                onChange={(e) => setProfileCompletionForm({ ...profileCompletionForm, nazwisko: e.target.value })}
+                placeholder="Kowalski"
               />
             </div>
+            <div>
+              <Label htmlFor="completion-typ">Typ konta *</Label>
+              <Select
+                value={profileCompletionForm.typ}
+                onValueChange={(v) => setProfileCompletionForm({ ...profileCompletionForm, typ: v as UserType })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ministrant">Ministrant</SelectItem>
+                  <SelectItem value="ksiadz">Ksiądz</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            {!isLogin && (
-              <>
-                <div>
-                  <Label htmlFor="imie">Imię</Label>
-                  <Input
-                    id="imie"
-                    value={imie}
-                    onChange={(e) => setImie(e.target.value)}
-                    placeholder="Jan"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="nazwisko">Nazwisko</Label>
-                  <Input
-                    id="nazwisko"
-                    value={nazwisko}
-                    onChange={(e) => setNazwisko(e.target.value)}
-                    placeholder="Kowalski"
-                  />
-                </div>
+            <div className="flex items-start gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="completion-terms"
+                checked={acceptedTerms}
+                onChange={(e) => setAcceptedTerms(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300 accent-indigo-600"
+              />
+              <label htmlFor="completion-terms" className="text-sm text-gray-600 dark:text-gray-400">
+                Akceptuję{' '}
+                <a href="/regulamin" target="_blank" className="text-indigo-600 dark:text-indigo-400 underline hover:no-underline">
+                  regulamin
+                </a>
+                {' '}i{' '}
+                <a href="/polityka-prywatnosci" target="_blank" className="text-indigo-600 dark:text-indigo-400 underline hover:no-underline">
+                  politykę prywatności
+                </a>
+              </label>
+            </div>
 
-                <div>
-                  <Label htmlFor="typ">Typ konta</Label>
-                  <Select value={userType} onValueChange={(v) => setUserType(v as UserType)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ministrant">Ministrant</SelectItem>
-                      <SelectItem value="ksiadz">Ksiądz</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-
-            <Button onClick={handleAuth} className="w-full" disabled={authLoading}>
-              {authLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : null}
-              {isLogin ? 'Zaloguj się' : 'Zarejestruj się'}
+            <Button onClick={handleCompleteProfile} className="w-full" disabled={!acceptedTerms}>
+              Zapisz i kontynuuj
             </Button>
 
-            <Button
-              variant="ghost"
-              onClick={() => setIsLogin(!isLogin)}
-              className="w-full"
-            >
-              {isLogin ? 'Nie masz konta? Zarejestruj się' : 'Masz konto? Zaloguj się'}
+            <Button variant="ghost" onClick={handleLogout} className="w-full">
+              <LogOut className="w-4 h-4 mr-2" />
+              Wyloguj
             </Button>
           </CardContent>
         </Card>
+      </div>
+    );
+  }
+
+  // ==================== EKRAN LOGOWANIA ====================
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden" style={{ background: '#050510' }}>
+        {/* Tło dekoracyjne */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full opacity-[0.07]" style={{ background: 'radial-gradient(circle, #d4a853 0%, transparent 70%)' }} />
+          <div className="absolute bottom-[-15%] right-[-5%] w-[400px] h-[400px] rounded-full opacity-[0.05]" style={{ background: 'radial-gradient(circle, #d4a853 0%, transparent 70%)' }} />
+          <div className="absolute top-[10%] right-[15%] w-1 h-1 bg-amber-400/30 rounded-full" />
+          <div className="absolute top-[25%] left-[20%] w-0.5 h-0.5 bg-amber-400/20 rounded-full" />
+          <div className="absolute bottom-[30%] left-[10%] w-1.5 h-1.5 bg-amber-400/15 rounded-full" />
+        </div>
+
+        <div className="w-full max-w-[420px] relative z-10">
+          {/* Logo i nagłówek */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, #d4a853 0%, #b8912e 100%)', boxShadow: '0 8px 32px rgba(212,168,83,0.3)' }}>
+              <Church className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-100 mb-1">
+              {authMode === 'login' && 'Witaj ponownie'}
+              {authMode === 'register' && 'Dołącz do nas'}
+              {authMode === 'forgot' && 'Resetowanie hasła'}
+              {authMode === 'reset-sent' && 'Sprawdź skrzynkę'}
+            </h1>
+            <p className="text-slate-400 text-sm">
+              {authMode === 'login' && 'Zaloguj się do swojego konta'}
+              {authMode === 'register' && 'Utwórz nowe konto w aplikacji'}
+              {authMode === 'forgot' && 'Wyślemy Ci link do zresetowania hasła'}
+              {authMode === 'reset-sent' && 'Link do resetowania hasła został wysłany'}
+            </p>
+          </div>
+
+          {/* Karta formularza */}
+          <div className="rounded-2xl border border-white/[0.06] p-6 sm:p-8" style={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)', backdropFilter: 'blur(20px)', boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)' }}>
+
+            {/* Błąd ogólny */}
+            {authErrors.general && (
+              <div className="flex items-start gap-3 p-3 rounded-xl mb-5 border border-red-500/20" style={{ background: 'rgba(239,68,68,0.08)' }}>
+                <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <X className="w-3 h-3 text-red-400" />
+                </div>
+                <p className="text-sm text-red-300 leading-relaxed">{authErrors.general}</p>
+              </div>
+            )}
+
+            {/* ===== EKRAN: LINK WYSŁANY ===== */}
+            {authMode === 'reset-sent' ? (
+              <div className="text-center py-4">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                  <Mail className="w-7 h-7 text-green-400" />
+                </div>
+                <p className="text-slate-300 text-sm mb-1">Wiadomość została wysłana na adres:</p>
+                <p className="text-amber-400 font-medium mb-6">{email}</p>
+                <p className="text-slate-500 text-xs leading-relaxed mb-6">
+                  Kliknij link w wiadomości e-mail, aby ustawić nowe hasło. Jeśli nie widzisz wiadomości, sprawdź folder spam.
+                </p>
+                <button
+                  onClick={() => { setAuthMode('login'); setIsLogin(true); setAuthErrors({}); }}
+                  className="text-sm text-amber-400 hover:text-amber-300 transition-colors font-medium"
+                >
+                  Wróć do logowania
+                </button>
+              </div>
+            ) : authMode === 'forgot' ? (
+              /* ===== EKRAN: RESETOWANIE HASŁA ===== */
+              <div className="space-y-5">
+                <div>
+                  <label htmlFor="reset-email" className="block text-sm font-medium text-slate-300 mb-2">Adres e-mail</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      id="reset-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); setAuthErrors(prev => ({ ...prev, email: undefined })); }}
+                      placeholder="twoj@email.pl"
+                      className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
+                        authErrors.email
+                          ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-400/40 focus:ring-1 focus:ring-amber-400/10'
+                      }`}
+                    />
+                  </div>
+                  {authErrors.email && <p className="mt-2 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.email}</p>}
+                </div>
+
+                <button
+                  onClick={handleResetPassword}
+                  disabled={authLoading}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{ background: 'linear-gradient(135deg, #d4a853 0%, #b8912e 100%)', boxShadow: '0 4px 16px rgba(212,168,83,0.25)' }}
+                >
+                  {authLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Wyślij link resetujący
+                </button>
+
+                <div className="text-center pt-1">
+                  <button
+                    onClick={() => { setAuthMode('login'); setIsLogin(true); setAuthErrors({}); }}
+                    className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
+                    Wróć do logowania
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ===== EKRAN: LOGOWANIE / REJESTRACJA ===== */
+              <div className="space-y-4">
+                {/* E-mail */}
+                <div>
+                  <label htmlFor="auth-email" className="block text-sm font-medium text-slate-300 mb-2">Adres e-mail</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      id="auth-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); setAuthErrors(prev => ({ ...prev, email: undefined })); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                      placeholder="twoj@email.pl"
+                      className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
+                        authErrors.email
+                          ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-400/40 focus:ring-1 focus:ring-amber-400/10'
+                      }`}
+                    />
+                  </div>
+                  {authErrors.email && <p className="mt-2 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.email}</p>}
+                </div>
+
+                {/* Hasło */}
+                <div>
+                  <label htmlFor="auth-password" className="block text-sm font-medium text-slate-300 mb-2">Hasło</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      id="auth-password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setAuthErrors(prev => ({ ...prev, password: undefined })); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                      placeholder="••••••••"
+                      className={`w-full pl-10 pr-12 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
+                        authErrors.password
+                          ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-400/40 focus:ring-1 focus:ring-amber-400/10'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {authErrors.password && <p className="mt-2 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.password}</p>}
+                </div>
+
+                {/* Link "Nie pamiętasz hasła?" - tylko przy logowaniu */}
+                {isLogin && (
+                  <div className="text-right -mt-1">
+                    <button
+                      onClick={() => { setAuthMode('forgot'); setAuthErrors({}); }}
+                      className="text-xs text-amber-400/70 hover:text-amber-400 transition-colors"
+                    >
+                      Nie pamiętasz hasła?
+                    </button>
+                  </div>
+                )}
+
+                {/* Pola rejestracji */}
+                {!isLogin && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="auth-imie" className="block text-sm font-medium text-slate-300 mb-2">Imię</label>
+                        <input
+                          id="auth-imie"
+                          value={imie}
+                          onChange={(e) => { setImie(e.target.value); setAuthErrors(prev => ({ ...prev, imie: undefined })); }}
+                          placeholder="Jan"
+                          className={`w-full px-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
+                            authErrors.imie
+                              ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                              : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-400/40 focus:ring-1 focus:ring-amber-400/10'
+                          }`}
+                        />
+                        {authErrors.imie && <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.imie}</p>}
+                      </div>
+                      <div>
+                        <label htmlFor="auth-nazwisko" className="block text-sm font-medium text-slate-300 mb-2">Nazwisko</label>
+                        <input
+                          id="auth-nazwisko"
+                          value={nazwisko}
+                          onChange={(e) => { setNazwisko(e.target.value); setAuthErrors(prev => ({ ...prev, nazwisko: undefined })); }}
+                          placeholder="Kowalski"
+                          className={`w-full px-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
+                            authErrors.nazwisko
+                              ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
+                              : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-400/40 focus:ring-1 focus:ring-amber-400/10'
+                          }`}
+                        />
+                        {authErrors.nazwisko && <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.nazwisko}</p>}
+                      </div>
+                    </div>
+
+                    {/* Typ konta */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">Typ konta</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { setUserType('ministrant'); setDiecezja(''); setDiecezjaSearch(''); setAuthErrors(prev => ({ ...prev, diecezja: undefined })); }}
+                          className={`p-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
+                            userType === 'ministrant'
+                              ? 'border-amber-400/40 bg-amber-400/10 text-amber-300'
+                              : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/[0.15] hover:text-slate-300'
+                          }`}
+                        >
+                          <Users className="w-5 h-5 mx-auto mb-1.5" />
+                          Ministrant
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUserType('ksiadz')}
+                          className={`p-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
+                            userType === 'ksiadz'
+                              ? 'border-amber-400/40 bg-amber-400/10 text-amber-300'
+                              : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/[0.15] hover:text-slate-300'
+                          }`}
+                        >
+                          <Church className="w-5 h-5 mx-auto mb-1.5" />
+                          Ksiądz
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Diecezja — tylko dla księdza */}
+                    {userType === 'ksiadz' && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Diecezja</label>
+                        <div className="relative" ref={diecezjaRef}>
+                          <button
+                            type="button"
+                            onClick={() => setDiecezjaOpen(!diecezjaOpen)}
+                            className={`w-full px-4 py-3 rounded-xl text-sm text-left outline-none transition-all duration-200 flex items-center justify-between ${
+                              authErrors.diecezja
+                                ? 'border border-red-500/50 bg-red-500/5'
+                                : 'border border-white/[0.08] bg-white/[0.03]'
+                            } ${diecezja ? 'text-slate-200' : 'text-slate-500'}`}
+                          >
+                            <span className="truncate">{diecezja || 'Wybierz diecezję...'}</span>
+                            <ChevronDown className={`w-4 h-4 text-slate-500 shrink-0 ml-2 transition-transform duration-200 ${diecezjaOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {diecezjaOpen && (
+                            <div
+                              className="absolute z-50 bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.1] overflow-hidden"
+                              style={{ background: '#0f0f1e', boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}
+                            >
+                              {/* Pole wyszukiwania */}
+                              <div className="p-2 border-b border-white/[0.06]">
+                                <div className="relative">
+                                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                                  <input
+                                    type="text"
+                                    value={diecezjaSearch}
+                                    onChange={(e) => setDiecezjaSearch(e.target.value)}
+                                    placeholder="Szukaj diecezji..."
+                                    autoFocus
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-xs text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-400/30"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Lista diecezji */}
+                              <div className="max-h-[200px] overflow-y-auto py-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(212,168,83,0.3) transparent' }}>
+                                {DIECEZJE_POLSKIE
+                                  .filter(d => d.toLowerCase().includes(diecezjaSearch.toLowerCase()))
+                                  .map(d => (
+                                    <button
+                                      key={d}
+                                      type="button"
+                                      onClick={() => {
+                                        setDiecezja(d);
+                                        setDiecezjaOpen(false);
+                                        setDiecezjaSearch('');
+                                        setAuthErrors(prev => ({ ...prev, diecezja: undefined }));
+                                      }}
+                                      className={`w-full px-4 py-2.5 text-xs text-left transition-colors flex items-center gap-2 ${
+                                        d === diecezja
+                                          ? 'bg-amber-400/10 text-amber-300'
+                                          : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
+                                      }`}
+                                    >
+                                      {d === diecezja && <Check className="w-3 h-3 text-amber-400 shrink-0" />}
+                                      <span className={d === diecezja ? '' : 'ml-5'}>{d}</span>
+                                    </button>
+                                  ))
+                                }
+                                {DIECEZJE_POLSKIE.filter(d => d.toLowerCase().includes(diecezjaSearch.toLowerCase())).length === 0 && (
+                                  <p className="px-4 py-3 text-xs text-slate-600 text-center">Nie znaleziono diecezji</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {authErrors.diecezja && <p className="mt-2 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.diecezja}</p>}
+                      </div>
+                    )}
+
+                    {/* Regulamin */}
+                    <div className="flex items-start gap-3 pt-1">
+                      <div className="relative mt-0.5">
+                        <input
+                          type="checkbox"
+                          id="terms-auth"
+                          checked={acceptedTerms}
+                          onChange={(e) => setAcceptedTerms(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <label
+                          htmlFor="terms-auth"
+                          className="w-[18px] h-[18px] rounded border border-white/[0.15] bg-white/[0.03] flex items-center justify-center cursor-pointer transition-all peer-checked:bg-amber-500/20 peer-checked:border-amber-400/50"
+                        >
+                          {acceptedTerms && <Check className="w-3 h-3 text-amber-400" />}
+                        </label>
+                      </div>
+                      <label htmlFor="terms-auth" className="text-xs text-slate-500 leading-relaxed cursor-pointer">
+                        Akceptuję{' '}
+                        <a href="/regulamin" target="_blank" className="text-amber-400/70 hover:text-amber-400 underline underline-offset-2 transition-colors">regulamin</a>
+                        {' '}i{' '}
+                        <a href="/polityka-prywatnosci" target="_blank" className="text-amber-400/70 hover:text-amber-400 underline underline-offset-2 transition-colors">politykę prywatności</a>
+                      </label>
+                    </div>
+                  </>
+                )}
+
+                {/* Przycisk główny */}
+                <button
+                  onClick={handleAuth}
+                  disabled={authLoading}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 mt-2 hover:brightness-110 active:scale-[0.98]"
+                  style={{ background: 'linear-gradient(135deg, #d4a853 0%, #b8912e 100%)', boxShadow: '0 4px 16px rgba(212,168,83,0.25)' }}
+                >
+                  {authLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isLogin ? 'Zaloguj się' : 'Utwórz konto'}
+                </button>
+
+                {/* Separator */}
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-white/[0.06]" />
+                  </div>
+                </div>
+
+                {/* Przełączanie logowanie/rejestracja */}
+                <div className="text-center">
+                  <p className="text-sm text-slate-500">
+                    {isLogin ? 'Nie masz jeszcze konta?' : 'Masz już konto?'}
+                    {' '}
+                    <button
+                      onClick={() => {
+                        setIsLogin(!isLogin);
+                        setAuthMode(isLogin ? 'register' : 'login');
+                        setAcceptedTerms(false);
+                        setAuthErrors({});
+                      }}
+                      className="text-amber-400 hover:text-amber-300 font-medium transition-colors"
+                    >
+                      {isLogin ? 'Zarejestruj się' : 'Zaloguj się'}
+                    </button>
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -2509,6 +3313,16 @@ export default function MinistranciApp() {
             <div className="flex items-center gap-2 min-w-0">
               <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <h1 className="text-lg sm:text-2xl font-bold truncate">Witaj, {currentUser.imie} {currentUser.nazwisko || ''}!</h1>
+              <button
+                onClick={() => {
+                  setEditProfilForm({ imie: currentUser.imie, nazwisko: currentUser.nazwisko || '', email: currentUser.email || '' });
+                  setShowEditProfilModal(true);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors shrink-0"
+                title="Edytuj profil"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout} className="shrink-0">
               <LogOut className="w-4 h-4 sm:mr-2" />
@@ -2680,7 +3494,19 @@ export default function MinistranciApp() {
                     )}
                   </div>
                 )}
-                <p className="text-[11px] sm:text-sm text-gray-600 dark:text-gray-300 truncate max-w-[130px] sm:max-w-none">{currentUser.imie} {currentUser.nazwisko || ''} ({currentUser.typ})</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-[11px] sm:text-sm text-gray-600 dark:text-gray-300">{currentUser.imie} {currentUser.nazwisko || ''}</p>
+                  <button
+                    onClick={() => {
+                      setEditProfilForm({ imie: currentUser.imie, nazwisko: currentUser.nazwisko || '', email: currentUser.email || '' });
+                      setShowEditProfilModal(true);
+                    }}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors shrink-0"
+                    title="Edytuj profil"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2">
@@ -2771,8 +3597,18 @@ export default function MinistranciApp() {
       {/* Nawigacja */}
       <div className="max-w-7xl mx-auto px-2.5 py-3 sm:px-4 sm:py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6">
-            <TabsTrigger value="tablica" className="relative" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
+          {(() => {
+            const litColor = dzisLiturgiczny ? ({
+              zielony: { list: 'bg-white dark:bg-gray-900', trigger: 'text-green-700 dark:text-green-400 data-[state=active]:text-green-800 dark:data-[state=active]:text-green-300 [&_svg]:text-green-600 dark:[&_svg]:text-green-400' },
+              bialy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-amber-700 dark:text-amber-400 data-[state=active]:text-amber-800 dark:data-[state=active]:text-amber-300 [&_svg]:text-amber-600 dark:[&_svg]:text-amber-400' },
+              czerwony: { list: 'bg-white dark:bg-gray-900', trigger: 'text-red-700 dark:text-red-400 data-[state=active]:text-red-800 dark:data-[state=active]:text-red-300 [&_svg]:text-red-600 dark:[&_svg]:text-red-400' },
+              fioletowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-purple-700 dark:text-purple-400 data-[state=active]:text-purple-800 dark:data-[state=active]:text-purple-300 [&_svg]:text-purple-600 dark:[&_svg]:text-purple-400' },
+              rozowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-pink-600 dark:text-pink-400 data-[state=active]:text-pink-700 dark:data-[state=active]:text-pink-300 [&_svg]:text-pink-500 dark:[&_svg]:text-pink-400' },
+            } as Record<string, { list: string; trigger: string }>)[dzisLiturgiczny.kolor] || { list: 'bg-white dark:bg-gray-900', trigger: 'text-green-700 dark:text-green-400' } : { list: 'bg-muted', trigger: '' };
+            const tc = litColor.trigger;
+            return (
+          <TabsList className={`grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6 ${litColor.list}`}>
+            <TabsTrigger value="tablica" className={`relative ${tc}`} onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
               <MessageSquare className="w-4 h-4 sm:mr-2" />
               Aktualności
               {nieprzeczytanePowiadomienia > 0 && (
@@ -2782,38 +3618,40 @@ export default function MinistranciApp() {
               )}
             </TabsTrigger>
             {currentUser.typ === 'ksiadz' && (
-              <TabsTrigger value="ministranci">
+              <TabsTrigger value="ministranci" className={tc}>
                 <Users className="w-4 h-4 sm:mr-2" />
                 Ministranci
                 <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5">{members.filter(m => m.typ === 'ministrant').length}</span>
               </TabsTrigger>
             )}
-            <TabsTrigger value="ranking">
+            <TabsTrigger value="ranking" className={tc}>
               <Trophy className="w-4 h-4 sm:mr-2" />
               Ranking
             </TabsTrigger>
-            <TabsTrigger value="sluzby">
+            <TabsTrigger value="sluzby" className={tc}>
               <Star className="w-4 h-4 sm:mr-2" />
               <span className="hidden sm:inline">Wydarzenia</span><span className="sm:hidden">Wydarzenia</span>
               {sluzby.length > 0 && <span className="ml-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full px-1.5">{sluzby.length}</span>}
             </TabsTrigger>
-            <TabsTrigger value="kalendarz">
+            <TabsTrigger value="kalendarz" className={tc}>
               <Calendar className="w-4 h-4 sm:mr-2" />
               Kalendarz
             </TabsTrigger>
-            <TabsTrigger value="poslugi">
+            <TabsTrigger value="poslugi" className={tc}>
               <HandHelping className="w-4 h-4 sm:mr-2" />
               Posługi
             </TabsTrigger>
-            <TabsTrigger value="modlitwy">
+            <TabsTrigger value="modlitwy" className={tc}>
               <BookOpen className="w-4 h-4 sm:mr-2" />
               Modlitwy
             </TabsTrigger>
-            <TabsTrigger value="wskazowki">
+            <TabsTrigger value="wskazowki" className={tc}>
               <Lightbulb className="w-4 h-4 sm:mr-2" />
               Wskazówki
             </TabsTrigger>
           </TabsList>
+            );
+          })()}
 
           {/* ==================== PANEL TABLICA OGŁOSZEŃ ==================== */}
           <TabsContent value="tablica">
@@ -2827,39 +3665,108 @@ export default function MinistranciApp() {
                     </Button>
                   )}
                   <h2 className="text-lg sm:text-xl font-bold truncate">
-                    {selectedWatek ? selectedWatek.tytul : 'Aktualności'}
+                    {selectedWatek ? (selectedWatek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : selectedWatek.tytul) : 'Aktualności'}
                   </h2>
                 </div>
                 {!selectedWatek && currentUser.typ === 'ministrant' && (
-                  <Button size="sm" variant="outline" onClick={() => {
-                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy' });
-                    setShowNewWatekModal(true);
-                  }}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Dyskusja
-                  </Button>
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant="outline" onClick={() => {
+                      setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
+                      setShowNewWatekModal(true);
+                    }}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Dyskusja
+                    </Button>
+                  </div>
                 )}
               </div>
               {!selectedWatek && currentUser.typ === 'ksiadz' && (
-                <div className="flex gap-1.5 sm:gap-2">
+                <div className="flex gap-1.5 sm:gap-2 flex-wrap">
                   <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
                     <Plus className="w-4 h-4 mr-1" />
                     Dodaj ankietę
                   </Button>
                   <Button size="sm" variant="outline" className="border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800 dark:bg-teal-900/20 dark:text-teal-300 dark:hover:bg-teal-900/40" onClick={() => {
-                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
                     setShowNewWatekModal(true);
                   }}>
                     <Plus className="w-4 h-4 mr-1" />
                     Ogłoszenie
                   </Button>
                   <Button size="sm" variant="secondary" onClick={() => {
-                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy' });
+                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
                     setShowNewWatekModal(true);
                   }}>
                     <Plus className="w-4 h-4 mr-1" />
                     Dyskusja
                   </Button>
+                  <Button size="sm" variant={showArchiwum ? 'default' : 'ghost'} onClick={() => setShowArchiwum(!showArchiwum)}>
+                    <Book className="w-4 h-4 mr-1" />
+                    Archiwum ({archiwalneWatki.length})
+                  </Button>
+                </div>
+              )}
+
+              {/* === ARCHIWUM === */}
+              {!selectedWatek && showArchiwum && currentUser.typ === 'ksiadz' && (
+                <div className="space-y-3">
+                  {archiwalneWatki.length === 0 && (
+                    <Card>
+                      <CardContent className="py-8 text-center">
+                        <Book className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Archiwum jest puste</p>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {archiwalneWatki.map(watek => {
+                    const autorWatku = members.find(m => m.profile_id === watek.autor_id);
+                    const dniDoUsuniecia = watek.archiwum_data ? Math.max(0, Math.ceil((new Date(new Date(watek.archiwum_data).getTime() + 30 * 24 * 60 * 60 * 1000).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))) : 0;
+
+                    return (
+                      <Card
+                        key={watek.id}
+                        className="cursor-pointer hover:shadow-md transition-shadow opacity-60 hover:opacity-80 border-gray-300 dark:border-gray-600"
+                        onClick={() => {
+                          if (watek.kategoria === 'ogłoszenie') { setPreviewOgloszenie(watek); return; }
+                          setSelectedWatek(watek);
+                          loadWatekWiadomosci(watek.id);
+                          const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
+                          watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                        }}
+                      >
+                        <CardHeader className="pb-2 pt-3 px-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-gray-100 dark:bg-gray-800 text-gray-500">
+                                  {watek.kategoria === 'ankieta' ? 'Ankieta' : watek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : 'Dyskusja'}
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-50 dark:bg-orange-900/20 text-orange-500">
+                                  Usunięcie za {dniDoUsuniecia} dni
+                                </Badge>
+                              </div>
+                              <p className="font-semibold text-sm truncate">{watek.kategoria === 'ogłoszenie' ? (watek.tresc?.replace(/<[^>]+>/g, '').substring(0, 80) || watek.tytul) : watek.tytul}</p>
+                              <p className="text-[10px] text-gray-400 mt-1">
+                                {autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} · {new Date(watek.created_at).toLocaleDateString('pl')}
+                              </p>
+                              <div className="flex items-center gap-2 mt-2">
+                                <Button size="sm" variant="outline" className="h-7 text-xs text-green-600 dark:text-green-400 border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                  onClick={(e) => { e.stopPropagation(); restoreWatek(watek.id); }}>
+                                  <RotateCcw className="w-3 h-3 mr-1" />
+                                  Przywróć
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  onClick={(e) => { e.stopPropagation(); permanentDeleteWatek(watek.id); }}>
+                                  <Trash2 className="w-3 h-3 mr-1" />
+                                  Usuń trwale
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </CardHeader>
+                      </Card>
+                    );
+                  })}
                 </div>
               )}
 
@@ -2962,7 +3869,7 @@ export default function MinistranciApp() {
                                 onClick={() => deleteWatek(selectedWatek.id)}
                               >
                                 <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                                Usuń ankietę
+                                Usuń
                               </Button>
                             </div>
                           )}
@@ -3098,9 +4005,16 @@ export default function MinistranciApp() {
                             const juzOdpowiedzial = mojeOdpowiedzi.length > 0;
                             const pokazWyniki = juzOdpowiedzial && !watekAnkieta.wyniki_ukryte;
                             const totalMinistranci = members.filter(m => m.typ === 'ministrant').length;
+                            const terminMinal = watekAnkieta.termin ? new Date(watekAnkieta.termin) < new Date() : false;
 
                             return (
                               <div className="space-y-2">
+                                {terminMinal && (
+                                  <div className="flex items-center gap-2 p-2 rounded-md bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+                                    <Lock className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                    <p className="text-xs text-red-600 dark:text-red-400 font-medium">Termin odpowiedzi minął — głosowanie zamknięte</p>
+                                  </div>
+                                )}
                                 {/* Przyciski głosowania */}
                                 {watekOpcje.map(opcja => {
                                   const isSelected = mojeOdpowiedzi.some(o => o.opcja_id === opcja.id);
@@ -3124,7 +4038,7 @@ export default function MinistranciApp() {
                                         variant={isSelected ? 'default' : 'outline'}
                                         className={`w-full justify-between ${selectedClass}`}
                                         onClick={() => odpowiedzAnkieta(watekAnkieta.id, opcja.id)}
-                                        disabled={!watekAnkieta.aktywna}
+                                        disabled={!watekAnkieta.aktywna || terminMinal}
                                       >
                                         <span className="flex items-center gap-2">
                                           {isSelected && <Check className="w-4 h-4" />}
@@ -3288,14 +4202,19 @@ export default function MinistranciApp() {
               })()}
 
               {/* === LISTA WĄTKÓW === */}
-              {!selectedWatek && (
+              {!selectedWatek && (() => {
+                const now = new Date();
+                const aktywneWatki = tablicaWatki.filter(w => {
+                  const gd = w.grupa_docelowa;
+                  if (gd === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
+                  if (gd === 'ministranci' && currentUser.typ !== 'ministrant') return false;
+                  if (w.archiwum_data && new Date(w.archiwum_data) <= now) return false;
+                  return true;
+                });
+
+                return (
                 <div className="space-y-3">
-                  {tablicaWatki.filter(w => {
-                    const gd = w.grupa_docelowa;
-                    if (gd === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
-                    if (gd === 'ministranci' && currentUser.typ !== 'ministrant') return false;
-                    return true;
-                  }).length === 0 ? (
+                  {aktywneWatki.length === 0 ? (
                     <Card>
                       <CardContent className="py-12 text-center">
                         <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -3304,12 +4223,7 @@ export default function MinistranciApp() {
                       </CardContent>
                     </Card>
                   ) : (
-                    tablicaWatki.filter(w => {
-                      const gd = w.grupa_docelowa;
-                      if (gd === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
-                      if (gd === 'ministranci' && currentUser.typ !== 'ministrant') return false;
-                      return true;
-                    }).map(watek => {
+                    aktywneWatki.map(watek => {
                       const watekAnkieta = ankiety.find(a => a.watek_id === watek.id);
                       const autorWatku = members.find(m => m.profile_id === watek.autor_id);
                       const wiadomosciCount = 0; // Policzenie wiadomości wymagałoby joina — uproszczenie
@@ -3320,7 +4234,7 @@ export default function MinistranciApp() {
                           key={watek.id}
                           className={`cursor-pointer hover:shadow-md transition-shadow ${watek.kategoria === 'ankieta' ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : watek.kategoria === 'ogłoszenie' ? 'border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20' : watek.przypiety ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : ''}`}
                           onClick={() => {
-                            if (watek.kategoria === 'ogłoszenie') {
+                            if ((watek.kategoria === 'ogłoszenie' || watek.kategoria === 'dyskusja') && currentUser.typ === 'ksiadz') {
                               setPreviewOgloszenie(watek);
                               return;
                             }
@@ -3452,7 +4366,7 @@ export default function MinistranciApp() {
                                           className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
                                           onClick={() => {
                                             setEditingWatek(watek);
-                                            setNewWatekForm({ tytul: watek.tytul, tresc: watek.tresc || '', kategoria: watek.kategoria as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: watek.grupa_docelowa || 'wszyscy' });
+                                            setNewWatekForm({ tytul: watek.tytul, tresc: watek.tresc || '', kategoria: watek.kategoria as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: watek.grupa_docelowa || 'wszyscy', archiwum_data: watek.archiwum_data ? new Date(watek.archiwum_data).toISOString().split('T')[0] : '' });
                                             setShowNewWatekModal(true);
                                           }}
                                         >
@@ -3500,7 +4414,7 @@ export default function MinistranciApp() {
                                       className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
                                       onClick={() => {
                                         setEditingWatek(watek);
-                                        setNewWatekForm({ tytul: watek.tytul, tresc: watek.tresc || '', kategoria: watek.kategoria as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: watek.grupa_docelowa || 'wszyscy' });
+                                        setNewWatekForm({ tytul: watek.tytul, tresc: watek.tresc || '', kategoria: watek.kategoria as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: watek.grupa_docelowa || 'wszyscy', archiwum_data: watek.archiwum_data ? new Date(watek.archiwum_data).toISOString().split('T')[0] : '' });
                                         setShowNewWatekModal(true);
                                       }}
                                     >
@@ -3564,8 +4478,10 @@ export default function MinistranciApp() {
                       );
                     })
                   )}
+
                 </div>
-              )}
+                );
+              })()}
             </div>
           </TabsContent>
 
@@ -3584,6 +4500,8 @@ export default function MinistranciApp() {
                 const myMinusowe = minusowePunkty.filter(m => m.ministrant_id === currentUser.id);
                 const totalMinusowe = myMinusowe.reduce((sum, m) => sum + Number(m.punkty), 0);
                 const myPosition = rankingData.findIndex(r => r.ministrant_id === currentUser.id) + 1;
+                const myMember = members.find(m => m.profile_id === currentUser.id);
+                const myGrupa = myMember?.grupa ? grupy.find(g => g.id === myMember.grupa) : null;
 
                 return (
                   <div className="space-y-6">
@@ -3592,7 +4510,14 @@ export default function MinistranciApp() {
                       <CardContent className="pt-6">
                         <div className="flex items-center justify-between mb-4 gap-3">
                           <div className="min-w-0">
-                            <h3 className="text-lg sm:text-xl font-bold truncate">{currentUser.imie} {currentUser.nazwisko || ''}</h3>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-lg sm:text-xl font-bold truncate">{currentUser.imie} {currentUser.nazwisko || ''}</h3>
+                              {myGrupa && (
+                                <Badge className={`${KOLOR_KLASY[myGrupa.kolor]?.bg || ''} ${KOLOR_KLASY[myGrupa.kolor]?.text || ''} text-xs`}>
+                                  {myGrupa.emoji} {myGrupa.nazwa}
+                                </Badge>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2 mt-1">
                               <Badge style={{ backgroundColor: currentRanga ? KOLOR_KLASY[currentRanga.kolor]?.bg.replace('bg-', '').replace('-100', '') : undefined }} className={currentRanga ? `${KOLOR_KLASY[currentRanga.kolor]?.bg} ${KOLOR_KLASY[currentRanga.kolor]?.text}` : ''}>
                                 {currentRanga?.nazwa || 'Ready'}
@@ -4311,40 +5236,6 @@ export default function MinistranciApp() {
                     </CardContent>
                   </Card>
 
-                  {/* Grafik dyżurów */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Shield className="w-4 h-4" />
-                        Grafik dyżurów
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {dyzury.length === 0 ? (
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Żaden ministrant nie ustawił jeszcze dyżurów.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {DNI_TYGODNIA_FULL.map((dzien, i) => {
-                            const dzienIdx = i === 6 ? 0 : i + 1; // Convert Mon=0..Sun=6 to Sun=0..Sat=6
-                            const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
-                            if (dyzuryDnia.length === 0) return null;
-                            return (
-                              <div key={i} className="flex items-start gap-3 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                <span className="font-medium text-sm w-28">{dzien}:</span>
-                                <div className="flex flex-wrap gap-1">
-                                  {dyzuryDnia.map(d => {
-                                    const member = members.find(m => m.profile_id === d.ministrant_id);
-                                    return <Badge key={d.id} variant="secondary">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</Badge>;
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
                   {/* Ranking parafii */}
                   <Card>
                     <CardHeader className="pb-3">
@@ -4558,21 +5449,33 @@ export default function MinistranciApp() {
               <div className="space-y-4">
                 <div className="flex justify-between items-center flex-wrap gap-2">
                   <h2 className="text-xl sm:text-2xl font-bold">Ministranci</h2>
-                  <div className="flex gap-1.5 sm:gap-2 flex-wrap">
-                    <Button size="sm" onClick={() => setShowInviteModal(true)} className="px-2 sm:px-3">
-                      <Mail className="w-4 h-4 sm:mr-2" />
-                      <span className="hidden sm:inline">Zaproś email</span>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setShowEmailModal(true); }} variant="outline">
+                      Wyślij maila
                     </Button>
-                    <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setShowEmailModal(true); }} variant="outline" className="px-2 sm:px-3">
-                      <Send className="w-4 h-4 sm:mr-2" />
-                      <span className="hidden sm:inline">Mail zbiorczy</span>
-                    </Button>
-                    <Button size="sm" onClick={() => setShowGrupyEditModal(true)} variant="outline" className="px-2 sm:px-3">
-                      <Pencil className="w-4 h-4 sm:mr-2" />
-                      <span className="hidden sm:inline">Edytuj grupy</span>
+                    <Button size="sm" onClick={() => setShowGrupyEditModal(true)} variant="outline">
+                      Zarządzaj grupami
                     </Button>
                   </div>
                 </div>
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    placeholder="Szukaj ministranta..."
+                    value={searchMinistrant}
+                    onChange={(e) => setSearchMinistrant(e.target.value)}
+                    className="pl-9 bg-white dark:bg-gray-900"
+                  />
+                  {searchMinistrant && (
+                    <button onClick={() => setSearchMinistrant('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <Button className="w-full py-5 text-base font-semibold bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-700 dark:hover:bg-indigo-600" onClick={() => setShowGrafikModal(true)}>
+                  <Shield className="w-5 h-5 mr-2" />
+                  Grafik dyżurów
+                </Button>
 
                 {/* Nieprzypisani */}
                 {members.filter(m => !m.grupa && m.typ === 'ministrant').length > 0 && (
@@ -4581,25 +5484,63 @@ export default function MinistranciApp() {
                       <h3 className="text-lg font-bold">⚠️ Nieprzypisani</h3>
                     </div>
                     <div className="grid gap-3">
-                      {members.filter(m => !m.grupa && m.typ === 'ministrant').map(member => (
+                      {members.filter(m => !m.grupa && m.typ === 'ministrant' && (!searchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(searchMinistrant.toLowerCase()))).map(member => (
                         <Card key={member.id} className="border-amber-400 dark:border-amber-600">
                           <CardContent className="py-3 sm:py-4">
                             <div className="flex justify-between items-start gap-2">
                               <div className="min-w-0">
-                                <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''}</p>
+                                <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt)</span> <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
                                 <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                               </div>
-                              <Button
-                                size="sm"
-                                className="shrink-0 px-2 sm:px-3"
-                                onClick={() => {
-                                  setSelectedMember(member);
-                                  setShowGrupaModal(true);
-                                }}
-                              >
-                                <Users className="w-4 h-4 sm:mr-1" />
-                                <span className="hidden sm:inline">Przypisz grupę</span>
-                              </Button>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedMember(member);
+                                      setShowGrupaModal(true);
+                                    }}
+                                  >
+                                    Zmień grupę
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedMember(member);
+                                      setShowPoslugiModal(true);
+                                    }}
+                                  >
+                                    Przypisz posługi
+                                  </Button>
+                                </div>
+                                {(() => {
+                                  const memberDyzury = dyzury.filter(d => d.ministrant_id === member.profile_id);
+                                  if (memberDyzury.length > 0) {
+                                    const biernik: Record<string, string> = { 'Środa': 'Środę', 'Sobota': 'Sobotę', 'Niedziela': 'Niedzielę' };
+                                    const dniNazwy = memberDyzury.map(d => {
+                                      const idx = d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1;
+                                      const nazwa = DNI_TYGODNIA_FULL[idx];
+                                      return biernik[nazwa] || nazwa;
+                                    });
+                                    const prefix = dniNazwy[0] === 'Wtorek' ? 'we' : 'w';
+                                    return <p className="text-xs text-gray-500 dark:text-gray-400">Dyżur {prefix} {dniNazwy.join(', ')}</p>;
+                                  }
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedMember(member);
+                                        setShowDyzuryAdminModal(true);
+                                      }}
+                                    >
+                                      Dodaj dyżur
+                                    </Button>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -4610,7 +5551,7 @@ export default function MinistranciApp() {
 
                 {/* Grupy */}
                 {grupy.map(grupa => {
-                  const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant');
+                  const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant' && (!searchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(searchMinistrant.toLowerCase())));
                   const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
 
                   return groupMembers.length > 0 && (
@@ -4623,11 +5564,11 @@ export default function MinistranciApp() {
                       </div>
                       <div className="grid gap-3 mb-6">
                         {groupMembers.map(member => (
-                          <Card key={member.id}>
+                          <Card key={member.id} className={`${kolory.cardBg} ${kolory.border}`}>
                             <CardContent className="py-3 sm:py-4">
                               <div className="flex justify-between items-start gap-2">
                                 <div className="min-w-0">
-                                  <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''}</p>
+                                  <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt)</span> <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
                                   <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                                   {member.role.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2">
@@ -4644,29 +5585,54 @@ export default function MinistranciApp() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    title="Zmień grupę"
-                                    onClick={() => {
-                                      setSelectedMember(member);
-                                      setShowGrupaModal(true);
-                                    }}
-                                  >
-                                    <Users className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    title="Przypisz posługi"
-                                    onClick={() => {
-                                      setSelectedMember(member);
-                                      setShowPoslugiModal(true);
-                                    }}
-                                  >
-                                    <Bell className="w-4 h-4" />
-                                  </Button>
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedMember(member);
+                                        setShowGrupaModal(true);
+                                      }}
+                                    >
+                                      Zmień grupę
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedMember(member);
+                                        setShowPoslugiModal(true);
+                                      }}
+                                    >
+                                      Przypisz posługi
+                                    </Button>
+                                  </div>
+                                  {(() => {
+                                    const memberDyzury = dyzury.filter(d => d.ministrant_id === member.profile_id);
+                                    if (memberDyzury.length > 0) {
+                                      const biernik: Record<string, string> = { 'Środa': 'Środę', 'Sobota': 'Sobotę', 'Niedziela': 'Niedzielę' };
+                                      const dniNazwy = memberDyzury.map(d => {
+                                        const idx = d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1;
+                                        const nazwa = DNI_TYGODNIA_FULL[idx];
+                                        return biernik[nazwa] || nazwa;
+                                      });
+                                      const prefix = dniNazwy[0] === 'Wtorek' ? 'we' : 'w';
+                                      return <p className="text-xs text-gray-500 dark:text-gray-400">Dyżur {prefix} {dniNazwy.join(', ')}</p>;
+                                    }
+                                    return (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setSelectedMember(member);
+                                          setShowDyzuryAdminModal(true);
+                                        }}
+                                      >
+                                        Dodaj dyżur
+                                      </Button>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </CardContent>
@@ -4687,7 +5653,7 @@ export default function MinistranciApp() {
               <div className="flex justify-between items-center gap-2">
                 <h2 className="text-xl sm:text-2xl font-bold">Posługi Liturgiczne</h2>
                 {currentUser.typ === 'ksiadz' && (
-                  <Button onClick={() => setShowAddPoslugaModal(true)}>
+                  <Button onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }}>
                     <Plus className="w-4 h-4 mr-2" />
                     Dodaj posługę
                   </Button>
@@ -4697,7 +5663,7 @@ export default function MinistranciApp() {
                 <Card>
                   <CardContent className="py-4">
                     <p className="text-sm text-gray-600 dark:text-gray-300">
-                      Posługi można przypisywać ministrantom w panelu &quot;Ministranci&quot; klikając ikonę dzwonka przy każdym ministranciem.
+                      Posługi można przypisywać ministrantom w panelu &quot;Ministranci&quot;
                     </p>
                   </CardContent>
                 </Card>
@@ -4742,6 +5708,11 @@ export default function MinistranciApp() {
                                   setEditingPosluga({ ...posluga });
                                   setEditGalleryFiles([]);
                                   setEditGalleryPreviews([]);
+                                  if (poslugaEditor) {
+                                    const opis = posluga.dlugi_opis || '';
+                                    const html = /<[a-z][\s\S]*>/i.test(opis) ? opis : opis.split('\n').map(l => `<p>${l || '<br>'}</p>`).join('');
+                                    poslugaEditor.commands.setContent(html);
+                                  }
                                   setShowPoslugaEditModal(true);
                                 }}
                               >
@@ -4763,8 +5734,11 @@ export default function MinistranciApp() {
                         <CardContent className="pt-0 space-y-4">
                           <div className="border-t pt-4" />
                           {posluga.dlugi_opis && (
-                            <div>
-                              <p className="text-sm whitespace-pre-wrap">{posluga.dlugi_opis}</p>
+                            <div className="text-sm break-words">
+                              {/<[a-z][\s\S]*>/i.test(posluga.dlugi_opis)
+                                ? <div className="tiptap-posluga" dangerouslySetInnerHTML={{ __html: posluga.dlugi_opis }} />
+                                : <p className="whitespace-pre-wrap">{posluga.dlugi_opis}</p>
+                              }
                             </div>
                           )}
                           {posluga.zdjecia && posluga.zdjecia.length > 0 && (
@@ -5276,7 +6250,29 @@ export default function MinistranciApp() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {grupy.map(grupa => {
+            {(() => {
+              const allMinistrants = members.filter(m => m.typ === 'ministrant');
+              const allSelected = emailSelectedGrupy.includes('__all__');
+              return (
+                <button
+                  onClick={() => {
+                    if (allSelected) {
+                      setEmailSelectedGrupy([]);
+                    } else {
+                      setEmailSelectedGrupy(['__all__']);
+                    }
+                  }}
+                  className={`w-full h-auto py-4 px-4 rounded-lg flex items-center justify-between transition-all bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200 ${allSelected ? 'ring-2 ring-offset-2 ring-blue-400 border-blue-400' : 'opacity-70'}`}
+                >
+                  <span className="font-bold flex items-center gap-2">
+                    <input type="checkbox" checked={allSelected} readOnly className="w-4 h-4" />
+                    Do wszystkich
+                  </span>
+                  <Badge variant="secondary">{allMinistrants.length} osób</Badge>
+                </button>
+              );
+            })()}
+            {!emailSelectedGrupy.includes('__all__') && grupy.map(grupa => {
               const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant');
               const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
               const isSelected = emailSelectedGrupy.includes(grupa.id);
@@ -5302,20 +6298,24 @@ export default function MinistranciApp() {
               );
             })}
           </div>
-          {emailSelectedGrupy.length > 0 && (
+          {(emailSelectedGrupy.length > 0) && (
             <Button
               className="w-full mt-2"
               onClick={() => {
-                const emails = members
-                  .filter(m => emailSelectedGrupy.includes(m.grupa || '') && m.typ === 'ministrant')
-                  .map(m => m.email)
-                  .join(',');
+                const emails = emailSelectedGrupy.includes('__all__')
+                  ? members.filter(m => m.typ === 'ministrant').map(m => m.email).join(',')
+                  : members
+                    .filter(m => emailSelectedGrupy.includes(m.grupa || '') && m.typ === 'ministrant')
+                    .map(m => m.email)
+                    .join(',');
                 window.location.href = `mailto:${emails}`;
                 setShowEmailModal(false);
               }}
             >
               <Mail className="w-4 h-4 mr-2" />
-              Wyślij do {emailSelectedGrupy.length} {emailSelectedGrupy.length === 1 ? 'grupy' : 'grup'}
+              {emailSelectedGrupy.includes('__all__')
+                ? 'Wyślij do wszystkich'
+                : `Wyślij do ${emailSelectedGrupy.length} ${emailSelectedGrupy.length === 1 ? 'grupy' : 'grup'}`}
             </Button>
           )}
         </DialogContent>
@@ -5493,12 +6493,22 @@ export default function MinistranciApp() {
                 <div className="space-y-4">
                   <div>
                     <Label>Długi opis</Label>
-                    <textarea
-                      className="w-full min-h-[120px] p-3 border rounded-md bg-background text-sm resize-y"
-                      value={editingPosluga.dlugi_opis || ''}
-                      onChange={(e) => setEditingPosluga({ ...editingPosluga, dlugi_opis: e.target.value })}
-                      placeholder="Szczegółowy opis posługi, historia, wymagania..."
-                    />
+                    {poslugaEditor && (
+                      <div className="border rounded-md overflow-hidden mt-1">
+                        <div className="flex flex-wrap items-center gap-0.5 p-1 border-b bg-muted/50">
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('bold') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleBold().run()}><Bold className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('italic') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleItalic().run()}><Italic className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('underline') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="w-3.5 h-3.5" /></Button>
+                          <div className="w-px h-5 bg-border mx-0.5" />
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('heading', { level: 2 }) ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('heading', { level: 3 }) ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 className="w-3.5 h-3.5" /></Button>
+                          <div className="w-px h-5 bg-border mx-0.5" />
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('bulletList') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleBulletList().run()}><List className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('orderedList') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleOrderedList().run()}><ListOrdered className="w-3.5 h-3.5" /></Button>
+                        </div>
+                        <EditorContent editor={poslugaEditor} />
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -5668,12 +6678,22 @@ export default function MinistranciApp() {
               <div className="space-y-4">
                 <div>
                   <Label>Długi opis</Label>
-                  <textarea
-                    className="w-full min-h-[120px] p-3 border rounded-md bg-background text-sm resize-y"
-                    value={newPoslugaForm.dlugi_opis}
-                    onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, dlugi_opis: e.target.value })}
-                    placeholder="Szczegółowy opis posługi, historia, wymagania..."
-                  />
+                  {poslugaEditor && (
+                    <div className="border rounded-md overflow-hidden mt-1">
+                      <div className="flex flex-wrap items-center gap-0.5 p-1 border-b bg-muted/50">
+                        <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('bold') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleBold().run()}><Bold className="w-3.5 h-3.5" /></Button>
+                        <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('italic') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleItalic().run()}><Italic className="w-3.5 h-3.5" /></Button>
+                        <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('underline') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="w-3.5 h-3.5" /></Button>
+                        <div className="w-px h-5 bg-border mx-0.5" />
+                        <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('heading', { level: 2 }) ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 className="w-3.5 h-3.5" /></Button>
+                        <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('heading', { level: 3 }) ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 className="w-3.5 h-3.5" /></Button>
+                        <div className="w-px h-5 bg-border mx-0.5" />
+                        <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('bulletList') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleBulletList().run()}><List className="w-3.5 h-3.5" /></Button>
+                        <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('orderedList') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleOrderedList().run()}><ListOrdered className="w-3.5 h-3.5" /></Button>
+                      </div>
+                      <EditorContent editor={poslugaEditor} />
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -5735,6 +6755,46 @@ export default function MinistranciApp() {
             <Button onClick={handleAddPosluga} className="w-full">
               <Plus className="w-4 h-4 mr-2" />
               Dodaj posługę
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal edycji profilu */}
+      <Dialog open={showEditProfilModal} onOpenChange={setShowEditProfilModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edytuj profil</DialogTitle>
+            <DialogDescription>Zmień swoje dane.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Imię *</Label>
+              <Input
+                value={editProfilForm.imie}
+                onChange={(e) => setEditProfilForm({ ...editProfilForm, imie: e.target.value })}
+                placeholder="Twoje imię"
+              />
+            </div>
+            <div>
+              <Label>Nazwisko</Label>
+              <Input
+                value={editProfilForm.nazwisko}
+                onChange={(e) => setEditProfilForm({ ...editProfilForm, nazwisko: e.target.value })}
+                placeholder="Twoje nazwisko"
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={editProfilForm.email}
+                onChange={(e) => setEditProfilForm({ ...editProfilForm, email: e.target.value })}
+                placeholder="Twój email"
+              />
+            </div>
+            <Button onClick={handleSaveProfile} className="w-full">
+              Zapisz zmiany
             </Button>
           </div>
         </DialogContent>
@@ -5818,20 +6878,23 @@ export default function MinistranciApp() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Podgląd</DialogTitle>
-            <DialogDescription>Tak wygląda ogłoszenie w panelu ministranta</DialogDescription>
+            <DialogDescription>Tak wygląda {previewOgloszenie?.kategoria === 'dyskusja' ? 'dyskusja' : 'ogłoszenie'} w panelu ministranta</DialogDescription>
           </DialogHeader>
           {previewOgloszenie && (
-            <Card className="border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20">
+            <Card className={previewOgloszenie.kategoria === 'dyskusja' ? '' : 'border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20'}>
               <CardHeader className="pb-2">
                 <div className="flex items-center gap-2 mb-1">
                   {previewOgloszenie.przypiety && <Pin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
-                  <Badge className="text-xs bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600">
-                    Ogłoszenie
+                  <Badge className={`text-xs ${previewOgloszenie.kategoria === 'dyskusja' ? '' : 'bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600'}`} variant={previewOgloszenie.kategoria === 'dyskusja' ? 'secondary' : 'default'}>
+                    {previewOgloszenie.kategoria === 'dyskusja' ? 'Dyskusja' : 'Ogłoszenie'}
                   </Badge>
                   {previewOgloszenie.grupa_docelowa !== 'wszyscy' && previewOgloszenie.grupa_docelowa?.split(',').map(g => g.trim()).filter(Boolean).map(g => (
                     <Badge key={g} variant="outline" className="text-xs">{grupy.find(gr => gr.nazwa === g)?.emoji} {g}</Badge>
                   ))}
                 </div>
+                {previewOgloszenie.kategoria === 'dyskusja' && previewOgloszenie.tytul && (
+                  <p className="font-semibold text-sm mt-1">{previewOgloszenie.tytul}</p>
+                )}
                 {previewOgloszenie.tresc && (
                   <div className="text-sm text-gray-700 dark:text-gray-300 mt-1">{renderTresc(previewOgloszenie.tresc)}</div>
                 )}
@@ -5846,7 +6909,7 @@ export default function MinistranciApp() {
         setShowNewWatekModal(open);
         if (!open) {
           setEditingWatek(null);
-          setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy' });
+          setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
         }
       }}>
         <DialogContent>
@@ -5988,7 +7051,15 @@ export default function MinistranciApp() {
                 </div>
               </div>
             )}
-            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={newWatekForm.kategoria === 'ogłoszenie' ? (tiptapEditor ? tiptapEditor.isEmpty : (!newWatekForm.tresc || newWatekForm.tresc === '<p></p>')) : !newWatekForm.tytul.trim()}>
+            <div>
+              <Label className="text-red-600 dark:text-red-400 font-bold">Termin przeniesienia do archiwum *</Label>
+              <Input
+                type="date"
+                value={newWatekForm.archiwum_data}
+                onChange={(e) => setNewWatekForm({ ...newWatekForm, archiwum_data: e.target.value })}
+              />
+            </div>
+            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={!newWatekForm.archiwum_data || (newWatekForm.kategoria === 'ogłoszenie' ? (tiptapEditor ? tiptapEditor.isEmpty : (!newWatekForm.tresc || newWatekForm.tresc === '<p></p>')) : !newWatekForm.tytul.trim())}>
               <Send className="w-4 h-4 mr-2" />
               {editingWatek ? 'Zapisz zmiany' : 'Opublikuj'}
             </Button>
@@ -6065,6 +7136,14 @@ export default function MinistranciApp() {
                 onChange={(e) => setNewAnkietaForm({ ...newAnkietaForm, termin: e.target.value })}
               />
             </div>
+            <div>
+              <Label className="text-red-600 dark:text-red-400 font-bold">Termin przeniesienia do archiwum *</Label>
+              <Input
+                type="date"
+                value={newAnkietaForm.archiwum_data}
+                onChange={(e) => setNewAnkietaForm({ ...newAnkietaForm, archiwum_data: e.target.value })}
+              />
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -6085,10 +7164,159 @@ export default function MinistranciApp() {
               />
               <Label htmlFor="wyniki_ukryte" className="font-normal">Ukryj wyniki (ministranci nie widzą kto jak głosował)</Label>
             </div>
-            <Button onClick={createAnkieta} className="w-full" disabled={!newAnkietaForm.pytanie.trim()}>
+            <Button onClick={createAnkieta} className="w-full" disabled={!newAnkietaForm.pytanie.trim() || !newAnkietaForm.archiwum_data}>
               <Vote className="w-4 h-4 mr-2" />
               Utwórz ankietę
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal grafik dyżurów */}
+      <Dialog open={showGrafikModal} onOpenChange={(open) => { setShowGrafikModal(open); if (!open) setEditDyzury(false); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              Grafik dyżurów
+            </DialogTitle>
+            <DialogDescription>Zarządzaj dyżurami ministrantów</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end mb-2">
+            <Button size="sm" variant={editDyzury ? 'default' : 'outline'} onClick={() => setEditDyzury(!editDyzury)}>
+              {editDyzury ? 'Gotowe' : 'Edytuj'}
+            </Button>
+          </div>
+          {!editDyzury ? (
+            dyzury.length === 0 ? (
+              <p className="text-gray-500 dark:text-gray-400 text-sm">Brak dyżurów. Kliknij Edytuj, aby przypisać ministrantów.</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {DNI_TYGODNIA_FULL.map((dzien, i) => {
+                  const dzienIdx = i === 6 ? 0 : i + 1;
+                  const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
+                  if (dyzuryDnia.length === 0) return null;
+                  return (
+                    <div key={i} className="p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-center">
+                      <p className="font-medium text-xs text-gray-500 dark:text-gray-400 mb-1">{dzien}</p>
+                      {dyzuryDnia.map(d => {
+                        const member = members.find(m => m.profile_id === d.ministrant_id);
+                        return <p key={d.id} className="text-sm truncate">{member ? `${member.imie} ${(member.nazwisko || '').charAt(0)}.` : '?'}</p>;
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : (
+            <div className="space-y-3">
+              {DNI_TYGODNIA_FULL.map((dzien, i) => {
+                const dzienIdx = i === 6 ? 0 : i + 1;
+                const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
+                const ministranciNaDyzurze = dyzuryDnia.map(d => d.ministrant_id);
+                const dostepniMinistranci = members.filter(m => m.typ === 'ministrant' && !ministranciNaDyzurze.includes(m.profile_id));
+                return (
+                  <div key={i} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <p className="font-medium text-sm mb-2">{dzien}</p>
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      {dyzuryDnia.map(d => {
+                        const member = members.find(m => m.profile_id === d.ministrant_id);
+                        return (
+                          <Badge key={d.id} variant="secondary" className="flex items-center gap-1 pr-1">
+                            {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
+                            <button
+                              onClick={() => toggleDyzurAdmin(d.ministrant_id, dzienIdx)}
+                              className="ml-1 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-full p-0.5"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </Badge>
+                        );
+                      })}
+                      {dostepniMinistranci.length > 0 && (
+                        <select
+                          className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) toggleDyzurAdmin(e.target.value, dzienIdx);
+                          }}
+                        >
+                          <option value="">+ dodaj ministranta</option>
+                          {dostepniMinistranci.map(m => (
+                            <option key={m.id} value={m.profile_id}>
+                              {m.imie} {m.nazwisko || ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {dyzuryDnia.length === 0 && dostepniMinistranci.length === 0 && (
+                        <span className="text-xs text-gray-400">Brak ministrantów</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal dodaj punkty */}
+      <Dialog open={showDodajPunktyModal} onOpenChange={setShowDodajPunktyModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Dodaj punkty</DialogTitle>
+            <DialogDescription>{selectedMember ? `${selectedMember.imie} ${selectedMember.nazwisko || ''}`.trim() : ''}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Liczba punktów</label>
+              <Input
+                type="number"
+                placeholder="np. 5"
+                value={dodajPunktyForm.punkty}
+                onChange={(e) => setDodajPunktyForm(prev => ({ ...prev, punkty: e.target.value }))}
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">Powód (opcjonalnie)</label>
+              <Input
+                placeholder="np. pomoc przy sprzątaniu"
+                value={dodajPunktyForm.powod}
+                onChange={(e) => setDodajPunktyForm(prev => ({ ...prev, powod: e.target.value }))}
+              />
+            </div>
+            <Button className="w-full" onClick={dodajPunktyRecznie} disabled={!dodajPunktyForm.punkty || parseInt(dodajPunktyForm.punkty) === 0}>
+              Dodaj {dodajPunktyForm.punkty ? `${dodajPunktyForm.punkty} pkt` : 'punkty'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal dyżurów admina */}
+      <Dialog open={showDyzuryAdminModal} onOpenChange={setShowDyzuryAdminModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Dyżury: {selectedMember ? `${selectedMember.imie} ${selectedMember.nazwisko || ''}`.trim() : ''}</DialogTitle>
+            <DialogDescription>Wybierz dni tygodnia, w które ministrant pełni dyżur.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {DNI_TYGODNIA_FULL.map((dzien, i) => {
+              const dzienIdx = i === 6 ? 0 : i + 1;
+              const isActive = dyzury.some(d => d.ministrant_id === selectedMember?.profile_id && d.dzien_tygodnia === dzienIdx);
+              return (
+                <Button
+                  key={i}
+                  variant={isActive ? 'default' : 'outline'}
+                  className="w-full justify-start"
+                  onClick={() => selectedMember && toggleDyzurAdmin(selectedMember.profile_id, dzienIdx)}
+                >
+                  {isActive ? <Check className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  {dzien}
+                </Button>
+              );
+            })}
           </div>
         </DialogContent>
       </Dialog>

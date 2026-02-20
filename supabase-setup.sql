@@ -987,3 +987,27 @@ create policy "Admin can delete poslugi images"
 ALTER TABLE poslugi ADD COLUMN dlugi_opis text default '';
 ALTER TABLE poslugi ADD COLUMN zdjecia text[] default '{}';
 ALTER TABLE poslugi ADD COLUMN youtube_url text default '';
+
+-- =============================================
+-- KONFIGURACJA APLIKACJI (banery powitalne itp.)
+-- =============================================
+
+create table if not exists app_config (
+  klucz text primary key,
+  wartosc text not null default '',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+alter table app_config enable row level security;
+
+create policy "app_config_read" on app_config for select using (true);
+create policy "app_config_write" on app_config for all using (true);
+
+-- Domyslne wartosci banerow
+insert into app_config (klucz, wartosc) values
+  ('baner_ministrant_tytul', 'Witaj w aplikacji dla ministrantów!'),
+  ('baner_ministrant_opis', 'Ogłoszenia i ankiety od księdza · Wydarzenia · Ranking i punkty · Obecności · Kalendarz liturgiczny'),
+  ('baner_ksiadz_tytul', 'Panel zarządzania parafią'),
+  ('baner_ksiadz_opis', 'Zarządzaj obecnościami · Służby · Ogłoszenia · Ranking · Konfiguracja')
+on conflict (klucz) do nothing;

@@ -7,7 +7,7 @@ import {
   LogOut, Search, Trash2, Pencil, Check, X, Plus,
   Moon, Sun, BarChart3, Eye, ChevronDown, ChevronUp,
   Copy, RefreshCw, Globe, MapPin, Loader2, AlertTriangle,
-  Lock, ArrowLeft, Send, Smile, Paperclip,
+  Lock, ArrowLeft, Send, Smile, Paperclip, Megaphone,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Heading1, Heading2, Heading3, Youtube, ImageIcon, Pin,
 } from 'lucide-react';
@@ -251,6 +251,7 @@ export default function AdminPanel() {
 
   // Tab
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [dashboardDetail, setDashboardDetail] = useState<string | null>(null);
 
   // Data
   const [stats, setStats] = useState<Stats>({ parafie: 0, profiles: 0, ministranci: 0, ksieza: 0, obecnosci30: 0, watki: 0 });
@@ -262,6 +263,12 @@ export default function AdminPanel() {
   const [rangi, setRangi] = useState<RangaConfig[]>([]);
   const [odznaki, setOdznaki] = useState<OdznakaConfig[]>([]);
   const [recentParafie, setRecentParafie] = useState<Parafia[]>([]);
+
+  // Banery powitalne
+  const [banerMinistrant, setBanerMinistrant] = useState({ tytul: '', opis: '' });
+  const [banerKsiadz, setBanerKsiadz] = useState({ tytul: '', opis: '' });
+  const [banerLoading, setBanerLoading] = useState(false);
+  const [banerExpanded, setBanerExpanded] = useState(false);
 
   // Search
   const [searchParafie, setSearchParafie] = useState('');
@@ -510,14 +517,45 @@ export default function AdminPanel() {
     if (data) setOdznaki(data);
   }, [sb]);
 
+  // Load banery powitalne
+  const loadBanery = useCallback(async () => {
+    if (!sb) return;
+    const { data } = await sb.from('app_config').select('*').in('klucz', [
+      'baner_ministrant_tytul', 'baner_ministrant_opis',
+      'baner_ksiadz_tytul', 'baner_ksiadz_opis',
+    ]);
+    if (data) {
+      const get = (k: string) => data.find((d: any) => d.klucz === k)?.wartosc || '';
+      setBanerMinistrant({ tytul: get('baner_ministrant_tytul'), opis: get('baner_ministrant_opis') });
+      setBanerKsiadz({ tytul: get('baner_ksiadz_tytul'), opis: get('baner_ksiadz_opis') });
+    }
+  }, [sb]);
+
+  const saveBanery = async () => {
+    if (!sb) return;
+    setBanerLoading(true);
+    const rows = [
+      { klucz: 'baner_ministrant_tytul', wartosc: banerMinistrant.tytul },
+      { klucz: 'baner_ministrant_opis', wartosc: banerMinistrant.opis },
+      { klucz: 'baner_ksiadz_tytul', wartosc: banerKsiadz.tytul },
+      { klucz: 'baner_ksiadz_opis', wartosc: banerKsiadz.opis },
+    ];
+    for (const row of rows) {
+      await sb.from('app_config').upsert(row, { onConflict: 'klucz' });
+    }
+    setSuccessMsg('Banery powitalne zapisane');
+    setBanerLoading(false);
+  };
+
   // Load all data on auth
   useEffect(() => {
     if (isAuthenticated && sb) {
       loadStats();
       loadParafie();
       loadProfiles();
+      loadBanery();
     }
-  }, [isAuthenticated, sb, loadStats, loadParafie, loadProfiles]);
+  }, [isAuthenticated, sb, loadStats, loadParafie, loadProfiles, loadBanery]);
 
   // Load scope-specific data
   useEffect(() => {
@@ -985,59 +1023,318 @@ export default function AdminPanel() {
 
             {/* ==================== DASHBOARD ==================== */}
             <TabsContent value="dashboard">
-              <div className="space-y-6">
-                {/* Stats grid */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <div className="space-y-4">
+                {/* Stats grid — compact clickable tiles */}
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
                   {[
-                    { label: 'Parafie', value: stats.parafie, icon: Church, color: 'amber' },
-                    { label: 'Uzytkownicy', value: stats.profiles, icon: Users, color: 'blue' },
-                    { label: 'Ministranci', value: stats.ministranci, icon: Users, color: 'green' },
-                    { label: 'Ksieza', value: stats.ksieza, icon: Shield, color: 'purple' },
-                    { label: 'Obecnosci (30d)', value: stats.obecnosci30, icon: Check, color: 'emerald' },
-                    { label: 'Watki', value: stats.watki, icon: MessageSquare, color: 'orange' },
-                  ].map((s) => (
-                    <Card key={s.label} className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <s.icon className={`w-5 h-5 text-${s.color}-500`} />
+                    { key: 'parafie', label: 'Parafie', value: stats.parafie, icon: Church, color: 'text-amber-500', activeBg: 'bg-amber-50 dark:bg-amber-900/30 border-amber-400 dark:border-amber-600' },
+                    { key: 'uzytkownicy', label: 'Uzytkownicy', value: stats.profiles, icon: Users, color: 'text-blue-500', activeBg: 'bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-600' },
+                    { key: 'ministranci', label: 'Ministranci', value: stats.ministranci, icon: Users, color: 'text-green-500', activeBg: 'bg-green-50 dark:bg-green-900/30 border-green-400 dark:border-green-600' },
+                    { key: 'ksieza', label: 'Ksieza', value: stats.ksieza, icon: Shield, color: 'text-purple-500', activeBg: 'bg-purple-50 dark:bg-purple-900/30 border-purple-400 dark:border-purple-600' },
+                    { key: 'obecnosci', label: 'Obecnosci 30d', value: stats.obecnosci30, icon: Check, color: 'text-emerald-500', activeBg: 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-400 dark:border-emerald-600' },
+                    { key: 'watki', label: 'Watki', value: stats.watki, icon: MessageSquare, color: 'text-orange-500', activeBg: 'bg-orange-50 dark:bg-orange-900/30 border-orange-400 dark:border-orange-600' },
+                  ].map((s) => {
+                    const active = dashboardDetail === s.key;
+                    return (
+                      <button
+                        key={s.key}
+                        onClick={() => setDashboardDetail(active ? null : s.key)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-all ${
+                          active
+                            ? s.activeBg
+                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        }`}
+                      >
+                        <s.icon className={`w-4 h-4 shrink-0 ${s.color}`} />
+                        <div className="min-w-0">
+                          <div className="text-lg font-bold leading-tight">{s.value}</div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">{s.label}</div>
                         </div>
-                        <div className="text-2xl font-bold">{s.value}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{s.label}</div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Recent parishes */}
-                <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Church className="w-5 h-5 text-amber-500" />
-                      Ostatnio utworzone parafie
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {recentParafie.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/50">
-                          <div>
-                            <div className="font-medium">{p.nazwa}</div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">{p.miasto} — {p.admin_email}</div>
+                {/* Detail panel */}
+                {dashboardDetail === 'parafie' && (
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Church className="w-4 h-4 text-amber-500" />
+                        Ostatnio utworzone parafie
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3 pt-0">
+                      <div className="space-y-1.5">
+                        {recentParafie.map((p) => (
+                          <div key={p.id} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-gray-50 dark:bg-gray-700/50 text-sm">
+                            <div className="min-w-0">
+                              <span className="font-medium">{p.nazwa}</span>
+                              <span className="text-gray-400 mx-1.5">·</span>
+                              <span className="text-gray-500 dark:text-gray-400 text-xs">{p.miasto}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-xs text-gray-400">{getMemberCount(p.id)} czl.</span>
+                              <span className="font-mono text-[10px] bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded">{p.kod_zaproszenia}</span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">{getMemberCount(p.id)} czlonkow</Badge>
-                            <Badge className="bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-mono">
-                              {p.kod_zaproszenia}
-                            </Badge>
-                          </div>
+                        ))}
+                        {recentParafie.length === 0 && <p className="text-gray-500 text-center py-3 text-sm">Brak parafii</p>}
+                      </div>
+                      <Button variant="ghost" size="sm" className="mt-2 text-xs text-amber-600 hover:text-amber-700" onClick={() => setActiveTab('parafie')}>
+                        Zobacz wszystkie parafie →
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {dashboardDetail === 'uzytkownicy' && (
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Users className="w-4 h-4 text-blue-500" />
+                        Uzytkownicy ({stats.profiles})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3 pt-0">
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-green-50 dark:bg-green-900/20 text-sm">
+                          <Users className="w-3.5 h-3.5 text-green-500" />
+                          <span>Ministranci: <strong>{stats.ministranci}</strong></span>
                         </div>
-                      ))}
-                      {recentParafie.length === 0 && (
-                        <p className="text-gray-500 text-center py-4">Brak parafii</p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                        <div className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-purple-50 dark:bg-purple-900/20 text-sm">
+                          <Shield className="w-3.5 h-3.5 text-purple-500" />
+                          <span>Ksieza: <strong>{stats.ksieza}</strong></span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        {profiles.slice(0, 8).map((p) => (
+                          <div key={p.id} className="flex items-center justify-between py-1 px-2 rounded-md bg-gray-50 dark:bg-gray-700/50 text-xs">
+                            <span className="font-medium">{p.imie} {p.nazwisko}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-400">{p.email}</span>
+                              <Badge variant={p.typ === 'ksiadz' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">{p.typ === 'ksiadz' ? 'K' : 'M'}</Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <Button variant="ghost" size="sm" className="mt-2 text-xs text-blue-600 hover:text-blue-700" onClick={() => setActiveTab('uzytkownicy')}>
+                        Zobacz wszystkich uzytkownikow →
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {dashboardDetail === 'ministranci' && (
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Users className="w-4 h-4 text-green-500" />
+                        Ministranci ({stats.ministranci})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3 pt-0">
+                      <div className="space-y-1">
+                        {profiles.filter(p => p.typ === 'ministrant').slice(0, 10).map((p) => (
+                          <div key={p.id} className="flex items-center justify-between py-1 px-2 rounded-md bg-gray-50 dark:bg-gray-700/50 text-xs">
+                            <span className="font-medium">{p.imie} {p.nazwisko}</span>
+                            <span className="text-gray-400">{getParafiaName(p.parafia_id)}</span>
+                          </div>
+                        ))}
+                        {stats.ministranci > 10 && <p className="text-[10px] text-gray-400 text-center pt-1">...i {stats.ministranci - 10} wiecej</p>}
+                      </div>
+                      <Button variant="ghost" size="sm" className="mt-2 text-xs text-green-600 hover:text-green-700" onClick={() => setActiveTab('uzytkownicy')}>
+                        Zobacz wszystkich →
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {dashboardDetail === 'ksieza' && (
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-purple-500" />
+                        Ksieza ({stats.ksieza})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3 pt-0">
+                      <div className="space-y-1">
+                        {profiles.filter(p => p.typ === 'ksiadz').slice(0, 10).map((p) => (
+                          <div key={p.id} className="flex items-center justify-between py-1 px-2 rounded-md bg-gray-50 dark:bg-gray-700/50 text-xs">
+                            <span className="font-medium">{p.imie} {p.nazwisko}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-400">{p.email}</span>
+                              <span className="text-gray-300">·</span>
+                              <span className="text-gray-400">{getParafiaName(p.parafia_id)}</span>
+                            </div>
+                          </div>
+                        ))}
+                        {stats.ksieza > 10 && <p className="text-[10px] text-gray-400 text-center pt-1">...i {stats.ksieza - 10} wiecej</p>}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {dashboardDetail === 'obecnosci' && (
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-500" />
+                        Obecnosci z ostatnich 30 dni
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3 pt-0">
+                      <div className="flex items-center gap-3 py-2 px-3 rounded-md bg-emerald-50 dark:bg-emerald-900/20 text-sm">
+                        <Check className="w-5 h-5 text-emerald-500" />
+                        <div>
+                          <div className="font-bold text-lg">{stats.obecnosci30}</div>
+                          <div className="text-xs text-gray-500">zarejestrowanych obecnosci w ciagu ostatnich 30 dni</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {dashboardDetail === 'watki' && (
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-orange-500" />
+                        Ostatnie watki
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3 pt-0">
+                      <div className="space-y-1">
+                        {watki.slice(0, 8).map((w) => (
+                          <div key={w.id} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-gray-50 dark:bg-gray-700/50 text-xs">
+                            <div className="min-w-0 flex-1">
+                              <span className="font-medium truncate block">{w.tytul}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Badge className="text-[10px] px-1.5 py-0 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{w.kategoria}</Badge>
+                              <span className="text-gray-400 text-[10px]">{new Date(w.created_at).toLocaleDateString('pl-PL')}</span>
+                            </div>
+                          </div>
+                        ))}
+                        {watki.length === 0 && <p className="text-gray-500 text-center py-3 text-sm">Brak watkow</p>}
+                      </div>
+                      <Button variant="ghost" size="sm" className="mt-2 text-xs text-orange-600 hover:text-orange-700" onClick={() => setActiveTab('ogloszenia')}>
+                        Zobacz wszystkie ogloszenia →
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Banery powitalne — zwijany */}
+                <button
+                  onClick={() => setBanerExpanded(!banerExpanded)}
+                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors text-left"
+                >
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Megaphone className="w-4 h-4 text-indigo-500" />
+                    Baner powitalny
+                    {(banerMinistrant.tytul || banerKsiadz.tytul) && (
+                      <span className="text-[10px] text-gray-400 font-normal ml-1">
+                        M: {banerMinistrant.tytul ? `"${banerMinistrant.tytul.substring(0, 25)}${banerMinistrant.tytul.length > 25 ? '...' : ''}"` : '—'}
+                        {' · '}
+                        K: {banerKsiadz.tytul ? `"${banerKsiadz.tytul.substring(0, 25)}${banerKsiadz.tytul.length > 25 ? '...' : ''}"` : '—'}
+                      </span>
+                    )}
+                  </span>
+                  {banerExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                </button>
+
+                {banerExpanded && (
+                  <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 -mt-1 rounded-t-none border-t-0">
+                    <CardContent className="px-4 pb-4 pt-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Ministrant */}
+                        <div className="space-y-2 p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10">
+                          <div className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
+                            <Users className="w-3.5 h-3.5" />
+                            Ministrant
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Tytul (pogrubiony)</Label>
+                            <Input
+                              value={banerMinistrant.tytul}
+                              onChange={(e) => setBanerMinistrant(prev => ({ ...prev, tytul: e.target.value }))}
+                              placeholder="np. Witaj w aplikacji dla ministrantow!"
+                              className="h-8 text-sm bg-white dark:bg-gray-700"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Opis (tekst pod tytulem)</Label>
+                            <textarea
+                              value={banerMinistrant.opis}
+                              onChange={(e) => setBanerMinistrant(prev => ({ ...prev, opis: e.target.value }))}
+                              placeholder="np. Ogloszenia i ankiety · Ranking i punkty · Obecnosci"
+                              rows={3}
+                              className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          {(banerMinistrant.tytul || banerMinistrant.opis) && (
+                            <div className="p-2 rounded-md bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700">
+                              <p className="text-[10px] text-gray-400 mb-1">Podglad:</p>
+                              <div className="flex items-start gap-2">
+                                <Church className="w-3.5 h-3.5 text-indigo-500 mt-0.5 shrink-0" />
+                                <div>
+                                  {banerMinistrant.tytul && <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">{banerMinistrant.tytul}</p>}
+                                  {banerMinistrant.opis && <p className="text-[10px] text-indigo-700 dark:text-indigo-300 whitespace-pre-wrap">{banerMinistrant.opis}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Ksiadz */}
+                        <div className="space-y-2 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-900/10">
+                          <div className="flex items-center gap-1.5 text-sm font-medium text-purple-700 dark:text-purple-400">
+                            <Shield className="w-3.5 h-3.5" />
+                            Ksiadz
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Tytul (pogrubiony)</Label>
+                            <Input
+                              value={banerKsiadz.tytul}
+                              onChange={(e) => setBanerKsiadz(prev => ({ ...prev, tytul: e.target.value }))}
+                              placeholder="np. Panel zarzadzania parafia"
+                              className="h-8 text-sm bg-white dark:bg-gray-700"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-gray-500">Opis (tekst pod tytulem)</Label>
+                            <textarea
+                              value={banerKsiadz.opis}
+                              onChange={(e) => setBanerKsiadz(prev => ({ ...prev, opis: e.target.value }))}
+                              placeholder="np. Zarzadzaj obecnosciami · Sluzby · Ogloszenia"
+                              rows={3}
+                              className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          {(banerKsiadz.tytul || banerKsiadz.opis) && (
+                            <div className="p-2 rounded-md bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700">
+                              <p className="text-[10px] text-gray-400 mb-1">Podglad:</p>
+                              <div className="flex items-start gap-2">
+                                <Church className="w-3.5 h-3.5 text-indigo-500 mt-0.5 shrink-0" />
+                                <div>
+                                  {banerKsiadz.tytul && <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">{banerKsiadz.tytul}</p>}
+                                  {banerKsiadz.opis && <p className="text-[10px] text-indigo-700 dark:text-indigo-300 whitespace-pre-wrap">{banerKsiadz.opis}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <Button onClick={saveBanery} disabled={banerLoading} className="mt-4 bg-indigo-500 hover:bg-indigo-600 text-white" size="sm">
+                        {banerLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <Check className="w-4 h-4 mr-1.5" />}
+                        Zapisz banery
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </TabsContent>
 

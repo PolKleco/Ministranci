@@ -645,6 +645,8 @@ export default function MinistranciApp() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [newGrupaForm, setNewGrupaForm] = useState({ nazwa: '', kolor: 'gray', emoji: '⚪', opis: '' });
   const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
+  const [emailSelectedMinistranci, setEmailSelectedMinistranci] = useState<string[]>([]);
+  const [emailSearchMinistrant, setEmailSearchMinistrant] = useState('');
 
   // ==================== STAN — RANKING SŁUŻBY ====================
   const [punktacjaConfig, setPunktacjaConfig] = useState<PunktacjaConfig[]>([]);
@@ -694,6 +696,7 @@ export default function MinistranciApp() {
   const [newWiadomoscTresc, setNewWiadomoscTresc] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
   const [showInfoBanner, setShowInfoBanner] = useState(true);
+  const [infoBanerTresc, setInfoBanerTresc] = useState({ tytul: '', opis: '' });
   const [editingParafiaNazwa, setEditingParafiaNazwa] = useState(false);
   const [parafiaNazwaInput, setParafiaNazwaInput] = useState('');
   const [editingAnkietaId, setEditingAnkietaId] = useState<string | null>(null);
@@ -1073,6 +1076,17 @@ export default function MinistranciApp() {
     if (data) setTablicaWiadomosci(data as TablicaWiadomosc[]);
   }, []);
 
+  // Helper: zamień adresy email w tekście na klikalne linki mailto:
+  const linkifyEmails = (text: string) => {
+    const parts = text.split(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g);
+    if (parts.length === 1) return text;
+    return parts.map((part, i) =>
+      /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(part)
+        ? <a key={i} href={`mailto:${part}`} className="underline hover:opacity-70 transition-opacity">{part}</a>
+        : part
+    );
+  };
+
   // Helper: pobierz wartość z punktacja_config
   const getConfigValue = useCallback((klucz: string, fallback: number = 0): number => {
     const entry = punktacjaConfig.find(p => p.klucz === klucz);
@@ -1380,7 +1394,7 @@ export default function MinistranciApp() {
           parafia_id: currentParafia.id,
           grupa_docelowa: 'wszyscy',
           title: `Brawo! +${obecnosc.punkty_finalne} pkt`,
-          body: `Twoje zgłoszenie zostało zatwierdzone! Masz już ${newTotalPkt} pkt ${ministrant ? ministrant.imie : ''}`,
+          body: `Twoje zgłoszenie zostało zatwierdzone! Masz już ${newTotalPkt} pkt ${ministrant ? `${ministrant.imie} ${ministrant.nazwisko || ''}`.trim() : ''}`,
           url: '/app',
           kategoria: 'zatwierdzenie',
           autor_id: currentUser.id,
@@ -1482,7 +1496,7 @@ export default function MinistranciApp() {
     // Zaktualizuj też w tabeli members
     if (currentUser.parafia_id) {
       await supabase
-        .from('members')
+        .from('parafia_members')
         .update({
           imie: editProfilForm.imie.trim(),
           nazwisko: editProfilForm.nazwisko.trim(),
@@ -1665,6 +1679,23 @@ export default function MinistranciApp() {
       loadTablicaData();
     }
   }, [currentUser?.parafia_id, loadTablicaData]);
+
+  // Zaladuj baner powitalny z app_config
+  useEffect(() => {
+    if (!currentUser?.typ) return;
+    const prefix = currentUser.typ === 'ksiadz' ? 'baner_ksiadz' : 'baner_ministrant';
+    supabase.from('app_config').select('klucz, wartosc').in('klucz', [`${prefix}_tytul`, `${prefix}_opis`])
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const get = (k: string) => data.find((d: any) => d.klucz === k)?.wartosc || '';
+          const tytul = get(`${prefix}_tytul`);
+          const opis = get(`${prefix}_opis`);
+          if (tytul || opis) {
+            setInfoBanerTresc({ tytul, opis });
+          }
+        }
+      });
+  }, [currentUser?.typ]);
 
   // Pokaż baner instalacji PWA na iOS Safari
   useEffect(() => {
@@ -3884,9 +3915,9 @@ export default function MinistranciApp() {
                       <div className="flex items-start gap-3">
                         <Church className="w-5 h-5 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
                         <div className="text-sm text-indigo-900 dark:text-indigo-200 space-y-1">
-                          <p className="font-semibold">Witaj w aplikacji dla ministrantów!</p>
+                          <p className="font-semibold">{linkifyEmails(infoBanerTresc.tytul || 'Witaj w aplikacji dla ministrantów!')}</p>
                           <p className="text-xs text-indigo-700 dark:text-indigo-300">
-                            Ogłoszenia i ankiety od księdza &middot; Wydarzenia &middot; Ranking i punkty &middot; Obecności &middot; Kalendarz liturgiczny
+                            {linkifyEmails(infoBanerTresc.opis || 'Ogłoszenia i ankiety od księdza \u00b7 Wydarzenia \u00b7 Ranking i punkty \u00b7 Obecności \u00b7 Kalendarz liturgiczny')}
                           </p>
                         </div>
                       </div>
@@ -5565,7 +5596,7 @@ export default function MinistranciApp() {
                 <div className="flex justify-between items-center flex-wrap gap-2">
                   <h2 className="text-xl sm:text-2xl font-bold">Ministranci</h2>
                   <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setShowEmailModal(true); }} variant="outline">
+                    <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setEmailSelectedMinistranci([]); setEmailSearchMinistrant(''); setShowEmailModal(true); }} variant="outline">
                       Wyślij maila
                     </Button>
                     <Button size="sm" onClick={() => setShowGrupyEditModal(true)} variant="outline">
@@ -5604,7 +5635,9 @@ export default function MinistranciApp() {
                           <CardContent className="py-3 sm:py-4">
                             <div className="flex justify-between items-start gap-2">
                               <div className="min-w-0">
-                                <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt)</span> <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
+                                <p className="font-semibold">{member.imie}</p>
+                                {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
+                                <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
                                 <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0">
@@ -5684,7 +5717,9 @@ export default function MinistranciApp() {
                             <CardContent className="py-3 sm:py-4">
                               <div className="flex justify-between items-start gap-2">
                                 <div className="min-w-0">
-                                  <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt)</span> <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
+                                  <p className="font-semibold">{member.imie}</p>
+                                  {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
                                   <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                                   {member.role.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2">
@@ -6453,15 +6488,79 @@ export default function MinistranciApp() {
 
       {/* Modal maila zbiorczego - multi-select */}
       <Dialog open={showEmailModal} onOpenChange={setShowEmailModal}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Wyślij maila zbiorczego</DialogTitle>
             <DialogDescription>
-              Zaznacz grupy, do których chcesz wysłać wiadomość
+              Wybierz odbiorców wiadomości
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            {(() => {
+            {/* Wyślij do wybranych ministrantów */}
+            <button
+              onClick={() => {
+                if (emailSelectedGrupy.includes('__pick__')) {
+                  setEmailSelectedGrupy([]);
+                  setEmailSelectedMinistranci([]);
+                  setEmailSearchMinistrant('');
+                } else {
+                  setEmailSelectedGrupy(['__pick__']);
+                }
+              }}
+              className={`w-full h-auto py-4 px-4 rounded-lg flex items-center justify-between transition-all bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-200 ${emailSelectedGrupy.includes('__pick__') ? 'ring-2 ring-offset-2 ring-indigo-400 border-indigo-400' : 'opacity-70'}`}
+            >
+              <span className="font-bold flex items-center gap-2">
+                <input type="checkbox" checked={emailSelectedGrupy.includes('__pick__')} readOnly className="w-4 h-4" />
+                Wyślij do ...
+              </span>
+              {emailSelectedMinistranci.length > 0 && (
+                <Badge variant="secondary">{emailSelectedMinistranci.length} wybrano</Badge>
+              )}
+            </button>
+            {emailSelectedGrupy.includes('__pick__') && (
+              <div className="ml-2 space-y-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    placeholder="Szukaj ministranta..."
+                    value={emailSearchMinistrant}
+                    onChange={(e) => setEmailSearchMinistrant(e.target.value)}
+                    className="pl-9 bg-white dark:bg-gray-900"
+                  />
+                  {emailSearchMinistrant && (
+                    <button onClick={() => setEmailSearchMinistrant('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-1 border rounded-lg p-2 dark:border-gray-700">
+                  {members.filter(m => m.typ === 'ministrant' && (!emailSearchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(emailSearchMinistrant.toLowerCase()))).map(m => {
+                    const isChecked = emailSelectedMinistranci.includes(m.profile_id);
+                    const grupa = m.grupa ? grupy.find(g => g.id === m.grupa) : null;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => {
+                          setEmailSelectedMinistranci(prev =>
+                            prev.includes(m.profile_id)
+                              ? prev.filter(id => id !== m.profile_id)
+                              : [...prev, m.profile_id]
+                          );
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 transition-all text-sm ${isChecked ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                      >
+                        <input type="checkbox" checked={isChecked} readOnly className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{m.imie} {m.nazwisko || ''}</span>
+                        {grupa && <span className="text-xs text-gray-400 shrink-0">{grupa.emoji}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Do wszystkich */}
+            {!emailSelectedGrupy.includes('__pick__') && (() => {
               const allMinistrants = members.filter(m => m.typ === 'ministrant');
               const allSelected = emailSelectedGrupy.includes('__all__');
               return (
@@ -6483,7 +6582,9 @@ export default function MinistranciApp() {
                 </button>
               );
             })()}
-            {!emailSelectedGrupy.includes('__all__') && grupy.map(grupa => {
+
+            {/* Grupy */}
+            {!emailSelectedGrupy.includes('__all__') && !emailSelectedGrupy.includes('__pick__') && grupy.map(grupa => {
               const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant');
               const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
               const isSelected = emailSelectedGrupy.includes(grupa.id);
@@ -6509,24 +6610,34 @@ export default function MinistranciApp() {
               );
             })}
           </div>
-          {(emailSelectedGrupy.length > 0) && (
+          {(emailSelectedGrupy.length > 0 && (emailSelectedGrupy.includes('__pick__') ? emailSelectedMinistranci.length > 0 : true)) && (
             <Button
               className="w-full mt-2"
               onClick={() => {
-                const emails = emailSelectedGrupy.includes('__all__')
-                  ? members.filter(m => m.typ === 'ministrant').map(m => m.email).join(',')
-                  : members
+                let emails = '';
+                if (emailSelectedGrupy.includes('__pick__')) {
+                  emails = members
+                    .filter(m => emailSelectedMinistranci.includes(m.profile_id))
+                    .map(m => m.email)
+                    .join(',');
+                } else if (emailSelectedGrupy.includes('__all__')) {
+                  emails = members.filter(m => m.typ === 'ministrant').map(m => m.email).join(',');
+                } else {
+                  emails = members
                     .filter(m => emailSelectedGrupy.includes(m.grupa || '') && m.typ === 'ministrant')
                     .map(m => m.email)
                     .join(',');
+                }
                 window.location.href = `mailto:${emails}`;
                 setShowEmailModal(false);
               }}
             >
               <Mail className="w-4 h-4 mr-2" />
-              {emailSelectedGrupy.includes('__all__')
-                ? 'Wyślij do wszystkich'
-                : `Wyślij do ${emailSelectedGrupy.length} ${emailSelectedGrupy.length === 1 ? 'grupy' : 'grup'}`}
+              {emailSelectedGrupy.includes('__pick__')
+                ? `Wyślij do ${emailSelectedMinistranci.length} ${emailSelectedMinistranci.length === 1 ? 'osoby' : 'osób'}`
+                : emailSelectedGrupy.includes('__all__')
+                  ? 'Wyślij do wszystkich'
+                  : `Wyślij do ${emailSelectedGrupy.length} ${emailSelectedGrupy.length === 1 ? 'grupy' : 'grup'}`}
             </Button>
           )}
         </DialogContent>
@@ -7387,72 +7498,93 @@ export default function MinistranciApp() {
       <Dialog open={showGrafikModal} onOpenChange={(open) => { setShowGrafikModal(open); if (!open) setEditDyzury(false); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              Grafik dyżurów
-            </DialogTitle>
-            <DialogDescription>Zarządzaj dyżurami ministrantów</DialogDescription>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                <Shield className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                Grafik dyżurów
+              </DialogTitle>
+              <Button size="sm" variant={editDyzury ? 'default' : 'outline'} onClick={() => setEditDyzury(!editDyzury)} className={editDyzury ? 'bg-indigo-600 hover:bg-indigo-700' : ''}>
+                {editDyzury ? 'Gotowe' : 'Edytuj'}
+              </Button>
+            </div>
+            <DialogDescription>Tygodniowy harmonogram służby ministrantów</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end mb-2">
-            <Button size="sm" variant={editDyzury ? 'default' : 'outline'} onClick={() => setEditDyzury(!editDyzury)}>
-              {editDyzury ? 'Gotowe' : 'Edytuj'}
-            </Button>
-          </div>
           {!editDyzury ? (
             dyzury.length === 0 ? (
-              <p className="text-gray-500 dark:text-gray-400 text-sm">Brak dyżurów. Kliknij Edytuj, aby przypisać ministrantów.</p>
+              <div className="text-center py-8">
+                <Shield className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400 font-medium">Brak dyżurów</p>
+                <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">Kliknij &quot;Edytuj&quot;, aby przypisać ministrantów do dni tygodnia</p>
+              </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              <div className="space-y-2">
                 {DNI_TYGODNIA_FULL.map((dzien, i) => {
                   const dzienIdx = i === 6 ? 0 : i + 1;
                   const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
-                  if (dyzuryDnia.length === 0) return null;
+                  const isWeekend = i >= 5;
                   return (
-                    <div key={i} className="p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-center">
-                      <p className="font-medium text-xs text-gray-500 dark:text-gray-400 mb-1">{dzien}</p>
-                      {dyzuryDnia.map(d => {
-                        const member = members.find(m => m.profile_id === d.ministrant_id);
-                        return <p key={d.id} className="text-sm truncate">{member ? `${member.imie} ${(member.nazwisko || '').charAt(0)}.` : '?'}</p>;
-                      })}
+                    <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${dyzuryDnia.length > 0 ? (isWeekend ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800/40' : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700') : 'bg-gray-50/50 dark:bg-gray-800/20 border-gray-100 dark:border-gray-800 opacity-60'}`}>
+                      <div className={`w-20 shrink-0 text-center py-1 px-2 rounded-lg font-semibold text-xs uppercase tracking-wide ${isWeekend ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                        {dzien.slice(0, 3)}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 flex-1 min-h-[28px] items-center">
+                        {dyzuryDnia.length > 0 ? dyzuryDnia.map(d => {
+                          const member = members.find(m => m.profile_id === d.ministrant_id);
+                          const grupa = member?.grupa ? grupy.find(g => g.id === member.grupa) : null;
+                          const kolor = grupa ? KOLOR_KLASY[grupa.kolor] : null;
+                          return (
+                            <span key={d.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium ${kolor ? `${kolor.bg} ${kolor.text}` : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
+                              {grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
+                              {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
+                            </span>
+                          );
+                        }) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500 italic">brak dyżurów</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
             )
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {DNI_TYGODNIA_FULL.map((dzien, i) => {
                 const dzienIdx = i === 6 ? 0 : i + 1;
                 const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
                 const ministranciNaDyzurze = dyzuryDnia.map(d => d.ministrant_id);
                 const dostepniMinistranci = members.filter(m => m.typ === 'ministrant' && !ministranciNaDyzurze.includes(m.profile_id));
+                const isWeekend = i >= 5;
                 return (
-                  <div key={i} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                    <p className="font-medium text-sm mb-2">{dzien}</p>
+                  <div key={i} className={`p-3 rounded-xl border ${isWeekend ? 'bg-indigo-50/30 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800/40' : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'}`}>
+                    <p className={`font-semibold text-sm mb-2 ${isWeekend ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>{dzien}</p>
                     <div className="flex flex-wrap gap-1.5 items-center">
                       {dyzuryDnia.map(d => {
                         const member = members.find(m => m.profile_id === d.ministrant_id);
+                        const grupa = member?.grupa ? grupy.find(g => g.id === member.grupa) : null;
+                        const kolor = grupa ? KOLOR_KLASY[grupa.kolor] : null;
                         return (
-                          <Badge key={d.id} variant="secondary" className="flex items-center gap-1 pr-1">
+                          <span key={d.id} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium ${kolor ? `${kolor.bg} ${kolor.text}` : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
+                            {grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
                             {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
                             <button
                               onClick={() => toggleDyzurAdmin(d.ministrant_id, dzienIdx)}
-                              className="ml-1 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-full p-0.5"
+                              className="ml-0.5 hover:bg-red-200 dark:hover:bg-red-900/40 rounded-full p-0.5 transition-colors"
                             >
                               <X className="w-3 h-3" />
                             </button>
-                          </Badge>
+                          </span>
                         );
                       })}
                       {dostepniMinistranci.length > 0 && (
                         <select
-                          className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer"
+                          className="text-xs border border-dashed border-gray-300 dark:border-gray-600 rounded-full px-3 py-1.5 bg-white dark:bg-gray-700 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
                           value=""
                           onChange={(e) => {
                             if (e.target.value) toggleDyzurAdmin(e.target.value, dzienIdx);
                           }}
                         >
-                          <option value="">+ dodaj ministranta</option>
+                          <option value="">+ dodaj</option>
                           {dostepniMinistranci.map(m => (
                             <option key={m.id} value={m.profile_id}>
                               {m.imie} {m.nazwisko || ''}
@@ -7461,7 +7593,7 @@ export default function MinistranciApp() {
                         </select>
                       )}
                       {dyzuryDnia.length === 0 && dostepniMinistranci.length === 0 && (
-                        <span className="text-xs text-gray-400">Brak ministrantów</span>
+                        <span className="text-xs text-gray-400 italic">Brak ministrantów</span>
                       )}
                     </div>
                   </div>

@@ -674,6 +674,7 @@ export default function MinistranciApp() {
   const [celebration, setCelebration] = useState<{ punkty: number; total: number } | null>(null);
   const prevObecnosciRef = useRef<Obecnosc[]>([]);
   const [showIOSInstallBanner, setShowIOSInstallBanner] = useState(false);
+  const [showAllZgloszenia, setShowAllZgloszenia] = useState(false);
 
   // ==================== STAN — TABLICA OGŁOSZEŃ ====================
   const [tablicaWatki, setTablicaWatki] = useState<TablicaWatek[]>([]);
@@ -4711,67 +4712,6 @@ export default function MinistranciApp() {
                       </Card>
                     )}
 
-                    {/* Historia zgłoszeń */}
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Historia zgłoszeń</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {myObecnosci.length === 0 ? (
-                          <p className="text-gray-500 dark:text-gray-400 text-sm">Brak zgłoszeń. Zacznij służyć i zdobywaj punkty!</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {myObecnosci.slice(0, 15).map(o => {
-                              const d = new Date(o.data);
-                              const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-                              const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay());
-                              return (
-                                <div key={o.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg ${o.status === 'zatwierdzona' ? 'bg-green-50 dark:bg-green-900/20' : o.status === 'odrzucona' ? 'bg-red-50 dark:bg-red-900/20' : 'bg-yellow-50 dark:bg-yellow-900/20'}`}>
-                                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                    {o.status === 'zatwierdzona' && <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />}
-                                    {o.status === 'oczekuje' && <Hourglass className="w-4 h-4 text-yellow-600 dark:text-yellow-400 shrink-0" />}
-                                    {o.status === 'odrzucona' && <X className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />}
-                                    <span className="text-xs sm:text-sm truncate">
-                                      {dayName} {d.toLocaleDateString('pl-PL')}
-                                      {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
-                                    </span>
-                                    {o.typ === 'nabożeństwo' && (
-                                      <Badge variant="secondary" className="text-xs">{o.nazwa_nabożeństwa}</Badge>
-                                    )}
-                                  </div>
-                                  <span className={`font-bold text-sm ${o.status === 'zatwierdzona' ? 'text-green-700 dark:text-green-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? 'oczekuje' : 'odrzucona'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    {/* Minusowe punkty */}
-                    {myMinusowe.length > 0 && (
-                      <Card>
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base text-red-700 dark:text-red-300 flex items-center gap-2">
-                            <Target className="w-4 h-4" />
-                            Minusowe punkty
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {myMinusowe.map(m => (
-                              <div key={m.id} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                                <span className="text-sm">{new Date(m.data).toLocaleDateString('pl-PL')} — {m.powod}</span>
-                                <span className="font-bold text-red-700 dark:text-red-300">{m.punkty} pkt</span>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-
                     {/* Ranking parafii */}
                     <Card>
                       <CardHeader className="pb-3">
@@ -4812,6 +4752,76 @@ export default function MinistranciApp() {
                         )}
                       </CardContent>
                     </Card>
+
+                    {/* Historia zgłoszeń */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-base">Historia zgłoszeń</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {myObecnosci.length === 0 ? (
+                          <p className="text-gray-500 dark:text-gray-400 text-sm">Brak zgłoszeń. Zacznij służyć i zdobywaj punkty!</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {(showAllZgloszenia ? myObecnosci : myObecnosci.slice(0, 3)).map(o => {
+                              const d = new Date(o.data);
+                              const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+                              const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay());
+                              return (
+                                <div key={o.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg ${o.status === 'zatwierdzona' ? 'bg-green-50 dark:bg-green-900/20' : o.status === 'odrzucona' ? 'bg-red-50 dark:bg-red-900/20' : 'bg-yellow-50 dark:bg-yellow-900/20'}`}>
+                                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                                    {o.status === 'zatwierdzona' && <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />}
+                                    {o.status === 'oczekuje' && <Hourglass className="w-4 h-4 text-yellow-600 dark:text-yellow-400 shrink-0" />}
+                                    {o.status === 'odrzucona' && <X className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />}
+                                    <span className="text-xs sm:text-sm truncate">
+                                      {dayName} {d.toLocaleDateString('pl-PL')}
+                                      {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
+                                    </span>
+                                    {o.typ === 'nabożeństwo' && (
+                                      <Badge variant="secondary" className="text-xs">{o.nazwa_nabożeństwa}</Badge>
+                                    )}
+                                  </div>
+                                  <span className={`font-bold text-sm ${o.status === 'zatwierdzona' ? 'text-green-700 dark:text-green-300' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? 'oczekuje' : 'odrzucona'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            {myObecnosci.length > 3 && (
+                              <Button variant="ghost" size="sm" className="w-full text-xs text-gray-500" onClick={() => setShowAllZgloszenia(!showAllZgloszenia)}>
+                                {showAllZgloszenia ? (
+                                  <><ChevronUp className="w-3 h-3 mr-1" /> Zwiń</>
+                                ) : (
+                                  <><ChevronDown className="w-3 h-3 mr-1" /> Pokaż wszystkie ({myObecnosci.length})</>
+                                )}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Minusowe punkty */}
+                    {myMinusowe.length > 0 && (
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base text-red-700 dark:text-red-300 flex items-center gap-2">
+                            <Target className="w-4 h-4" />
+                            Minusowe punkty
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            {myMinusowe.map(m => (
+                              <div key={m.id} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                                <span className="text-sm">{new Date(m.data).toLocaleDateString('pl-PL')} — {m.powod}</span>
+                                <span className="font-bold text-red-700 dark:text-red-300">{m.punkty} pkt</span>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
 
                     {/* Rangi — drabinka */}
                     <Card>

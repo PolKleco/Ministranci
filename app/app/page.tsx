@@ -5600,7 +5600,7 @@ export default function MinistranciApp() {
                     </div>
                     <div className="grid gap-3">
                       {members.filter(m => !m.grupa && m.typ === 'ministrant' && (!searchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(searchMinistrant.toLowerCase()))).map(member => (
-                        <Card key={member.id} className="border-amber-400 dark:border-amber-600">
+                        <Card key={member.id} className="border-amber-400 dark:border-amber-600 overflow-hidden">
                           <CardContent className="py-3 sm:py-4">
                             <div className="flex justify-between items-start gap-2">
                               <div className="min-w-0">
@@ -5608,10 +5608,10 @@ export default function MinistranciApp() {
                                 <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0">
-                                <div className="flex gap-2">
                                   <Button
                                     size="sm"
                                     variant="outline"
+                                    className="w-full"
                                     onClick={() => {
                                       setSelectedMember(member);
                                       setShowGrupaModal(true);
@@ -5622,6 +5622,7 @@ export default function MinistranciApp() {
                                   <Button
                                     size="sm"
                                     variant="outline"
+                                    className="w-full"
                                     onClick={() => {
                                       setSelectedMember(member);
                                       setShowPoslugiModal(true);
@@ -5629,7 +5630,6 @@ export default function MinistranciApp() {
                                   >
                                     Przypisz posługi
                                   </Button>
-                                </div>
                                 {(() => {
                                   const memberDyzury = dyzury.filter(d => d.ministrant_id === member.profile_id);
                                   if (memberDyzury.length > 0) {
@@ -5646,6 +5646,7 @@ export default function MinistranciApp() {
                                     <Button
                                       size="sm"
                                       variant="outline"
+                                      className="w-full"
                                       onClick={() => {
                                         setSelectedMember(member);
                                         setShowDyzuryAdminModal(true);
@@ -5679,7 +5680,7 @@ export default function MinistranciApp() {
                       </div>
                       <div className="grid gap-3 mb-6">
                         {groupMembers.map(member => (
-                          <Card key={member.id} className={`${kolory.cardBg} ${kolory.border}`}>
+                          <Card key={member.id} className={`${kolory.cardBg} ${kolory.border} overflow-hidden`}>
                             <CardContent className="py-3 sm:py-4">
                               <div className="flex justify-between items-start gap-2">
                                 <div className="min-w-0">
@@ -5701,10 +5702,10 @@ export default function MinistranciApp() {
                                   )}
                                 </div>
                                 <div className="flex flex-col items-end gap-1 shrink-0">
-                                  <div className="flex gap-2">
                                     <Button
                                       size="sm"
                                       variant="outline"
+                                      className="w-full"
                                       onClick={() => {
                                         setSelectedMember(member);
                                         setShowGrupaModal(true);
@@ -5715,6 +5716,7 @@ export default function MinistranciApp() {
                                     <Button
                                       size="sm"
                                       variant="outline"
+                                      className="w-full"
                                       onClick={() => {
                                         setSelectedMember(member);
                                         setShowPoslugiModal(true);
@@ -5722,7 +5724,6 @@ export default function MinistranciApp() {
                                     >
                                       Przypisz posługi
                                     </Button>
-                                  </div>
                                   {(() => {
                                     const memberDyzury = dyzury.filter(d => d.ministrant_id === member.profile_id);
                                     if (memberDyzury.length > 0) {
@@ -5739,6 +5740,7 @@ export default function MinistranciApp() {
                                       <Button
                                         size="sm"
                                         variant="outline"
+                                        className="w-full"
                                         onClick={() => {
                                           setSelectedMember(member);
                                           setShowDyzuryAdminModal(true);

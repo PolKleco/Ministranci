@@ -2088,6 +2088,23 @@ export default function MinistranciApp() {
       });
 
       await supabase.from('funkcje').insert(funkcjeToInsert);
+
+      // Push notification o nowym wydarzeniu (fire and forget)
+      if (currentParafia) {
+        fetch('/api/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parafia_id: currentParafia.id,
+            grupa_docelowa: 'wszyscy',
+            title: 'Nowe wydarzenie',
+            body: `${sluzbaForm.nazwa} — ${new Date(sluzbaForm.data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${sluzbaForm.godzina}`,
+            url: '/app',
+            kategoria: 'wydarzenie',
+            autor_id: currentUser.id,
+          }),
+        }).catch(() => {});
+      }
     }
 
     // Odśwież listę

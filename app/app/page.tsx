@@ -8,7 +8,7 @@ import {
   UserPlus, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
-  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles,
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, FileText,
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type
 } from 'lucide-react';
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
@@ -112,7 +112,19 @@ interface GrupaConfig {
   emoji: string;
   opis: string;
 }
-type FunkcjaType = 'Krzyż' | 'Świeca 1' | 'Świeca 2' | 'Kadzidło' | 'Ceremoniarz' | 'Ministrant 1' | 'Ministrant 2';
+type FunkcjaType = string;
+
+interface FunkcjaConfig {
+  id: string;
+  nazwa: string;
+  opis: string;
+  emoji: string;
+  kolor: string;
+  obrazek_url?: string;
+  dlugi_opis?: string;
+  zdjecia?: string[];
+  youtube_url?: string;
+}
 
 interface Profile {
   id: string;
@@ -163,6 +175,15 @@ interface Sluzba {
   utworzono_przez: string;
   status: 'zaplanowana' | 'wykonana';
   funkcje: Funkcja[];
+}
+
+interface SzablonWydarzenia {
+  id: string;
+  nazwa: string;
+  godzina: string;
+  funkcje: Record<string, string>;
+  parafia_id: string;
+  utworzono_przez: string;
 }
 
 interface Zaproszenie {
@@ -347,6 +368,16 @@ const DEFAULT_GRUPY: GrupaConfig[] = [
   { id: 'starsi', nazwa: 'Ministranci starsi', kolor: 'green', emoji: '🟢', opis: 'Doświadczeni ministranci' },
   { id: 'lektorzy_mlodsi', nazwa: 'Lektorzy młodsi', kolor: 'purple', emoji: '🟣', opis: 'Początkujący lektorzy' },
   { id: 'lektorzy_starsi', nazwa: 'Lektorzy starsi', kolor: 'red', emoji: '🔴', opis: 'Doświadczeni lektorzy' },
+];
+
+const DEFAULT_FUNKCJE: FunkcjaConfig[] = [
+  { id: 'krzyz', nazwa: 'Krzyż', opis: 'Niesiesz krzyż procesyjny na czele pochodu. Trzymaj go prosto i pewnie.', emoji: '✝️', kolor: 'amber' },
+  { id: 'swieca1', nazwa: 'Świeca 1', opis: 'Niesiesz świecę po lewej stronie. Idź równo ze Świecą 2.', emoji: '🕯️', kolor: 'yellow' },
+  { id: 'swieca2', nazwa: 'Świeca 2', opis: 'Niesiesz świecę po prawej stronie. Idź równo ze Świecą 1.', emoji: '🕯️', kolor: 'yellow' },
+  { id: 'kadzidlo', nazwa: 'Kadzidło', opis: 'Obsługujesz kadzidło — przygotuj węgielki przed Mszą i podawaj łódkę z kadzidłem.', emoji: '🔥', kolor: 'red' },
+  { id: 'ceremoniarz', nazwa: 'Ceremoniarz', opis: 'Koordynujesz przebieg liturgii. Dbasz o porządek i wskazujesz ministrantom ich zadania.', emoji: '👑', kolor: 'purple' },
+  { id: 'ministrant1', nazwa: 'Ministrant 1', opis: 'Służysz przy ołtarzu — podajesz ampułki, dzwonek i inne naczynia liturgiczne.', emoji: '⛪', kolor: 'blue' },
+  { id: 'ministrant2', nazwa: 'Ministrant 2', opis: 'Służysz przy ołtarzu — pomagasz Ministrantowi 1 i asystujesz kapłanowi.', emoji: '⛪', kolor: 'blue' },
 ];
 
 // ==================== POSŁUGI ====================
@@ -626,8 +657,17 @@ export default function MinistranciApp() {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [selectedSluzba, setSelectedSluzba] = useState<Sluzba | null>(null);
 
-  // Grupy i posługi (edytowalne)
+  // Grupy, funkcje i posługi (edytowalne)
   const [grupy, setGrupy] = useState<GrupaConfig[]>(DEFAULT_GRUPY);
+  const [funkcjeConfig, setFunkcjeConfig] = useState<FunkcjaConfig[]>(DEFAULT_FUNKCJE);
+  const [showFunkcjeConfigModal, setShowFunkcjeConfigModal] = useState(false);
+  const [newFunkcjaForm, setNewFunkcjaForm] = useState({ nazwa: '', opis: '' });
+  const [editingFunkcja, setEditingFunkcja] = useState<FunkcjaConfig | null>(null);
+  const [showEditFunkcjaModal, setShowEditFunkcjaModal] = useState(false);
+  const [editFunkcjaFile, setEditFunkcjaFile] = useState<File | null>(null);
+  const [editFunkcjaPreview, setEditFunkcjaPreview] = useState('');
+  const [editFunkcjaGalleryFiles, setEditFunkcjaGalleryFiles] = useState<File[]>([]);
+  const [editFunkcjaGalleryPreviews, setEditFunkcjaGalleryPreviews] = useState<string[]>([]);
   const [poslugi, setPoslugi] = useState<Posluga[]>([]);
   const [editingPosluga, setEditingPosluga] = useState<Posluga | null>(null);
   const [newPoslugaForm, setNewPoslugaForm] = useState({ nazwa: '', opis: '', emoji: '⭐', kolor: 'gray', dlugi_opis: '', youtube_url: '' });
@@ -647,6 +687,16 @@ export default function MinistranciApp() {
   const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
   const [emailSelectedMinistranci, setEmailSelectedMinistranci] = useState<string[]>([]);
   const [emailSearchMinistrant, setEmailSearchMinistrant] = useState('');
+
+  // Szablony wydarzeń
+  const [szablony, setSzablony] = useState<SzablonWydarzenia[]>([]);
+  const [showSzablonyView, setShowSzablonyView] = useState(false);
+  const [showSzablonModal, setShowSzablonModal] = useState(false);
+  const [selectedSzablon, setSelectedSzablon] = useState<SzablonWydarzenia | null>(null);
+  const [szablonForm, setSzablonForm] = useState({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+  const [showPublishSzablonModal, setShowPublishSzablonModal] = useState(false);
+  const [publishDate, setPublishDate] = useState('');
+  const [publishFunkcje, setPublishFunkcje] = useState<Record<FunkcjaType, string>>({} as Record<FunkcjaType, string>);
 
   // ==================== STAN — RANKING SŁUŻBY ====================
   const [punktacjaConfig, setPunktacjaConfig] = useState<PunktacjaConfig[]>([]);
@@ -876,6 +926,10 @@ export default function MinistranciApp() {
       if (parafia.grupy && Array.isArray(parafia.grupy) && parafia.grupy.length > 0) {
         setGrupy(parafia.grupy as GrupaConfig[]);
       }
+      // Załaduj konfigurację funkcji (jeśli zapisane)
+      if (parafia.funkcje_config && Array.isArray(parafia.funkcje_config) && parafia.funkcje_config.length > 0) {
+        setFunkcjeConfig(parafia.funkcje_config as FunkcjaConfig[]);
+      }
     }
 
     const { data: membersData } = await supabase
@@ -899,6 +953,18 @@ export default function MinistranciApp() {
       .order('data', { ascending: true });
 
     if (sluzbyData) setSluzby(sluzbyData as Sluzba[]);
+  }, [currentUser?.parafia_id]);
+
+  const loadSzablony = useCallback(async () => {
+    if (!currentUser?.parafia_id) return;
+
+    const { data } = await supabase
+      .from('szablony_wydarzen')
+      .select('*')
+      .eq('parafia_id', currentUser.parafia_id)
+      .order('created_at', { ascending: false });
+
+    if (data) setSzablony(data as SzablonWydarzenia[]);
   }, [currentUser?.parafia_id]);
 
   const loadPoslugi = useCallback(async () => {
@@ -1659,8 +1725,9 @@ export default function MinistranciApp() {
       loadParafiaData();
       loadSluzby();
       loadPoslugi();
+      loadSzablony();
     }
-  }, [currentUser?.parafia_id, loadParafiaData, loadSluzby, loadPoslugi]);
+  }, [currentUser?.parafia_id, loadParafiaData, loadSluzby, loadPoslugi, loadSzablony]);
 
   useEffect(() => {
     if (currentUser?.email) {
@@ -2118,16 +2185,8 @@ export default function MinistranciApp() {
 
   // ==================== SŁUŻBY ====================
 
-  const FUNKCJE_TYPES: FunkcjaType[] = ['Krzyż', 'Świeca 1', 'Świeca 2', 'Kadzidło', 'Ceremoniarz', 'Ministrant 1', 'Ministrant 2'];
-  const FUNKCJE_OPISY: Record<FunkcjaType, string> = {
-    'Krzyż': 'Niesiesz krzyż procesyjny na czele pochodu. Trzymaj go prosto i pewnie.',
-    'Świeca 1': 'Niesiesz świecę po lewej stronie. Idź równo ze Świecą 2.',
-    'Świeca 2': 'Niesiesz świecę po prawej stronie. Idź równo ze Świecą 1.',
-    'Kadzidło': 'Obsługujesz kadzidło — przygotuj węgielki przed Mszą i podawaj łódkę z kadzidłem.',
-    'Ceremoniarz': 'Koordynujesz przebieg liturgii. Dbasz o porządek i wskazujesz ministrantom ich zadania.',
-    'Ministrant 1': 'Służysz przy ołtarzu — podajesz ampułki, dzwonek i inne naczynia liturgiczne.',
-    'Ministrant 2': 'Służysz przy ołtarzu — pomagasz Ministrantowi 1 i asystujesz kapłanowi.',
-  };
+  const FUNKCJE_TYPES: FunkcjaType[] = funkcjeConfig.map(f => f.nazwa);
+  const FUNKCJE_OPISY: Record<string, string> = Object.fromEntries(funkcjeConfig.map(f => [f.nazwa, f.opis]));
 
   const handleCreateSluzba = async () => {
     if (!sluzbaForm.nazwa || !sluzbaForm.data || !sluzbaForm.godzina || !currentUser?.parafia_id) {
@@ -2281,6 +2340,126 @@ export default function MinistranciApp() {
     await loadSluzby();
   };
 
+  // ==================== SZABLONY WYDARZEŃ ====================
+
+  const handleCreateSzablon = async () => {
+    if (!szablonForm.nazwa || !szablonForm.godzina || !currentUser?.parafia_id) {
+      alert('Wypełnij wymagane pola!');
+      return;
+    }
+
+    const funkcjeData: Record<string, string> = {};
+    FUNKCJE_TYPES.forEach(typ => {
+      const val = szablonForm.funkcje[typ];
+      if (val === 'BEZ') {
+        funkcjeData[typ] = 'BEZ';
+      }
+      // UNASSIGNED i puste pomijamy — domyślnie nie przypisano
+    });
+
+    if (selectedSzablon) {
+      await supabase
+        .from('szablony_wydarzen')
+        .update({
+          nazwa: szablonForm.nazwa,
+          godzina: szablonForm.godzina,
+          funkcje: funkcjeData,
+        })
+        .eq('id', selectedSzablon.id);
+    } else {
+      await supabase
+        .from('szablony_wydarzen')
+        .insert({
+          nazwa: szablonForm.nazwa,
+          godzina: szablonForm.godzina,
+          funkcje: funkcjeData,
+          parafia_id: currentUser.parafia_id,
+          utworzono_przez: currentUser.id,
+        });
+    }
+
+    await loadSzablony();
+    setShowSzablonModal(false);
+    setSelectedSzablon(null);
+    setSzablonForm({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+  };
+
+  const handleDeleteSzablon = async () => {
+    if (!selectedSzablon) return;
+
+    await supabase
+      .from('szablony_wydarzen')
+      .delete()
+      .eq('id', selectedSzablon.id);
+
+    await loadSzablony();
+    setShowSzablonModal(false);
+    setSelectedSzablon(null);
+  };
+
+  const handlePublishSzablon = async () => {
+    if (!selectedSzablon || !publishDate || !currentUser?.parafia_id) {
+      alert('Wybierz datę!');
+      return;
+    }
+
+    const { data: newSluzba, error } = await supabase
+      .from('sluzby')
+      .insert({
+        nazwa: selectedSzablon.nazwa,
+        data: publishDate,
+        godzina: selectedSzablon.godzina,
+        parafia_id: currentUser.parafia_id,
+        utworzono_przez: currentUser.id,
+        status: 'zaplanowana'
+      })
+      .select()
+      .single();
+
+    if (error || !newSluzba) {
+      alert('Błąd publikacji wydarzenia!');
+      return;
+    }
+
+    const funkcjeToInsert = FUNKCJE_TYPES.map(typ => {
+      const szablonVal = selectedSzablon.funkcje[typ];
+      const assigned = publishFunkcje[typ];
+      return {
+        sluzba_id: newSluzba.id,
+        typ,
+        ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
+        aktywna: szablonVal !== 'BEZ' && assigned !== 'BEZ',
+        zaakceptowana: false
+      };
+    });
+
+    await supabase.from('funkcje').insert(funkcjeToInsert);
+
+    // Push notification
+    if (currentParafia) {
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parafia_id: currentParafia.id,
+          grupa_docelowa: 'wszyscy',
+          title: 'Nowe wydarzenie',
+          body: `${selectedSzablon.nazwa} — ${new Date(publishDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${selectedSzablon.godzina}`,
+          url: '/app',
+          kategoria: 'wydarzenie',
+          autor_id: currentUser.id,
+        }),
+      }).catch(() => {});
+    }
+
+    await loadSluzby();
+    setShowPublishSzablonModal(false);
+    setSelectedSzablon(null);
+    setPublishDate('');
+    setPublishFunkcje({} as Record<FunkcjaType, string>);
+    setShowSzablonyView(false);
+  };
+
   // ==================== MINISTRANCI ====================
 
   const handleUpdatePoslugi = async () => {
@@ -2317,6 +2496,83 @@ export default function MinistranciApp() {
       .from('parafie')
       .update({ grupy: newGrupy })
       .eq('id', currentUser.parafia_id);
+  };
+
+  const saveFunkcjeConfigToDb = async (newFunkcje: FunkcjaConfig[]) => {
+    if (!currentUser?.parafia_id) return;
+    await supabase
+      .from('parafie')
+      .update({ funkcje_config: newFunkcje })
+      .eq('id', currentUser.parafia_id);
+  };
+
+  const handleAddFunkcja = () => {
+    if (!newFunkcjaForm.nazwa.trim()) {
+      alert('Podaj nazwę funkcji!');
+      return;
+    }
+    const id = newFunkcjaForm.nazwa.toLowerCase().replace(/\s+/g, '_').replace(/[^a-ząćęłńóśźż0-9_]/gi, '');
+    const newFunkcja: FunkcjaConfig = {
+      id,
+      nazwa: newFunkcjaForm.nazwa.trim(),
+      opis: newFunkcjaForm.opis.trim(),
+      emoji: '⭐',
+      kolor: 'gray',
+    };
+    const updated = [...funkcjeConfig, newFunkcja];
+    setFunkcjeConfig(updated);
+    saveFunkcjeConfigToDb(updated);
+    setNewFunkcjaForm({ nazwa: '', opis: '' });
+  };
+
+  const handleDeleteFunkcja = (id: string) => {
+    const updated = funkcjeConfig.filter(f => f.id !== id);
+    setFunkcjeConfig(updated);
+    saveFunkcjeConfigToDb(updated);
+  };
+
+  const handleSaveFunkcjaEdit = async () => {
+    if (!editingFunkcja || !editingFunkcja.nazwa.trim()) return;
+
+    let obrazekUrl = editingFunkcja.obrazek_url;
+
+    // Upload nowego obrazka
+    if (editFunkcjaFile) {
+      if (editingFunkcja.obrazek_url) {
+        await deletePoslugaImage(editingFunkcja.obrazek_url);
+      }
+      const url = await uploadPoslugaImage(editFunkcjaFile, `funkcja_${editingFunkcja.id}`);
+      if (url) obrazekUrl = url;
+    }
+
+    // Upload nowych zdjęć do galerii
+    let zdjeciaUrls = editingFunkcja.zdjecia || [];
+    if (editFunkcjaGalleryFiles.length > 0) {
+      const newUrls = await uploadPoslugaGalleryImages(editFunkcjaGalleryFiles, `funkcja_${editingFunkcja.id}`);
+      zdjeciaUrls = [...zdjeciaUrls, ...newUrls];
+    }
+
+    const updatedFunkcja: FunkcjaConfig = {
+      ...editingFunkcja,
+      nazwa: editingFunkcja.nazwa.trim(),
+      opis: editingFunkcja.opis.trim(),
+      obrazek_url: obrazekUrl || undefined,
+      dlugi_opis: poslugaEditor?.getHTML() || editingFunkcja.dlugi_opis || '',
+      zdjecia: zdjeciaUrls.length > 0 ? zdjeciaUrls : undefined,
+      youtube_url: editingFunkcja.youtube_url || undefined,
+    };
+
+    const updated = funkcjeConfig.map(f =>
+      f.id === editingFunkcja.id ? updatedFunkcja : f
+    );
+    setFunkcjeConfig(updated);
+    saveFunkcjeConfigToDb(updated);
+    setShowEditFunkcjaModal(false);
+    setEditingFunkcja(null);
+    setEditFunkcjaFile(null);
+    setEditFunkcjaPreview('');
+    setEditFunkcjaGalleryFiles([]);
+    setEditFunkcjaGalleryPreviews([]);
   };
 
   const handleAddGrupa = () => {
@@ -5457,135 +5713,242 @@ export default function MinistranciApp() {
           {/* Panel Wydarzenia */}
           <TabsContent value="sluzby">
             <div className="space-y-4">
-              <div className="flex justify-between items-center gap-2">
-                <h2 className="text-xl sm:text-2xl font-bold">Wydarzenia</h2>
-                {currentUser.typ === 'ksiadz' && (
-                  <Button onClick={() => {
-                    setSelectedSluzba(null);
-                    setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
-                    setShowSluzbaModal(true);
-                  }}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Dodaj wydarzenie
-                  </Button>
-                )}
-              </div>
+              {!showSzablonyView ? (
+                <>
+                  {/* === Widok wydarzeń === */}
+                  <div className="flex justify-between items-center gap-2 flex-wrap">
+                    <h2 className="text-xl sm:text-2xl font-bold">Wydarzenia</h2>
+                    {currentUser.typ === 'ksiadz' && (
+                      <div className="flex gap-2 flex-wrap">
+                        <Button variant="outline" size="sm" onClick={() => setShowFunkcjeConfigModal(true)}>
+                          <Settings className="w-4 h-4 mr-2" />
+                          Funkcje
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setShowSzablonyView(true)}>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Szablony
+                        </Button>
+                        <Button size="sm" onClick={() => {
+                          setSelectedSluzba(null);
+                          setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+                          setShowSluzbaModal(true);
+                        }}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Dodaj wydarzenie
+                        </Button>
+                      </div>
+                    )}
+                  </div>
 
-              <div className="grid gap-4">
-                {sluzby.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
-                      Brak zaplanowanych wydarzeń
-                    </CardContent>
-                  </Card>
-                ) : (
-                  sluzby.map(sluzba => {
-                    const isMySluzba = isSluzbaAssignedToMe(sluzba);
-                    const myFunkcje = getMyFunkcje(sluzba);
-                    const needsAcceptance = hasUnacceptedFunkcje(sluzba);
-
-                    return (
-                      <Card key={sluzba.id} className={isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : ''}>
-                        <CardHeader>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <CardTitle>{sluzba.nazwa}</CardTitle>
-                              <CardDescription>
-                                {new Date(sluzba.data).toLocaleDateString('pl-PL')} • {sluzba.godzina}
-                              </CardDescription>
-                            </div>
-                            {currentUser.typ === 'ksiadz' && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="Edytuj wydarzenie"
-                                onClick={() => handleEditSluzba(sluzba)}
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          {/* Widok księdza — pełna lista funkcji */}
-                          {currentUser.typ === 'ksiadz' && (
-                            <div className="space-y-2">
-                              {sluzba.funkcje
-                                .filter(f => f.aktywna)
-                                .map((funkcja) => (
-                                  <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded border">
-                                    <span className="font-medium text-sm shrink-0">{funkcja.typ}:</span>
-                                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                      <span className="text-sm truncate">
-                                        {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
-                                      </span>
-                                      {funkcja.ministrant_id && (
-                                        funkcja.zaakceptowana ? (
-                                          <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                        ) : (
-                                          <Hourglass className="w-4 h-4 text-amber-600" />
-                                        )
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-
-                          {/* Widok ministranta — tylko jego funkcje */}
-                          {currentUser.typ === 'ministrant' && (() => {
-                            const dniDoWydarzenia = Math.ceil((new Date(sluzba.data).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
-
-                            return (
-                              <div className="space-y-2">
-                                {isMySluzba ? (
-                                  <>
-                                    {myFunkcje.map((f) => (
-                                      <div key={f.id} className="space-y-2">
-                                        <div className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border">
-                                          <span className="font-medium">Twoja funkcja: {f.typ}</span>
-                                          {f.zaakceptowana ? (
-                                            <Badge className="bg-green-100 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">Zaakceptowana</Badge>
-                                          ) : (
-                                            <Badge variant="outline" className="text-amber-600 border-amber-300 dark:border-amber-700">Oczekuje</Badge>
-                                          )}
-                                        </div>
-                                        {f.zaakceptowana && (
-                                          <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 space-y-2">
-                                            <p className="text-sm text-indigo-800 dark:text-indigo-200">{FUNKCJE_OPISY[f.typ as FunkcjaType] || 'Brak opisu funkcji.'}</p>
-                                            <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                                              {dniDoWydarzenia === 0 ? 'Wydarzenie dzisiaj!' :
-                                               dniDoWydarzenia === 1 ? 'Wydarzenie jutro!' :
-                                               dniDoWydarzenia < 0 ? 'Wydarzenie już się odbyło' :
-                                               `Do wydarzenia: ${dniDoWydarzenia} ${dniDoWydarzenia < 5 ? 'dni' : 'dni'}`}
-                                            </p>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))}
-                                    {needsAcceptance && (
-                                      <Button
-                                        size="sm"
-                                        onClick={() => handleAcceptSluzba(sluzba)}
-                                        className="w-full mt-2"
-                                      >
-                                        <Check className="w-4 h-4 mr-1" />
-                                        Akceptuję wydarzenie
-                                      </Button>
-                                    )}
-                                  </>
-                                ) : (
-                                  <p className="text-sm text-gray-400 text-center py-2">Nie jesteś przypisany do tego wydarzenia</p>
-                                )}
-                              </div>
-                            );
-                          })()}
+                  <div className="grid gap-4">
+                    {sluzby.length === 0 ? (
+                      <Card>
+                        <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
+                          Brak zaplanowanych wydarzeń
                         </CardContent>
                       </Card>
-                    );
-                  })
-                )}
-              </div>
+                    ) : (
+                      sluzby.map(sluzba => {
+                        const isMySluzba = isSluzbaAssignedToMe(sluzba);
+                        const myFunkcje = getMyFunkcje(sluzba);
+                        const needsAcceptance = hasUnacceptedFunkcje(sluzba);
+
+                        return (
+                          <Card key={sluzba.id} className={isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : ''}>
+                            <CardHeader>
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <CardTitle>{sluzba.nazwa}</CardTitle>
+                                  <CardDescription>
+                                    {new Date(sluzba.data).toLocaleDateString('pl-PL')} • {sluzba.godzina}
+                                  </CardDescription>
+                                </div>
+                                {currentUser.typ === 'ksiadz' && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Edytuj wydarzenie"
+                                    onClick={() => handleEditSluzba(sluzba)}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </CardHeader>
+                            <CardContent>
+                              {/* Widok księdza — pełna lista funkcji */}
+                              {currentUser.typ === 'ksiadz' && (
+                                <div className="space-y-2">
+                                  {sluzba.funkcje
+                                    .filter(f => f.aktywna)
+                                    .map((funkcja) => (
+                                      <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded border">
+                                        <span className="font-medium text-sm shrink-0">{funkcja.typ}:</span>
+                                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                                          <span className="text-sm truncate">
+                                            {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
+                                          </span>
+                                          {funkcja.ministrant_id && (
+                                            funkcja.zaakceptowana ? (
+                                              <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                            ) : (
+                                              <Hourglass className="w-4 h-4 text-amber-600" />
+                                            )
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+
+                              {/* Widok ministranta — tylko jego funkcje */}
+                              {currentUser.typ === 'ministrant' && (() => {
+                                const dniDoWydarzenia = Math.ceil((new Date(sluzba.data).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+
+                                return (
+                                  <div className="space-y-2">
+                                    {isMySluzba ? (
+                                      <>
+                                        {myFunkcje.map((f) => (
+                                          <div key={f.id} className="space-y-2">
+                                            <div className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border">
+                                              <span className="font-medium">Twoja funkcja: {f.typ}</span>
+                                              {f.zaakceptowana ? (
+                                                <Badge className="bg-green-100 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">Zaakceptowana</Badge>
+                                              ) : (
+                                                <Badge variant="outline" className="text-amber-600 border-amber-300 dark:border-amber-700">Oczekuje</Badge>
+                                              )}
+                                            </div>
+                                            {f.zaakceptowana && (
+                                              <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 space-y-2">
+                                                <p className="text-sm text-indigo-800 dark:text-indigo-200">{FUNKCJE_OPISY[f.typ as FunkcjaType] || 'Brak opisu funkcji.'}</p>
+                                                <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                                                  {dniDoWydarzenia === 0 ? 'Wydarzenie dzisiaj!' :
+                                                   dniDoWydarzenia === 1 ? 'Wydarzenie jutro!' :
+                                                   dniDoWydarzenia < 0 ? 'Wydarzenie już się odbyło' :
+                                                   `Do wydarzenia: ${dniDoWydarzenia} ${dniDoWydarzenia < 5 ? 'dni' : 'dni'}`}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                        {needsAcceptance && (
+                                          <Button
+                                            size="sm"
+                                            onClick={() => handleAcceptSluzba(sluzba)}
+                                            className="w-full mt-2"
+                                          >
+                                            <Check className="w-4 h-4 mr-1" />
+                                            Akceptuję wydarzenie
+                                          </Button>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <p className="text-sm text-gray-400 text-center py-2">Nie jesteś przypisany do tego wydarzenia</p>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </CardContent>
+                          </Card>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* === Widok szablonów === */}
+                  <div className="flex justify-between items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setShowSzablonyView(false)}>
+                        <ArrowLeft className="w-4 h-4" />
+                      </Button>
+                      <h2 className="text-xl sm:text-2xl font-bold">Szablony wydarzeń</h2>
+                    </div>
+                    <Button onClick={() => {
+                      setSelectedSzablon(null);
+                      setSzablonForm({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+                      setShowSzablonModal(true);
+                    }}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Dodaj szablon
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-4">
+                    {szablony.length === 0 ? (
+                      <Card>
+                        <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
+                          <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                          <p>Brak szablonów</p>
+                          <p className="text-sm mt-1">Utwórz szablon, aby szybko publikować powtarzające się wydarzenia</p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      szablony.map(szablon => {
+                        const aktywnaFunkcje = FUNKCJE_TYPES.filter(t => szablon.funkcje[t] !== 'BEZ');
+                        return (
+                          <Card key={szablon.id} className="border-indigo-200 dark:border-indigo-800">
+                            <CardHeader className="pb-2">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <CardTitle className="text-base">{szablon.nazwa}</CardTitle>
+                                  <CardDescription>
+                                    <Clock className="w-3 h-3 inline mr-1" />
+                                    {szablon.godzina} • {aktywnaFunkcje.length} funkcji
+                                  </CardDescription>
+                                </div>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Edytuj szablon"
+                                    onClick={() => {
+                                      setSelectedSzablon(szablon);
+                                      setSzablonForm({
+                                        nazwa: szablon.nazwa,
+                                        godzina: szablon.godzina,
+                                        funkcje: { ...szablon.funkcje } as Record<FunkcjaType, string>,
+                                      });
+                                      setShowSzablonModal(true);
+                                    }}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="pt-0">
+                              <div className="flex flex-wrap gap-1 mb-3">
+                                {aktywnaFunkcje.map(f => (
+                                  <Badge key={f} variant="outline" className="text-xs">{f}</Badge>
+                                ))}
+                              </div>
+                              <Button
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-700 dark:hover:bg-indigo-600"
+                                onClick={() => {
+                                  setSelectedSzablon(szablon);
+                                  setPublishDate('');
+                                  const initialFunkcje = {} as Record<FunkcjaType, string>;
+                                  FUNKCJE_TYPES.forEach(typ => {
+                                    initialFunkcje[typ] = szablon.funkcje[typ] === 'BEZ' ? 'BEZ' : 'UNASSIGNED';
+                                  });
+                                  setPublishFunkcje(initialFunkcje);
+                                  setShowPublishSzablonModal(true);
+                                }}
+                              >
+                                <Send className="w-4 h-4 mr-2" />
+                                Publikuj wydarzenie
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </TabsContent>
 
@@ -5638,7 +6001,6 @@ export default function MinistranciApp() {
                                 <p className="font-semibold">{member.imie}</p>
                                 {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
                                 <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
-                                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0">
                                   <Button
@@ -5720,19 +6082,38 @@ export default function MinistranciApp() {
                                   <p className="font-semibold">{member.imie}</p>
                                   {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
                                   <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
-                                  <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 truncate">{member.email}</p>
                                   {member.role.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-2">
-                                      {member.role.map(r => {
-                                        const posluga = poslugi.find(p => p.slug === r);
+                                    <div className="mt-2">
+                                      {(() => {
+                                        const firstRole = member.role[0];
+                                        const firstPosluga = poslugi.find(p => p.slug === firstRole);
                                         return (
-                                          <Badge key={r} variant="outline" className="flex items-center gap-1">
-                                            {posluga?.obrazek_url ? (
-                                              <img src={posluga.obrazek_url} alt={posluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
-                                            ) : posluga?.emoji} {posluga?.nazwa}
-                                          </Badge>
+                                          <div className="flex flex-wrap gap-1 items-center">
+                                            <Badge variant="outline" className="flex items-center gap-1">
+                                              {firstPosluga?.obrazek_url ? (
+                                                <img src={firstPosluga.obrazek_url} alt={firstPosluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
+                                              ) : firstPosluga?.emoji} {firstPosluga?.nazwa}
+                                            </Badge>
+                                            {member.role.length > 1 && (
+                                              <details className="inline">
+                                                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 list-none">+{member.role.length - 1} więcej</summary>
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                  {member.role.slice(1).map(r => {
+                                                    const posluga = poslugi.find(p => p.slug === r);
+                                                    return (
+                                                      <Badge key={r} variant="outline" className="flex items-center gap-1">
+                                                        {posluga?.obrazek_url ? (
+                                                          <img src={posluga.obrazek_url} alt={posluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
+                                                        ) : posluga?.emoji} {posluga?.nazwa}
+                                                      </Badge>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </details>
+                                            )}
+                                          </div>
                                         );
-                                      })}
+                                      })()}
                                     </div>
                                   )}
                                 </div>
@@ -6396,6 +6777,416 @@ export default function MinistranciApp() {
                 </Button>
               )}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal zarządzania funkcjami */}
+      <Dialog open={showFunkcjeConfigModal} onOpenChange={setShowFunkcjeConfigModal}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Zarządzaj funkcjami</DialogTitle>
+            <DialogDescription>
+              Dodawaj i usuwaj funkcje przypisywane do wydarzeń
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {funkcjeConfig.map((f) => {
+              const kolory = KOLOR_KLASY[f.kolor] || KOLOR_KLASY.gray;
+              return (
+                <div key={f.id} className="flex items-center gap-3 p-3 rounded-lg border overflow-hidden">
+                  {f.obrazek_url ? (
+                    <img src={f.obrazek_url} alt={f.nazwa} className="h-10 w-10 object-contain shrink-0 rounded-full" />
+                  ) : (
+                    <div className={`w-10 h-10 rounded-full bg-white ${kolory.border} border-2 flex items-center justify-center text-lg shrink-0`}>
+                      {f.emoji}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{f.nazwa}</p>
+                    {f.opis && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{f.opis}</p>}
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditingFunkcja({ ...f });
+                        setEditFunkcjaFile(null);
+                        setEditFunkcjaPreview('');
+                        setEditFunkcjaGalleryFiles([]);
+                        setEditFunkcjaGalleryPreviews([]);
+                        if (poslugaEditor) {
+                          const opis = f.dlugi_opis || '';
+                          const html = /<[a-z][\s\S]*>/i.test(opis) ? opis : opis.split('\n').map(l => `<p>${l || '<br>'}</p>`).join('');
+                          poslugaEditor.commands.setContent(html);
+                        }
+                        setShowEditFunkcjaModal(true);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteFunkcja(f.id)}
+                    >
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-sm font-medium">Dodaj nową funkcję</p>
+            <div>
+              <Label>Nazwa *</Label>
+              <Input
+                value={newFunkcjaForm.nazwa}
+                onChange={(e) => setNewFunkcjaForm({ ...newFunkcjaForm, nazwa: e.target.value })}
+                placeholder="np. Łódka"
+              />
+            </div>
+            <div>
+              <Label>Opis (widoczny dla ministranta)</Label>
+              <Input
+                value={newFunkcjaForm.opis}
+                onChange={(e) => setNewFunkcjaForm({ ...newFunkcjaForm, opis: e.target.value })}
+                placeholder="np. Podajesz łódkę z kadzidłem"
+              />
+            </div>
+            <Button onClick={handleAddFunkcja} className="w-full">
+              <Plus className="w-4 h-4 mr-2" />
+              Dodaj funkcję
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal edycji funkcji */}
+      <Dialog open={showEditFunkcjaModal} onOpenChange={(open) => {
+        setShowEditFunkcjaModal(open);
+        if (!open) {
+          setEditingFunkcja(null);
+          setEditFunkcjaFile(null);
+          setEditFunkcjaPreview('');
+          setEditFunkcjaGalleryFiles([]);
+          setEditFunkcjaGalleryPreviews([]);
+        }
+      }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edytuj funkcję</DialogTitle>
+          </DialogHeader>
+          {editingFunkcja && (
+            <div className="space-y-4">
+              <div>
+                <Label>Nazwa</Label>
+                <Input
+                  value={editingFunkcja.nazwa}
+                  onChange={(e) => setEditingFunkcja({ ...editingFunkcja, nazwa: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Krótki opis</Label>
+                <Input
+                  value={editingFunkcja.opis}
+                  onChange={(e) => setEditingFunkcja({ ...editingFunkcja, opis: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Emoji</Label>
+                  <Input
+                    value={editingFunkcja.emoji}
+                    onChange={(e) => setEditingFunkcja({ ...editingFunkcja, emoji: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Kolor</Label>
+                  <Select value={editingFunkcja.kolor} onValueChange={(v) => setEditingFunkcja({ ...editingFunkcja, kolor: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(KOLOR_KLASY).map(k => (
+                        <SelectItem key={k} value={k}>{k}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label>Własny obrazek (zamiast emoji)</Label>
+                <div className="flex items-center gap-3 mt-1">
+                  {(editFunkcjaPreview || editingFunkcja.obrazek_url) && (
+                    <img src={editFunkcjaPreview || editingFunkcja.obrazek_url} alt={editingFunkcja.nazwa} className="w-12 h-12 rounded-full object-cover border" />
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    className="flex-1"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setEditFunkcjaFile(file);
+                      setEditFunkcjaPreview(URL.createObjectURL(file));
+                    }}
+                  />
+                  {(editFunkcjaPreview || editingFunkcja.obrazek_url) && (
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setEditFunkcjaFile(null);
+                      setEditFunkcjaPreview('');
+                      setEditingFunkcja({ ...editingFunkcja, obrazek_url: undefined });
+                    }}>
+                      Usuń
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="font-semibold mb-3">Karta szczegółów</h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Długi opis</Label>
+                    {poslugaEditor && (
+                      <div className="border rounded-md overflow-hidden mt-1">
+                        <div className="flex flex-wrap items-center gap-0.5 p-1 border-b bg-muted/50">
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('bold') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleBold().run()}><Bold className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('italic') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleItalic().run()}><Italic className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('underline') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleUnderline().run()}><UnderlineIcon className="w-3.5 h-3.5" /></Button>
+                          <div className="w-px h-5 bg-border mx-0.5" />
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('heading', { level: 2 }) ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleHeading({ level: 2 }).run()}><Heading2 className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('heading', { level: 3 }) ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleHeading({ level: 3 }).run()}><Heading3 className="w-3.5 h-3.5" /></Button>
+                          <div className="w-px h-5 bg-border mx-0.5" />
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('bulletList') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleBulletList().run()}><List className="w-3.5 h-3.5" /></Button>
+                          <Button type="button" variant="ghost" size="sm" className={`h-7 w-7 p-0 ${poslugaEditor.isActive('orderedList') ? 'bg-accent' : ''}`} onClick={() => poslugaEditor.chain().focus().toggleOrderedList().run()}><ListOrdered className="w-3.5 h-3.5" /></Button>
+                        </div>
+                        <EditorContent editor={poslugaEditor} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <Label>Zdjęcia do galerii</Label>
+                    {((editingFunkcja.zdjecia && editingFunkcja.zdjecia.length > 0) || editFunkcjaGalleryPreviews.length > 0) && (
+                      <div className="grid grid-cols-3 gap-2 mt-2 mb-2">
+                        {(editingFunkcja.zdjecia || []).map((url, i) => (
+                          <div key={`existing-${i}`} className="relative group">
+                            <img src={url} alt={`Zdjęcie ${i + 1}`} className="w-full h-24 object-cover rounded border" />
+                            <button
+                              type="button"
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => {
+                                const updated = (editingFunkcja.zdjecia || []).filter((_, idx) => idx !== i);
+                                setEditingFunkcja({ ...editingFunkcja, zdjecia: updated });
+                                deletePoslugaImage(url);
+                              }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {editFunkcjaGalleryPreviews.map((preview, i) => (
+                          <div key={`new-${i}`} className="relative group">
+                            <img src={preview} alt={`Nowe ${i + 1}`} className="w-full h-24 object-cover rounded border border-green-300" />
+                            <button
+                              type="button"
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => {
+                                setEditFunkcjaGalleryFiles(editFunkcjaGalleryFiles.filter((_, idx) => idx !== i));
+                                setEditFunkcjaGalleryPreviews(editFunkcjaGalleryPreviews.filter((_, idx) => idx !== i));
+                              }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (files.length === 0) return;
+                        setEditFunkcjaGalleryFiles([...editFunkcjaGalleryFiles, ...files]);
+                        setEditFunkcjaGalleryPreviews([...editFunkcjaGalleryPreviews, ...files.map(ff => URL.createObjectURL(ff))]);
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Link do YouTube</Label>
+                    <Input
+                      value={editingFunkcja.youtube_url || ''}
+                      onChange={(e) => setEditingFunkcja({ ...editingFunkcja, youtube_url: e.target.value })}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                    />
+                    {editingFunkcja.youtube_url && getYoutubeEmbedUrl(editingFunkcja.youtube_url) && (
+                      <div className="aspect-video rounded-lg overflow-hidden mt-2">
+                        <iframe
+                          src={getYoutubeEmbedUrl(editingFunkcja.youtube_url)!}
+                          className="w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          title="Podgląd"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <Button onClick={handleSaveFunkcjaEdit} className="w-full">
+                <Check className="w-4 h-4 mr-2" />
+                Zapisz zmiany
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal tworzenia/edycji szablonu */}
+      <Dialog open={showSzablonModal} onOpenChange={(open) => {
+        setShowSzablonModal(open);
+        if (!open) {
+          setSelectedSzablon(null);
+          setSzablonForm({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+        }
+      }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedSzablon ? 'Edytuj szablon' : 'Nowy szablon'}</DialogTitle>
+            <DialogDescription>
+              Szablon pozwala szybko tworzyć powtarzające się wydarzenia
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nazwa szablonu *</Label>
+              <Input
+                value={szablonForm.nazwa}
+                onChange={(e) => setSzablonForm({ ...szablonForm, nazwa: e.target.value })}
+                placeholder="np. Msza Święta niedzielna"
+              />
+            </div>
+
+            <div>
+              <Label>Godzina *</Label>
+              <Input
+                type="time"
+                value={szablonForm.godzina}
+                onChange={(e) => setSzablonForm({ ...szablonForm, godzina: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <Label className="mb-2 block">Funkcje w szablonie</Label>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Wybierz, które funkcje mają być aktywne. Ministrantów przypiszesz przy publikacji.</p>
+              <div className="space-y-2">
+                {FUNKCJE_TYPES.map(funkcja => (
+                  <div key={funkcja} className="flex items-center gap-2">
+                    <span className="w-32 text-sm font-medium">{funkcja}:</span>
+                    <Select
+                      value={szablonForm.funkcje[funkcja] || 'UNASSIGNED'}
+                      onValueChange={(v) => setSzablonForm({
+                        ...szablonForm,
+                        funkcje: { ...szablonForm.funkcje, [funkcja]: v }
+                      })}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UNASSIGNED">Aktywna (do przypisania)</SelectItem>
+                        <SelectItem value="BEZ">Wyłączona</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={handleCreateSzablon} className="flex-1">
+                {selectedSzablon ? 'Zapisz zmiany' : 'Utwórz szablon'}
+              </Button>
+              {selectedSzablon && (
+                <Button variant="destructive" onClick={handleDeleteSzablon}>
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Usuń
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal publikacji szablonu */}
+      <Dialog open={showPublishSzablonModal} onOpenChange={(open) => {
+        setShowPublishSzablonModal(open);
+        if (!open) {
+          setSelectedSzablon(null);
+          setPublishDate('');
+          setPublishFunkcje({} as Record<FunkcjaType, string>);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Publikuj wydarzenie</DialogTitle>
+            <DialogDescription>
+              Szablon: {selectedSzablon?.nazwa} • {selectedSzablon?.godzina}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Data wydarzenia *</Label>
+              <Input
+                type="date"
+                value={publishDate}
+                onChange={(e) => setPublishDate(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label className="mb-2 block">Przypisz ministrantów do funkcji</Label>
+              <div className="space-y-2">
+                {FUNKCJE_TYPES.filter(typ => selectedSzablon?.funkcje[typ] !== 'BEZ').map(funkcja => (
+                  <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
+                    <Select
+                      value={publishFunkcje[funkcja] || 'UNASSIGNED'}
+                      onValueChange={(v) => setPublishFunkcje({
+                        ...publishFunkcje,
+                        [funkcja]: v
+                      })}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="-- Nie przypisano --" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                        {members.filter(m => m.typ === 'ministrant').map(m => (
+                          <SelectItem key={m.profile_id} value={m.profile_id}>
+                            {m.imie} {m.nazwisko || ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Button onClick={handlePublishSzablon} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white">
+              <Send className="w-4 h-4 mr-2" />
+              Publikuj wydarzenie
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -7503,7 +8294,7 @@ export default function MinistranciApp() {
                 <Shield className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 Grafik dyżurów
               </DialogTitle>
-              <Button size="sm" variant={editDyzury ? 'default' : 'outline'} onClick={() => setEditDyzury(!editDyzury)} className={editDyzury ? 'bg-indigo-600 hover:bg-indigo-700' : ''}>
+              <Button size="sm" variant={editDyzury ? 'default' : 'outline'} onClick={() => setEditDyzury(!editDyzury)} className={`mr-8 ${editDyzury ? 'bg-indigo-600 hover:bg-indigo-700' : ''}`}>
                 {editDyzury ? 'Gotowe' : 'Edytuj'}
               </Button>
             </div>

@@ -27,6 +27,9 @@ create table parafie (
   created_at timestamptz default now()
 );
 
+-- Kolumna JSONB na konfigurację funkcji (dynamiczne typy funkcji w wydarzeniach)
+-- ALTER TABLE parafie ADD COLUMN IF NOT EXISTS funkcje_config jsonb default '[]';
+
 -- Dodaj klucz obcy z profiles do parafie
 alter table profiles add constraint fk_parafia foreign key (parafia_id) references parafie(id);
 
@@ -611,6 +614,17 @@ create table powiadomienia (
 );
 
 
+-- 23. Szablony wydarzeń
+create table szablony_wydarzen (
+  id uuid default gen_random_uuid() primary key,
+  nazwa text not null,
+  godzina text not null,
+  funkcje jsonb default '{}',
+  parafia_id uuid references parafie(id) on delete cascade not null,
+  utworzono_przez uuid references profiles(id) not null,
+  created_at timestamptz default now()
+);
+
 -- =============================================
 -- RLS — TABLICA OGŁOSZEŃ
 -- =============================================
@@ -1011,3 +1025,14 @@ insert into app_config (klucz, wartosc) values
   ('baner_ksiadz_tytul', 'Panel zarządzania parafią'),
   ('baner_ksiadz_opis', 'Zarządzaj obecnościami · Służby · Ogłoszenia · Ranking · Konfiguracja')
 on conflict (klucz) do nothing;
+
+-- RLS — Szablony wydarzeń
+alter table szablony_wydarzen enable row level security;
+create policy "Szablony viewable by parish members" on szablony_wydarzen
+  for select using (
+    parafia_id in (select parafia_id from parafia_members where profile_id = auth.uid())
+  );
+create policy "Ksiadz can manage szablony" on szablony_wydarzen
+  for all using (
+    exists (select 1 from parafie where parafie.id = szablony_wydarzen.parafia_id and parafie.admin_id = auth.uid())
+  );

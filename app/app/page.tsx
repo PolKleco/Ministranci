@@ -673,6 +673,7 @@ export default function MinistranciApp() {
   const [editingOdznakaId, setEditingOdznakaId] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ punkty: number; total: number } | null>(null);
   const prevObecnosciRef = useRef<Obecnosc[]>([]);
+  const [showIOSInstallBanner, setShowIOSInstallBanner] = useState(false);
 
   // ==================== STAN — TABLICA OGŁOSZEŃ ====================
   const [tablicaWatki, setTablicaWatki] = useState<TablicaWatek[]>([]);
@@ -1663,6 +1664,17 @@ export default function MinistranciApp() {
       loadTablicaData();
     }
   }, [currentUser?.parafia_id, loadTablicaData]);
+
+  // Pokaż baner instalacji PWA na iOS Safari
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as unknown as { standalone: boolean }).standalone);
+    const dismissed = localStorage.getItem('ios-install-dismissed');
+    if (isIOS && !isStandalone && !dismissed) {
+      setShowIOSInstallBanner(true);
+    }
+  }, []);
 
   // Odświeżaj dane gdy użytkownik wraca do aplikacji (np. po kliknięciu w push)
   useEffect(() => {
@@ -6159,6 +6171,48 @@ export default function MinistranciApp() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Baner instalacji PWA na iOS */}
+      {showIOSInstallBanner && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 max-w-md mx-auto">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/40 rounded-xl flex items-center justify-center shrink-0">
+                <Bell className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-gray-900 dark:text-white">Zainstaluj aplikację</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Żeby dostawać powiadomienia push na iPhone:
+                </p>
+                <ol className="text-xs text-gray-600 dark:text-gray-300 mt-2 space-y-1.5">
+                  <li className="flex items-center gap-2">
+                    <span className="w-5 h-5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-[10px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">1</span>
+                    Kliknij ikonę <span className="inline-flex items-center justify-center w-5 h-5 border border-gray-300 dark:border-gray-600 rounded"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></span> na dole Safari
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-5 h-5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-[10px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">2</span>
+                    Wybierz <strong>&quot;Dodaj do ekranu początkowego&quot;</strong>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-5 h-5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-[10px] font-bold text-indigo-600 dark:text-indigo-400 shrink-0">3</span>
+                    Otwórz apkę z ekranu głównego
+                  </li>
+                </ol>
+              </div>
+              <button
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
+                onClick={() => {
+                  setShowIOSInstallBanner(false);
+                  localStorage.setItem('ios-install-dismissed', 'true');
+                }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Celebracja — zatwierdzone zgłoszenie */}
       {celebration && (

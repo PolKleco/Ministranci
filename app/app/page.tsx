@@ -2698,9 +2698,16 @@ export default function MinistranciApp() {
       if (!subscription) {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return;
+        // Convert VAPID key from base64url to Uint8Array
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+        const padding = '='.repeat((4 - vapidKey.length % 4) % 4);
+        const base64 = (vapidKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const applicationServerKey = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; i++) applicationServerKey[i] = rawData.charCodeAt(i);
         subscription = await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+          applicationServerKey,
         });
       }
       await fetch('/api/push/subscribe', {

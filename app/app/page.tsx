@@ -1613,22 +1613,20 @@ export default function MinistranciApp() {
 
   const handleDeleteMember = async (member: Member) => {
     if (!currentUser?.parafia_id) return;
-    const profileId = member.profile_id;
-    const pid = currentUser.parafia_id;
     try {
-      // Usuń wszystkie powiązane dane
-      await supabase.from('obecnosci').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
-      await supabase.from('dyzury').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
-      await supabase.from('minusowe_punkty').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
-      await supabase.from('ranking').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
-      await supabase.from('odznaki_zdobyte').delete().eq('ministrant_id', profileId);
-      // Usuń członkostwo
-      const { error: memberErr } = await supabase.from('parafia_members').delete().eq('profile_id', profileId).eq('parafia_id', pid);
-      if (memberErr) console.error('Błąd usuwania członka:', memberErr);
-      // Odłącz od parafii
-      const { error: profileErr } = await supabase.from('profiles').update({ parafia_id: null }).eq('id', profileId);
-      if (profileErr) console.error('Błąd aktualizacji profilu:', profileErr);
-      // Odśwież dane
+      const res = await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileId: member.profile_id,
+          parafiaId: currentUser.parafia_id,
+          requesterId: currentUser.id,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Błąd usuwania konta:', err);
+      }
       loadParafiaData();
       loadRankingData();
     } catch (err) {

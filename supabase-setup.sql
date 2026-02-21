@@ -104,6 +104,13 @@ alter table zaproszenia enable row level security;
 -- Profiles: każdy może czytać, użytkownik edytuje swój
 create policy "Profiles are viewable by everyone" on profiles for select using (true);
 create policy "Users can update own profile" on profiles for update using (auth.uid() = id);
+create policy "Admin can update member profiles" on profiles for update using (
+  exists (
+    select 1 from parafia_members pm
+    join parafie p on p.id = pm.parafia_id
+    where pm.profile_id = profiles.id and p.admin_id = auth.uid()
+  )
+);
 create policy "Users can insert own profile" on profiles for insert with check (auth.uid() = id);
 
 -- Parafie: każdy może czytać, admin może edytować
@@ -115,6 +122,9 @@ create policy "Admin can update parafie" on parafie for update using (auth.uid()
 create policy "Members are viewable by parish members" on parafia_members for select using (true);
 create policy "Anyone can join parish" on parafia_members for insert with check (auth.uid() = profile_id);
 create policy "Admin can update members" on parafia_members for update using (
+  exists (select 1 from parafie where parafie.id = parafia_members.parafia_id and parafie.admin_id = auth.uid())
+);
+create policy "Admin can delete members" on parafia_members for delete using (
   exists (select 1 from parafie where parafie.id = parafia_members.parafia_id and parafie.admin_id = auth.uid())
 );
 
@@ -413,6 +423,10 @@ create policy "Admin can update obecnosci" on obecnosci
   for update using (
     exists (select 1 from parafie where parafie.id = obecnosci.parafia_id and parafie.admin_id = auth.uid())
   );
+create policy "Admin can delete obecnosci" on obecnosci
+  for delete using (
+    exists (select 1 from parafie where parafie.id = obecnosci.parafia_id and parafie.admin_id = auth.uid())
+  );
 
 -- minusowe_punkty: wszyscy w parafii widzą, system/admin dodaje
 create policy "Minusowe viewable by parish members" on minusowe_punkty
@@ -421,12 +435,24 @@ create policy "Admin can insert minusowe" on minusowe_punkty
   for insert with check (
     exists (select 1 from parafie where parafie.id = minusowe_punkty.parafia_id and parafie.admin_id = auth.uid())
   );
+create policy "Admin can delete minusowe" on minusowe_punkty
+  for delete using (
+    exists (select 1 from parafie where parafie.id = minusowe_punkty.parafia_id and parafie.admin_id = auth.uid())
+  );
 
 -- odznaki_zdobyte: wszyscy widzą
 create policy "Odznaki zdobyte viewable by everyone" on odznaki_zdobyte
   for select using (true);
 create policy "System can insert odznaki zdobyte" on odznaki_zdobyte
   for insert with check (true);
+create policy "Admin can delete odznaki zdobyte" on odznaki_zdobyte
+  for delete using (
+    exists (
+      select 1 from parafia_members pm
+      join parafie p on p.id = pm.parafia_id
+      where pm.profile_id = odznaki_zdobyte.ministrant_id and p.admin_id = auth.uid()
+    )
+  );
 
 -- ranking: wszyscy widzą
 create policy "Ranking viewable by everyone" on ranking
@@ -435,6 +461,10 @@ create policy "System can upsert ranking" on ranking
   for insert with check (true);
 create policy "System can update ranking" on ranking
   for update using (true);
+create policy "Admin can delete ranking" on ranking
+  for delete using (
+    exists (select 1 from parafie where parafie.id = ranking.parafia_id and parafie.admin_id = auth.uid())
+  );
 
 
 -- =============================================

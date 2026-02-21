@@ -1614,15 +1614,26 @@ export default function MinistranciApp() {
   const handleDeleteMember = async (member: Member) => {
     if (!currentUser?.parafia_id) return;
     const profileId = member.profile_id;
-    // Usuń powiązane dane
-    await supabase.from('obecnosci').delete().eq('ministrant_id', profileId).eq('parafia_id', currentUser.parafia_id);
-    await supabase.from('dyzury').delete().eq('ministrant_id', profileId).eq('parafia_id', currentUser.parafia_id);
-    await supabase.from('parafia_members').delete().eq('profile_id', profileId).eq('parafia_id', currentUser.parafia_id);
-    // Wyczyść profil (odłącz od parafii)
-    await supabase.from('profiles').update({ parafia_id: null }).eq('id', profileId);
-    // Odśwież dane
-    loadParafiaData();
-    loadRankingData();
+    const pid = currentUser.parafia_id;
+    try {
+      // Usuń wszystkie powiązane dane
+      await supabase.from('obecnosci').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
+      await supabase.from('dyzury').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
+      await supabase.from('minusowe_punkty').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
+      await supabase.from('ranking').delete().eq('ministrant_id', profileId).eq('parafia_id', pid);
+      await supabase.from('odznaki_zdobyte').delete().eq('ministrant_id', profileId);
+      // Usuń członkostwo
+      const { error: memberErr } = await supabase.from('parafia_members').delete().eq('profile_id', profileId).eq('parafia_id', pid);
+      if (memberErr) console.error('Błąd usuwania członka:', memberErr);
+      // Odłącz od parafii
+      const { error: profileErr } = await supabase.from('profiles').update({ parafia_id: null }).eq('id', profileId);
+      if (profileErr) console.error('Błąd aktualizacji profilu:', profileErr);
+      // Odśwież dane
+      loadParafiaData();
+      loadRankingData();
+    } catch (err) {
+      console.error('Błąd usuwania ministranta:', err);
+    }
     setShowDeleteMemberModal(false);
     setMemberToDelete(null);
   };

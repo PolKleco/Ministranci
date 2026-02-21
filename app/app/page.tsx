@@ -34,6 +34,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -719,9 +720,12 @@ export default function MinistranciApp() {
   const [showGrafikModal, setShowGrafikModal] = useState(false);
   const [showDyzuryAdminModal, setShowDyzuryAdminModal] = useState(false);
   const [searchMinistrant, setSearchMinistrant] = useState('');
+  const [showDeleteMemberModal, setShowDeleteMemberModal] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
   const [showDodajPunktyModal, setShowDodajPunktyModal] = useState(false);
   const [dodajPunktyForm, setDodajPunktyForm] = useState({ punkty: '', powod: '' });
   const [showRankingSettings, setShowRankingSettings] = useState(false);
+  const [showResetPunktacjaModal, setShowResetPunktacjaModal] = useState(false);
   const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo', nazwa_nabożeństwa: '', godzina: '' });
   const [rankingSettingsTab, setRankingSettingsTab] = useState<'punkty' | 'rangi' | 'odznaki' | 'ogolne'>('punkty');
   const [newPunktacjaForm, setNewPunktacjaForm] = useState({ klucz: '', wartosc: 0, opis: '' });
@@ -1607,12 +1611,52 @@ export default function MinistranciApp() {
     loadRankingData();
   };
 
+  const handleDeleteMember = async (member: Member) => {
+    if (!currentUser?.parafia_id) return;
+    const profileId = member.profile_id;
+    // Usuń powiązane dane
+    await supabase.from('obecnosci').delete().eq('ministrant_id', profileId).eq('parafia_id', currentUser.parafia_id);
+    await supabase.from('dyzury').delete().eq('ministrant_id', profileId).eq('parafia_id', currentUser.parafia_id);
+    await supabase.from('parafia_members').delete().eq('profile_id', profileId).eq('parafia_id', currentUser.parafia_id);
+    // Wyczyść profil (odłącz od parafii)
+    await supabase.from('profiles').update({ parafia_id: null }).eq('id', profileId);
+    // Odśwież dane
+    loadParafiaData();
+    loadRankingData();
+    setShowDeleteMemberModal(false);
+    setMemberToDelete(null);
+  };
+
   const updateConfigValue = async (klucz: string, nowaWartosc: number) => {
     const entry = punktacjaConfig.find(p => p.klucz === klucz);
     if (entry) {
       await supabase.from('punktacja_config').update({ wartosc: nowaWartosc }).eq('id', entry.id);
       loadRankingData();
     }
+  };
+
+  const handleResetPunktacja = async () => {
+    if (!currentUser?.parafia_id) return;
+    const pid = currentUser.parafia_id;
+    // Usuń obecności i kary
+    await supabase.from('obecnosci').delete().eq('parafia_id', pid);
+    await supabase.from('minusowe_punkty').delete().eq('parafia_id', pid);
+    // Wyzeruj tabele ranking (update zamiast delete — zachowaj rekordy)
+    const { data: rankingRows } = await supabase.from('ranking').select('id').eq('parafia_id', pid);
+    if (rankingRows) {
+      for (const row of rankingRows) {
+        await supabase.from('ranking').update({
+          total_pkt: 0, total_obecnosci: 0, total_minusowe: 0, streak_tyg: 0, max_streak_tyg: 0,
+        }).eq('id', row.id);
+      }
+    }
+    // Usuń zdobyte odznaki
+    const ministrantIds = members.filter(m => m.parafia_id === pid).map(m => m.profile_id);
+    if (ministrantIds.length > 0) {
+      await supabase.from('odznaki_zdobyte').delete().in('ministrant_id', ministrantIds);
+    }
+    loadRankingData();
+    setShowResetPunktacjaModal(false);
   };
 
   const updateRanga = async (id: string, nazwa: string, min_pkt: number) => {
@@ -4068,54 +4112,76 @@ export default function MinistranciApp() {
           <TabsContent value="tablica">
             <div className="space-y-4">
               {/* Nagłówek */}
-              <div className="flex items-center justify-between gap-2">
+              {selectedWatek ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  {selectedWatek && (
-                    <Button variant="ghost" size="sm" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
-                      <ArrowLeft className="w-4 h-4" />
-                    </Button>
-                  )}
+                  <Button variant="ghost" size="sm" onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
                   <h2 className="text-lg sm:text-xl font-bold truncate">
-                    {selectedWatek ? (selectedWatek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : selectedWatek.tytul) : 'Aktualności'}
+                    {selectedWatek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : selectedWatek.tytul}
                   </h2>
                 </div>
-                {!selectedWatek && currentUser.typ === 'ministrant' && (
-                  <div className="flex gap-1.5">
-                    <Button size="sm" variant="outline" onClick={() => {
-                      setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
-                      setShowNewWatekModal(true);
-                    }}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Dyskusja
-                    </Button>
+              ) : (
+                <>
+                  {(() => {
+                    const litGradient: Record<string, { gradient: string; shadow: string; subtitle: string }> = {
+                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20', subtitle: 'text-emerald-200' },
+                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100' },
+                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20', subtitle: 'text-red-200' },
+                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20', subtitle: 'text-purple-200' },
+                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20', subtitle: 'text-pink-200' },
+                    };
+                    const litStyle = litGradient[dzisLiturgiczny?.kolor || 'zielony'] || litGradient.zielony;
+                    return (
+                  <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${litStyle.gradient} p-4 sm:p-5 shadow-lg ${litStyle.shadow}`}>
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                    <div className="relative flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📢</div>
+                        <div>
+                          <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Aktualności</h2>
+                          <p className={`${litStyle.subtitle} text-xs sm:text-sm`}>{dzisLiturgiczny ? `${dzisLiturgiczny.nazwa || dzisLiturgiczny.okres}` : 'Ogłoszenia, dyskusje i ankiety'}</p>
+                        </div>
+                      </div>
+                      {currentUser.typ === 'ministrant' && (
+                        <Button size="sm" onClick={() => {
+                          setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
+                          setShowNewWatekModal(true);
+                        }} className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm shadow-none">
+                          <Plus className="w-4 h-4 mr-1" />
+                          Dyskusja
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-              {!selectedWatek && currentUser.typ === 'ksiadz' && (
-                <div className="flex gap-1.5 sm:gap-2 flex-wrap">
-                  <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Dodaj ankietę
-                  </Button>
-                  <Button size="sm" variant="outline" className="border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800 dark:bg-teal-900/20 dark:text-teal-300 dark:hover:bg-teal-900/40" onClick={() => {
-                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
-                    setShowNewWatekModal(true);
-                  }}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Ogłoszenie
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => {
-                    setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
-                    setShowNewWatekModal(true);
-                  }}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Dyskusja
-                  </Button>
-                  <Button size="sm" variant={showArchiwum ? 'default' : 'ghost'} onClick={() => setShowArchiwum(!showArchiwum)}>
-                    <Book className="w-4 h-4 mr-1" />
-                    Archiwum ({archiwalneWatki.length})
-                  </Button>
-                </div>
+                    ); })()}
+                  {currentUser.typ === 'ksiadz' && (
+                    <div className="flex gap-1.5 sm:gap-2 flex-wrap">
+                      <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Dodaj ankietę
+                      </Button>
+                      <Button size="sm" variant="outline" className="border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800 dark:bg-teal-900/20 dark:text-teal-300 dark:hover:bg-teal-900/40" onClick={() => {
+                        setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
+                        setShowNewWatekModal(true);
+                      }}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Ogłoszenie
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => {
+                        setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
+                        setShowNewWatekModal(true);
+                      }}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Dyskusja
+                      </Button>
+                      <Button size="sm" variant={showArchiwum ? 'default' : 'ghost'} onClick={() => setShowArchiwum(!showArchiwum)}>
+                        <Book className="w-4 h-4 mr-1" />
+                        Archiwum ({archiwalneWatki.length})
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* === ARCHIWUM === */}
@@ -4916,6 +4982,29 @@ export default function MinistranciApp() {
 
                 return (
                   <div className="space-y-5">
+                    {/* Przyciski akcji */}
+                    <div className="flex gap-3">
+                      <Button onClick={() => setShowZglosModal(true)} className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white shadow-lg shadow-emerald-500/20 font-bold">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Zgłoś obecność
+                      </Button>
+                      <div className="flex-1 flex flex-col gap-1.5">
+                        <Button variant="outline" onClick={() => setShowDyzuryModal(true)} className="w-full font-bold">
+                          <Clock className="w-4 h-4 mr-2" />
+                          Moje dyżury
+                        </Button>
+                        {myDyzury.length > 0 && (
+                          <div className="flex flex-wrap gap-1 justify-center">
+                            {myDyzury.map(d => (
+                              <span key={d.id} className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                                {DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     {/* === HERO PROFIL === */}
                     <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-purple-600 to-fuchsia-600 p-5 text-white shadow-xl shadow-purple-500/20">
                       <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA1KSIvPjwvc3ZnPg==')] opacity-50" />
@@ -4960,29 +5049,6 @@ export default function MinistranciApp() {
                             </div>
                           ))}
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Przyciski akcji */}
-                    <div className="flex gap-3">
-                      <Button onClick={() => setShowZglosModal(true)} className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white shadow-lg shadow-emerald-500/20 font-bold">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Zgłoś obecność
-                      </Button>
-                      <div className="flex-1 flex flex-col gap-1.5">
-                        <Button variant="outline" onClick={() => setShowDyzuryModal(true)} className="w-full font-bold">
-                          <Clock className="w-4 h-4 mr-2" />
-                          Moje dyżury
-                        </Button>
-                        {myDyzury.length > 0 && (
-                          <div className="flex flex-wrap gap-1 justify-center">
-                            {myDyzury.map(d => (
-                              <span key={d.id} className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-xs font-medium text-indigo-700 dark:text-indigo-300">
-                                {DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -5216,7 +5282,11 @@ export default function MinistranciApp() {
               {currentUser.typ === 'ksiadz' && (
                 <div className="space-y-6">
                   {/* Przycisk ustawień */}
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300 dark:border-red-800 dark:hover:bg-red-900/20" onClick={() => setShowResetPunktacjaModal(true)}>
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Wyzeruj punktację
+                    </Button>
                     <Button variant="outline" onClick={() => setShowRankingSettings(!showRankingSettings)}>
                       <Settings className="w-4 h-4 mr-2" />
                       Ustawienia punktacji
@@ -5653,29 +5723,38 @@ export default function MinistranciApp() {
               {!showSzablonyView ? (
                 <>
                   {/* === Widok wydarzeń === */}
-                  <div className="flex justify-between items-center gap-2 flex-wrap">
-                    <h2 className="text-xl sm:text-2xl font-bold">Wydarzenia</h2>
-                    {currentUser.typ === 'ksiadz' && (
-                      <div className="flex gap-2 flex-wrap">
-                        <Button variant="outline" size="sm" onClick={() => setShowFunkcjeConfigModal(true)}>
-                          <Settings className="w-4 h-4 mr-2" />
-                          Funkcje
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => setShowSzablonyView(true)}>
-                          <FileText className="w-4 h-4 mr-2" />
-                          Szablony
-                        </Button>
-                        <Button size="sm" onClick={() => {
-                          setSelectedSluzba(null);
-                          setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
-                          setShowSluzbaModal(true);
-                        }}>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Dodaj wydarzenie
+                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 p-4 sm:p-5 shadow-lg shadow-indigo-500/20">
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                    <div className="relative flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📅</div>
+                        <div>
+                          <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Wydarzenia</h2>
+                          <p className="text-indigo-200 text-xs sm:text-sm">Msze, nabożeństwa i celebracje</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {currentUser.typ === 'ksiadz' && (
+                    <div className="flex gap-2 flex-wrap">
+                      <Button variant="outline" size="sm" onClick={() => setShowFunkcjeConfigModal(true)}>
+                        <Settings className="w-4 h-4 mr-2" />
+                        Funkcje
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setShowSzablonyView(true)}>
+                        <FileText className="w-4 h-4 mr-2" />
+                        Szablony
+                      </Button>
+                      <Button size="sm" onClick={() => {
+                        setSelectedSluzba(null);
+                        setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+                        setShowSluzbaModal(true);
+                      }}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Dodaj wydarzenie
                         </Button>
                       </div>
                     )}
-                  </div>
 
                   <div className="grid gap-4">
                     {sluzby.length === 0 ? (
@@ -5988,6 +6067,12 @@ export default function MinistranciApp() {
                                     </Button>
                                   );
                                 })()}
+                                <button
+                                  className="text-[10px] text-gray-400 hover:text-red-500 transition-colors mt-1"
+                                  onClick={() => { setMemberToDelete(member); setShowDeleteMemberModal(true); }}
+                                >
+                                  usuń konto
+                                </button>
                               </div>
                             </div>
                           </CardContent>
@@ -6103,6 +6188,12 @@ export default function MinistranciApp() {
                                       </Button>
                                     );
                                   })()}
+                                  <button
+                                    className="text-[10px] text-gray-400 hover:text-red-500 transition-colors mt-1"
+                                    onClick={() => { setMemberToDelete(member); setShowDeleteMemberModal(true); }}
+                                  >
+                                    usuń konto
+                                  </button>
                                 </div>
                               </div>
                             </CardContent>
@@ -6117,27 +6208,37 @@ export default function MinistranciApp() {
             </TabsContent>
           )}
 
-          {/* Panel Posługi */}
+          {/* Panel Posługi — Gaming */}
           <TabsContent value="poslugi">
             <div className="space-y-4">
-              <div className="flex justify-between items-center gap-2">
-                <h2 className="text-xl sm:text-2xl font-bold">Posługi Liturgiczne</h2>
-                {currentUser.typ === 'ksiadz' && (
-                  <Button onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Dodaj posługę
-                  </Button>
-                )}
+              {/* Header */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-pink-500/20">
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                <div className="relative flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">⛪</div>
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Posługi Liturgiczne</h2>
+                      <p className="text-pink-200 text-xs sm:text-sm">{poslugi.length} {poslugi.length === 1 ? 'posługa' : poslugi.length < 5 ? 'posługi' : 'posług'} w bazie</p>
+                    </div>
+                  </div>
+                  {currentUser.typ === 'ksiadz' && (
+                    <Button onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }} className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm shadow-none">
+                      <Plus className="w-4 h-4 mr-1" />
+                      Dodaj
+                    </Button>
+                  )}
+                </div>
               </div>
+
               {currentUser.typ === 'ksiadz' && (
-                <Card>
-                  <CardContent className="py-4">
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      Posługi można przypisywać ministrantom w panelu &quot;Ministranci&quot;
-                    </p>
-                  </CardContent>
-                </Card>
+                <div className="rounded-xl bg-pink-50 dark:bg-pink-900/10 border border-pink-200/50 dark:border-pink-800/30 px-4 py-3">
+                  <p className="text-sm text-pink-700 dark:text-pink-300">
+                    Posługi można przypisywać ministrantom w panelu &quot;Ministranci&quot;
+                  </p>
+                </div>
               )}
+
               <div className="grid gap-3">
                 {poslugi.map(posluga => {
                   const kolory = KOLOR_KLASY[posluga.kolor] || KOLOR_KLASY.gray;
@@ -6145,24 +6246,24 @@ export default function MinistranciApp() {
                   const hasDetails = !!(posluga.dlugi_opis || (posluga.zdjecia && posluga.zdjecia.length > 0) || posluga.youtube_url);
                   const youtubeEmbed = posluga.youtube_url ? getYoutubeEmbedUrl(posluga.youtube_url) : null;
                   return (
-                    <Card key={posluga.id}>
-                      <CardHeader
-                        className={hasDetails ? 'cursor-pointer' : ''}
+                    <div key={posluga.id} className="rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-md overflow-hidden">
+                      <div
+                        className={`p-4 ${hasDetails ? 'cursor-pointer' : ''}`}
                         onClick={() => hasDetails && setExpandedPosluga(isExpanded ? null : posluga.id)}
                       >
                         <div className="flex items-center gap-3 sm:gap-4">
                           {posluga.obrazek_url ? (
                             <img src={posluga.obrazek_url} alt={posluga.nazwa} className="h-14 sm:h-20 max-w-18 sm:max-w-24 object-contain shrink-0" />
                           ) : (
-                            <div className={`w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-white ${kolory.border} border-2 flex items-center justify-center text-2xl sm:text-3xl shrink-0 overflow-hidden`}>
+                            <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-gradient-to-br ${kolory.bg} flex items-center justify-center text-2xl sm:text-3xl shrink-0 shadow-sm`}>
                               {posluga.emoji}
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <CardTitle className="text-lg">{posluga.nazwa}</CardTitle>
-                            <CardDescription>{posluga.opis}</CardDescription>
+                            <h3 className="font-bold text-base sm:text-lg text-gray-900 dark:text-white">{posluga.nazwa}</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{posluga.opis}</p>
                             {hasDetails && (
-                              <div className="flex items-center gap-1 mt-1 text-xs text-gray-400">
+                              <div className="flex items-center gap-1 mt-1.5 text-xs text-pink-500 dark:text-pink-400 font-medium">
                                 <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                                 <span>{isExpanded ? 'Zwiń' : 'Szczegóły'}</span>
                               </div>
@@ -6199,12 +6300,11 @@ export default function MinistranciApp() {
                             </div>
                           )}
                         </div>
-                      </CardHeader>
+                      </div>
                       {isExpanded && (
-                        <CardContent className="pt-0 space-y-4">
-                          <div className="border-t pt-4" />
+                        <div className="border-t border-gray-100 dark:border-gray-800 px-4 pb-4 pt-4 space-y-4">
                           {posluga.dlugi_opis && (
-                            <div className="text-sm break-words">
+                            <div className="text-sm break-words text-gray-700 dark:text-gray-300">
                               {/<[a-z][\s\S]*>/i.test(posluga.dlugi_opis)
                                 ? <div className="tiptap-posluga" dangerouslySetInnerHTML={{ __html: posluga.dlugi_opis }} />
                                 : <p className="whitespace-pre-wrap">{posluga.dlugi_opis}</p>
@@ -6243,9 +6343,9 @@ export default function MinistranciApp() {
                               </div>
                             </div>
                           )}
-                        </CardContent>
+                        </div>
                       )}
-                    </Card>
+                    </div>
                   );
                 })}
               </div>
@@ -6255,7 +6355,16 @@ export default function MinistranciApp() {
           {/* Panel Kalendarz Liturgiczny */}
           <TabsContent value="kalendarz">
             <div className="space-y-4">
-              <h2 className="text-xl sm:text-2xl font-bold">Kalendarz Liturgiczny</h2>
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 p-4 sm:p-5 shadow-lg shadow-orange-500/20">
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                <div className="relative flex items-center gap-3">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🗓️</div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Kalendarz Liturgiczny</h2>
+                    <p className="text-orange-200 text-xs sm:text-sm">Okresy, święta i wspomnienia</p>
+                  </div>
+                </div>
+              </div>
 
               {/* Nawigacja miesięczna */}
               <div className="flex items-center justify-between">
@@ -8420,6 +8529,48 @@ export default function MinistranciApp() {
               Dodaj {dodajPunktyForm.punkty ? `${dodajPunktyForm.punkty} pkt` : 'punkty'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal potwierdzenia usunięcia ministranta */}
+      <Dialog open={showDeleteMemberModal} onOpenChange={(open) => { setShowDeleteMemberModal(open); if (!open) setMemberToDelete(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Usuń ministranta</DialogTitle>
+            <DialogDescription>
+              Czy na pewno chcesz usunąć <strong>{memberToDelete ? `${memberToDelete.imie} ${memberToDelete.nazwisko || ''}`.trim() : ''}</strong> z parafii? Zostaną usunięte wszystkie dane: obecności, dyżury i punkty. Tej operacji nie można cofnąć.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDeleteMemberModal(false); setMemberToDelete(null); }}>
+              Anuluj
+            </Button>
+            <Button variant="destructive" onClick={() => memberToDelete && handleDeleteMember(memberToDelete)}>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Usuń na stałe
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal potwierdzenia wyzerowania punktacji */}
+      <Dialog open={showResetPunktacjaModal} onOpenChange={setShowResetPunktacjaModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Wyzeruj punktację</DialogTitle>
+            <DialogDescription>
+              Czy na pewno chcesz wyzerować punktację wszystkich ministrantów? Zostaną usunięte wszystkie obecności i punkty karne. Tej operacji nie można cofnąć.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetPunktacjaModal(false)}>
+              Anuluj
+            </Button>
+            <Button variant="destructive" onClick={handleResetPunktacja}>
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Wyzeruj punktację
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

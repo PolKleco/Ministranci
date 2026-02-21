@@ -1822,7 +1822,6 @@ export default function MinistranciApp() {
         const punkty = newlyApproved.reduce((sum, o) => sum + o.punkty_finalne, 0);
         const myRanking = rankingData.find(r => r.ministrant_id === currentUser.id);
         setCelebration({ punkty, total: myRanking ? Number(myRanking.total_pkt) : punkty });
-        setTimeout(() => setCelebration(null), 5000);
       }
     }
     prevObecnosciRef.current = obecnosci;

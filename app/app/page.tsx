@@ -8,7 +8,7 @@ import {
   UserPlus, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
-  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, FileText,
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, FileText, GripVertical,
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type
 } from 'lucide-react';
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
@@ -371,13 +371,16 @@ const DEFAULT_GRUPY: GrupaConfig[] = [
 ];
 
 const DEFAULT_FUNKCJE: FunkcjaConfig[] = [
+  { id: 'ceremoniarz', nazwa: 'Ceremoniarz', opis: 'Koordynujesz przebieg liturgii. Dbasz o porządek i wskazujesz ministrantom ich zadania.', emoji: '👑', kolor: 'purple' },
   { id: 'krzyz', nazwa: 'Krzyż', opis: 'Niesiesz krzyż procesyjny na czele pochodu. Trzymaj go prosto i pewnie.', emoji: '✝️', kolor: 'amber' },
   { id: 'swieca1', nazwa: 'Świeca 1', opis: 'Niesiesz świecę po lewej stronie. Idź równo ze Świecą 2.', emoji: '🕯️', kolor: 'yellow' },
   { id: 'swieca2', nazwa: 'Świeca 2', opis: 'Niesiesz świecę po prawej stronie. Idź równo ze Świecą 1.', emoji: '🕯️', kolor: 'yellow' },
   { id: 'kadzidlo', nazwa: 'Kadzidło', opis: 'Obsługujesz kadzidło — przygotuj węgielki przed Mszą i podawaj łódkę z kadzidłem.', emoji: '🔥', kolor: 'red' },
-  { id: 'ceremoniarz', nazwa: 'Ceremoniarz', opis: 'Koordynujesz przebieg liturgii. Dbasz o porządek i wskazujesz ministrantom ich zadania.', emoji: '👑', kolor: 'purple' },
-  { id: 'ministrant1', nazwa: 'Ministrant 1', opis: 'Służysz przy ołtarzu — podajesz ampułki, dzwonek i inne naczynia liturgiczne.', emoji: '⛪', kolor: 'blue' },
-  { id: 'ministrant2', nazwa: 'Ministrant 2', opis: 'Służysz przy ołtarzu — pomagasz Ministrantowi 1 i asystujesz kapłanowi.', emoji: '⛪', kolor: 'blue' },
+  { id: 'lodka', nazwa: 'Łódka', opis: 'Podajesz łódkę z kadzidłem do trybularza.', emoji: '🚢', kolor: 'cyan' },
+  { id: 'ministrant_ksiegi', nazwa: 'Ministrant księgi', opis: 'Trzymasz mszał i podajesz księgi liturgiczne kapłanowi.', emoji: '📖', kolor: 'emerald' },
+  { id: 'ministrant_oltarza', nazwa: 'Ministrant ołtarza', opis: 'Przygotowujesz ołtarz, podajesz ampułki i naczynia liturgiczne.', emoji: '⛪', kolor: 'blue' },
+  { id: 'gong', nazwa: 'Gong', opis: 'Uderzasz w gong w odpowiednich momentach liturgii.', emoji: '🔔', kolor: 'orange' },
+  { id: 'dzwonki', nazwa: 'Dzwonki', opis: 'Dzwonisz dzwonkami podczas przeistoczenia i innych momentów.', emoji: '🔔', kolor: 'yellow' },
 ];
 
 // ==================== POSŁUGI ====================
@@ -663,6 +666,7 @@ export default function MinistranciApp() {
   const [showFunkcjeConfigModal, setShowFunkcjeConfigModal] = useState(false);
   const [newFunkcjaForm, setNewFunkcjaForm] = useState({ nazwa: '', opis: '' });
   const [editingFunkcja, setEditingFunkcja] = useState<FunkcjaConfig | null>(null);
+  const [draggedFunkcjaIdx, setDraggedFunkcjaIdx] = useState<number | null>(null);
   const [showEditFunkcjaModal, setShowEditFunkcjaModal] = useState(false);
   const [editFunkcjaFile, setEditFunkcjaFile] = useState<File | null>(null);
   const [editFunkcjaPreview, setEditFunkcjaPreview] = useState('');
@@ -2527,6 +2531,15 @@ export default function MinistranciApp() {
 
   const handleDeleteFunkcja = (id: string) => {
     const updated = funkcjeConfig.filter(f => f.id !== id);
+    setFunkcjeConfig(updated);
+    saveFunkcjeConfigToDb(updated);
+  };
+
+  const handleMoveFunkcja = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= funkcjeConfig.length) return;
+    const updated = [...funkcjeConfig];
+    const [moved] = updated.splice(fromIdx, 1);
+    updated.splice(toIdx, 0, moved);
     setFunkcjeConfig(updated);
     saveFunkcjeConfigToDb(updated);
   };
@@ -4897,380 +4910,299 @@ export default function MinistranciApp() {
                 const myGrupa = myMember?.grupa ? grupy.find(g => g.id === myMember.grupa) : null;
 
                 return (
-                  <div className="space-y-6">
-                    {/* Profil ministranta */}
-                    <Card>
-                      <CardContent className="pt-6">
-                        <div className="flex items-center justify-between mb-4 gap-3">
+                  <div className="space-y-5">
+                    {/* === HERO PROFIL === */}
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-purple-600 to-fuchsia-600 p-5 text-white shadow-xl shadow-purple-500/20">
+                      <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA1KSIvPjwvc3ZnPg==')] opacity-50" />
+                      <div className="relative">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="text-lg sm:text-xl font-bold truncate">{currentUser.imie} {currentUser.nazwisko || ''}</h3>
-                              {myGrupa && (
-                                <Badge className={`${KOLOR_KLASY[myGrupa.kolor]?.bg || ''} ${KOLOR_KLASY[myGrupa.kolor]?.text || ''} text-xs`}>
-                                  {myGrupa.emoji} {myGrupa.nazwa}
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge style={{ backgroundColor: currentRanga ? KOLOR_KLASY[currentRanga.kolor]?.bg.replace('bg-', '').replace('-100', '') : undefined }} className={currentRanga ? `${KOLOR_KLASY[currentRanga.kolor]?.bg} ${KOLOR_KLASY[currentRanga.kolor]?.text}` : ''}>
-                                {currentRanga?.nazwa || 'Ready'}
-                              </Badge>
-                              <span className="text-2xl font-bold">{totalPkt} pkt</span>
+                            <h3 className="text-lg sm:text-xl font-extrabold truncate">{currentUser.imie} {currentUser.nazwisko || ''}</h3>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              {myGrupa && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white/20">{myGrupa.emoji} {myGrupa.nazwa}</span>}
+                              {currentRanga && <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${KOLOR_KLASY[currentRanga.kolor]?.bg} ${KOLOR_KLASY[currentRanga.kolor]?.text}`}>{currentRanga.nazwa}</span>}
                             </div>
                           </div>
-                          {myPosition > 0 && (
-                            <div className="text-right">
-                              <div className="text-3xl font-bold">#{myPosition}</div>
-                              <div className="text-sm text-gray-500 dark:text-gray-400">w parafii</div>
-                            </div>
-                          )}
+                          <div className="text-right shrink-0">
+                            <div className="text-3xl font-black tabular-nums">{totalPkt}</div>
+                            <div className="text-xs font-bold uppercase tracking-wider opacity-70">XP</div>
+                          </div>
                         </div>
-
-                        {/* Pasek postępu do następnej rangi */}
+                        {myPosition > 0 && <div className="text-xs mt-2 font-semibold opacity-80">#{myPosition} w parafii</div>}
                         {nextRanga && (
-                          <div className="mb-4">
-                            <div className="flex justify-between text-sm text-gray-600 dark:text-gray-300 mb-1">
+                          <div className="mt-3">
+                            <div className="flex justify-between text-xs font-medium opacity-80 mb-1">
                               <span>{currentRanga?.nazwa}</span>
-                              <span>{nextRanga.nazwa} ({nextRanga.min_pkt} pkt)</span>
+                              <span>{nextRanga.nazwa} ({nextRanga.min_pkt} XP)</span>
                             </div>
-                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-3">
-                              <div
-                                className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all"
-                                style={{ width: `${Math.min(100, ((totalPkt - (currentRanga?.min_pkt || 0)) / (nextRanga.min_pkt - (currentRanga?.min_pkt || 0))) * 100)}%` }}
-                              />
+                            <div className="w-full bg-white/20 rounded-full h-3 overflow-hidden">
+                              <div className="bg-gradient-to-r from-amber-300 to-yellow-400 h-3 rounded-full transition-all shadow-[0_0_12px_rgba(251,191,36,0.5)]"
+                                style={{ width: `${Math.min(100, ((totalPkt - (currentRanga?.min_pkt || 0)) / (nextRanga.min_pkt - (currentRanga?.min_pkt || 0))) * 100)}%` }} />
                             </div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                              Brakuje {nextRanga.min_pkt - totalPkt} pkt do {nextRanga.nazwa}
-                            </div>
+                            <div className="text-xs mt-1 opacity-70">Brakuje {nextRanga.min_pkt - totalPkt} XP do {nextRanga.nazwa}</div>
                           </div>
                         )}
-
-                        {/* Statystyki */}
-                        <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
-                          <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
-                            <Flame className="w-5 h-5 mx-auto text-orange-500 mb-1" />
-                            <div className="font-bold">{myRanking?.streak_tyg || 0} tyg.</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Seria</div>
-                          </div>
-                          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
-                            <Calendar className="w-5 h-5 mx-auto text-green-500 mb-1" />
-                            <div className="font-bold">{myRanking?.total_obecnosci || 0}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Dni służby</div>
-                          </div>
-                          <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
-                            <Target className="w-5 h-5 mx-auto text-red-500 mb-1" />
-                            <div className="font-bold">{totalMinusowe}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400">Minusowe</div>
-                          </div>
+                        <div className="grid grid-cols-3 gap-2 mt-4">
+                          {[
+                            { icon: <Flame className="w-4 h-4" />, val: `${myRanking?.streak_tyg || 0} tyg.`, label: 'Seria' },
+                            { icon: <Calendar className="w-4 h-4" />, val: myRanking?.total_obecnosci || 0, label: 'Służba' },
+                            { icon: <Target className="w-4 h-4" />, val: totalMinusowe, label: 'Kary' },
+                          ].map((s, i) => (
+                            <div key={i} className="bg-white/10 backdrop-blur-sm rounded-xl p-2 text-center">
+                              <div className="flex items-center justify-center mb-0.5 opacity-80">{s.icon}</div>
+                              <div className="font-extrabold text-sm">{s.val}</div>
+                              <div className="text-[10px] uppercase tracking-wider opacity-60">{s.label}</div>
+                            </div>
+                          ))}
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
 
                     {/* Przyciski akcji */}
                     <div className="flex gap-3">
-                      <Button onClick={() => setShowZglosModal(true)} className="flex-1">
+                      <Button onClick={() => setShowZglosModal(true)} className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white shadow-lg shadow-emerald-500/20 font-bold">
                         <Plus className="w-4 h-4 mr-2" />
                         Zgłoś obecność
                       </Button>
-                      <Button variant="outline" onClick={() => setShowDyzuryModal(true)} className="flex-1">
-                        <Clock className="w-4 h-4 mr-2" />
-                        Moje dyżury
-                      </Button>
-                    </div>
-
-                    {/* Dyżury */}
-                    {myDyzury.length > 0 && (
-                      <Card>
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base flex items-center gap-2">
-                            <Shield className="w-4 h-4" />
-                            Twoje dyżury
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex flex-wrap gap-2">
+                      <div className="flex-1 flex flex-col gap-1.5">
+                        <Button variant="outline" onClick={() => setShowDyzuryModal(true)} className="w-full font-bold">
+                          <Clock className="w-4 h-4 mr-2" />
+                          Moje dyżury
+                        </Button>
+                        {myDyzury.length > 0 && (
+                          <div className="flex flex-wrap gap-1 justify-center">
                             {myDyzury.map(d => (
-                              <Badge key={d.id} variant="secondary" className="text-sm">
+                              <span key={d.id} className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-xs font-medium text-indigo-700 dark:text-indigo-300">
                                 {DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
-                              </Badge>
+                              </span>
                             ))}
                           </div>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Ranking parafii */}
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <Trophy className="w-4 h-4 text-amber-500" />
-                          Ranking parafii
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {rankingData.length === 0 ? (
-                          <p className="text-gray-500 dark:text-gray-400 text-sm">Brak danych w rankingu.</p>
-                        ) : (
-                          <div className="space-y-2">
-                            {rankingData.map((r, i) => {
-                              const member = members.find(m => m.profile_id === r.ministrant_id);
-                              const ranga = getRanga(Number(r.total_pkt));
-                              const isMe = r.ministrant_id === currentUser.id;
-                              return (
-                                <div key={r.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg ${isMe ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700' : 'bg-gray-50 dark:bg-gray-800'}`}>
-                                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                                    <span className="font-bold text-base sm:text-lg w-7 sm:w-8 shrink-0">
-                                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
-                                    </span>
-                                    <div>
-                                      <span className="font-medium">{isMe ? `► ${currentUser.imie} ${currentUser.nazwisko || ''}`.trim() : member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
-                                      {ranga && (
-                                        <Badge className={`ml-2 text-xs ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
-                                          {ranga.nazwa}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span className="font-bold">{Number(r.total_pkt)} pkt</span>
-                                </div>
-                              );
-                            })}
-                          </div>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
 
-                    {/* Historia zgłoszeń */}
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Historia zgłoszeń</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {myObecnosci.length === 0 ? (
-                          <p className="text-gray-500 dark:text-gray-400 text-sm">Brak zgłoszeń. Zacznij służyć i zdobywaj punkty!</p>
+                    {/* === LEADERBOARD === */}
+                    <div className="rounded-2xl overflow-hidden border border-amber-200/50 dark:border-amber-700/30 shadow-lg shadow-amber-500/5">
+                      <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 px-4 py-3">
+                        <h3 className="font-extrabold text-white flex items-center gap-2 text-base tracking-tight">
+                          <Trophy className="w-5 h-5" />
+                          LEADERBOARD
+                        </h3>
+                      </div>
+                      <div className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+                        {rankingData.length === 0 ? (
+                          <p className="text-gray-500 dark:text-gray-400 text-sm p-4">Brak danych w rankingu.</p>
                         ) : (
-                          <div className="space-y-2">
+                          rankingData.map((r, i) => {
+                            const member = members.find(m => m.profile_id === r.ministrant_id);
+                            const ranga = getRanga(Number(r.total_pkt));
+                            const isMe = r.ministrant_id === currentUser.id;
+                            const positionStyles = i === 0 ? 'bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20' : i === 1 ? 'bg-gradient-to-r from-gray-100 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/30' : i === 2 ? 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/10' : '';
+                            return (
+                              <div key={r.id} className={`flex items-center gap-3 px-4 py-2.5 ${isMe ? 'bg-indigo-50 dark:bg-indigo-900/20 border-l-4 border-l-indigo-500' : positionStyles}`}>
+                                <div className="w-8 shrink-0 text-center">
+                                  {i === 0 ? <span className="text-2xl">🥇</span> : i === 1 ? <span className="text-2xl">🥈</span> : i === 2 ? <span className="text-2xl">🥉</span> : <span className="text-sm font-bold text-gray-400">{i + 1}</span>}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`font-semibold text-sm truncate ${isMe ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>
+                                      {isMe ? `${currentUser.imie} ${currentUser.nazwisko || ''}`.trim() : member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
+                                    </span>
+                                    {isMe && <Sparkles className="w-3.5 h-3.5 text-indigo-500 shrink-0" />}
+                                  </div>
+                                  {ranga && <span className={`text-[10px] font-semibold uppercase tracking-wider ${KOLOR_KLASY[ranga.kolor]?.text || 'text-gray-500'}`}>{ranga.nazwa}</span>}
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="font-extrabold text-sm tabular-nums">{Number(r.total_pkt)}</div>
+                                  <div className="text-[10px] text-gray-400 uppercase">XP</div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* === HISTORIA MISJI === */}
+                    <div className="rounded-2xl overflow-hidden border dark:border-gray-700">
+                      <div className="bg-gradient-to-r from-slate-700 to-gray-800 px-4 py-3">
+                        <h3 className="font-extrabold text-white flex items-center gap-2 text-sm tracking-tight uppercase">
+                          <Clock className="w-4 h-4 text-gray-300" />
+                          Historia misji
+                        </h3>
+                      </div>
+                      <div className="bg-white dark:bg-gray-900 p-3">
+                        {myObecnosci.length === 0 ? (
+                          <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">Brak misji. Zacznij służyć i zdobywaj XP!</p>
+                        ) : (
+                          <div className="space-y-1.5">
                             {(showAllZgloszenia ? myObecnosci : myObecnosci.slice(0, 3)).map(o => {
                               const d = new Date(o.data);
                               const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
                               const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay());
                               return (
-                                <div key={o.id} className={`flex items-center justify-between gap-2 p-2 rounded-lg ${o.status === 'zatwierdzona' ? 'bg-green-50 dark:bg-green-900/20' : o.status === 'odrzucona' ? 'bg-red-50 dark:bg-red-900/20' : 'bg-yellow-50 dark:bg-yellow-900/20'}`}>
-                                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                    {o.status === 'zatwierdzona' && <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />}
-                                    {o.status === 'oczekuje' && <Hourglass className="w-4 h-4 text-yellow-600 dark:text-yellow-400 shrink-0" />}
-                                    {o.status === 'odrzucona' && <X className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />}
-                                    <span className="text-xs sm:text-sm truncate">
+                                <div key={o.id} className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border ${o.status === 'zatwierdzona' ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10' : o.status === 'odrzucona' ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10' : 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10'}`}>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {o.status === 'zatwierdzona' && <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)] shrink-0" />}
+                                    {o.status === 'oczekuje' && <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />}
+                                    {o.status === 'odrzucona' && <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+                                    <span className="text-xs sm:text-sm truncate font-medium">
                                       {dayName} {d.toLocaleDateString('pl-PL')}
-                                      {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
                                     </span>
+                                    {isDyzur && <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">DYŻUR</span>}
                                     {o.typ === 'nabożeństwo' && (
-                                      <Badge variant="secondary" className="text-xs">{o.nazwa_nabożeństwa}</Badge>
+                                      <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-[10px] font-medium text-purple-600 dark:text-purple-400">{o.nazwa_nabożeństwa}</span>
                                     )}
                                   </div>
-                                  <span className={`font-bold text-sm ${o.status === 'zatwierdzona' ? 'text-green-700 dark:text-green-300' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? 'oczekuje' : 'odrzucona'}
+                                  <span className={`font-extrabold text-sm tabular-nums ${o.status === 'zatwierdzona' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
+                                    {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? '...' : 'X'}
                                   </span>
                                 </div>
                               );
                             })}
                             {myObecnosci.length > 3 && (
-                              <Button variant="ghost" size="sm" className="w-full text-xs text-gray-500" onClick={() => setShowAllZgloszenia(!showAllZgloszenia)}>
-                                {showAllZgloszenia ? (
-                                  <><ChevronUp className="w-3 h-3 mr-1" /> Zwiń</>
-                                ) : (
-                                  <><ChevronDown className="w-3 h-3 mr-1" /> Pokaż wszystkie ({myObecnosci.length})</>
-                                )}
+                              <Button variant="ghost" size="sm" className="w-full text-xs text-gray-500 mt-1" onClick={() => setShowAllZgloszenia(!showAllZgloszenia)}>
+                                {showAllZgloszenia ? <><ChevronUp className="w-3 h-3 mr-1" /> Zwiń</> : <><ChevronDown className="w-3 h-3 mr-1" /> Pokaż wszystkie ({myObecnosci.length})</>}
                               </Button>
                             )}
                           </div>
                         )}
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
 
-                    {/* Minusowe punkty */}
+                    {/* === KARY === */}
                     {myMinusowe.length > 0 && (
-                      <Card>
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-base text-red-700 dark:text-red-300 flex items-center gap-2">
-                            <Target className="w-4 h-4" />
-                            Minusowe punkty
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {myMinusowe.map(m => (
-                              <div key={m.id} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                                <span className="text-sm">{new Date(m.data).toLocaleDateString('pl-PL')} — {m.powod}</span>
-                                <span className="font-bold text-red-700 dark:text-red-300">{m.punkty} pkt</span>
-                              </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
+                      <div className="rounded-2xl overflow-hidden border border-red-200 dark:border-red-800">
+                        <div className="bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2.5">
+                          <h3 className="font-bold text-white flex items-center gap-2 text-sm uppercase tracking-wider"><Target className="w-4 h-4" /> Kary</h3>
+                        </div>
+                        <div className="bg-white dark:bg-gray-900 p-3 space-y-1.5">
+                          {myMinusowe.map(m => (
+                            <div key={m.id} className="flex items-center justify-between p-2.5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30">
+                              <span className="text-sm">{new Date(m.data).toLocaleDateString('pl-PL')} — {m.powod}</span>
+                              <span className="font-extrabold text-red-600 dark:text-red-400 tabular-nums">{m.punkty}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
 
-                    {/* Rangi — drabinka */}
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <Shield className="w-4 h-4 text-blue-500" />
-                          Rangi ({rangiConfig.length})
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-1">
-                          {rangiConfig.map((r, i) => {
-                            const isCurrentRanga = currentRanga?.id === r.id;
-                            const isPast = totalPkt >= r.min_pkt;
-                            return (
-                              <div key={r.id} className={`flex items-center justify-between p-2 rounded-lg ${isCurrentRanga ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 font-bold' : isPast ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-50 dark:bg-gray-800 opacity-70'}`}>
+                    {/* === LEVEL PROGRESSION === */}
+                    <div className="rounded-2xl overflow-hidden border dark:border-gray-700">
+                      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3">
+                        <h3 className="font-extrabold text-white flex items-center gap-2 text-sm tracking-tight uppercase"><Shield className="w-4 h-4" /> Poziomy ({rangiConfig.length})</h3>
+                      </div>
+                      <div className="bg-white dark:bg-gray-900 p-3 space-y-1.5">
+                        {rangiConfig.map((r, i) => {
+                          const isCurrentRanga = currentRanga?.id === r.id;
+                          const isPast = totalPkt >= r.min_pkt;
+                          const progress = isCurrentRanga && nextRanga ? Math.min(100, ((totalPkt - r.min_pkt) / (nextRanga.min_pkt - r.min_pkt)) * 100) : isPast ? 100 : 0;
+                          return (
+                            <div key={r.id} className={`relative overflow-hidden rounded-xl p-2.5 border transition-all ${isCurrentRanga ? 'border-indigo-300 dark:border-indigo-600 shadow-md shadow-indigo-500/10' : isPast ? 'border-emerald-200 dark:border-emerald-800' : 'border-gray-200 dark:border-gray-700 opacity-50'}`}>
+                              {(isPast || isCurrentRanga) && <div className={`absolute inset-y-0 left-0 ${isCurrentRanga ? 'bg-indigo-100/70 dark:bg-indigo-900/30' : 'bg-emerald-50 dark:bg-emerald-900/10'}`} style={{ width: `${progress}%` }} />}
+                              <div className="relative flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-xs w-5 text-gray-400">{i + 1}.</span>
-                                  <Badge className={`${KOLOR_KLASY[r.kolor]?.bg} ${KOLOR_KLASY[r.kolor]?.text}`}>{r.nazwa}</Badge>
-                                  {isCurrentRanga && <span className="text-xs text-blue-600 dark:text-blue-400">← Twoja ranga</span>}
-                                </div>
-                                <span className="text-sm">{r.min_pkt} pkt</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Odznaki */}
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <Award className="w-4 h-4 text-purple-500" />
-                          Odznaki ({myOdznaki.length}/{odznakiConfig.filter(o => o.aktywna).length})
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="grid grid-cols-1 gap-2">
-                          {odznakiConfig.filter(o => o.aktywna).map(odznaka => {
-                            const zdobyta = myOdznaki.find(z => z.odznaka_config_id === odznaka.id);
-                            return (
-                              <div key={odznaka.id} className={`flex items-center gap-3 p-3 rounded-lg ${zdobyta ? 'bg-purple-50 border border-purple-200 dark:border-purple-700' : 'bg-gray-50 dark:bg-gray-800 opacity-60'}`}>
-                                {zdobyta ? <Unlock className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0" /> : <Lock className="w-5 h-5 text-gray-400 shrink-0" />}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between">
-                                    <div className="font-medium text-sm">{odznaka.nazwa}</div>
-                                    {odznaka.bonus_pkt > 0 && (
-                                      <Badge variant="outline" className="text-xs shrink-0 ml-2">+{odznaka.bonus_pkt} pkt</Badge>
-                                    )}
+                                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black ${isCurrentRanga ? 'bg-indigo-500 text-white' : isPast ? 'bg-emerald-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>{isPast ? '✓' : i + 1}</div>
+                                  <div>
+                                    <span className={`font-bold text-sm ${isCurrentRanga ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>{r.nazwa}</span>
+                                    {isCurrentRanga && <span className="ml-1.5 text-[10px] font-bold text-indigo-500 uppercase">Aktualny</span>}
                                   </div>
-                                  <div className="text-xs text-gray-500 dark:text-gray-400">{odznaka.opis}</div>
                                 </div>
+                                <span className="text-xs font-bold text-gray-500 tabular-nums">{r.min_pkt} XP</span>
                               </div>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                    {/* Punktacja — za co są punkty */}
-                    <Card>
-                      <CardHeader className="pb-3">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <Star className="w-4 h-4 text-amber-500" />
-                          Jak zdobywać punkty?
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {/* Msze */}
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Msze (pon-sob)</h4>
-                          <div className="space-y-1">
-                            {punktacjaConfig.filter(p => p.klucz.startsWith('msza_')).map(p => (
-                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
-                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
-                                <span className="font-bold">{p.wartosc} pkt</span>
+                    {/* === ACHIEVEMENTS === */}
+                    <div className="rounded-2xl overflow-hidden border dark:border-gray-700">
+                      <div className="bg-gradient-to-r from-purple-600 to-fuchsia-600 px-4 py-3">
+                        <h3 className="font-extrabold text-white flex items-center gap-2 text-sm tracking-tight uppercase"><Award className="w-4 h-4" /> Odznaki {myOdznaki.length}/{odznakiConfig.filter(o => o.aktywna).length}</h3>
+                      </div>
+                      <div className="bg-white dark:bg-gray-900 p-3 space-y-2">
+                        {odznakiConfig.filter(o => o.aktywna).map(odznaka => {
+                          const zdobyta = myOdznaki.find(z => z.odznaka_config_id === odznaka.id);
+                          return (
+                            <div key={odznaka.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${zdobyta ? 'border-purple-200 dark:border-purple-700 bg-gradient-to-r from-purple-50 to-fuchsia-50 dark:from-purple-900/20 dark:to-fuchsia-900/10 shadow-sm' : 'border-gray-200 dark:border-gray-700 opacity-40 grayscale'}`}>
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${zdobyta ? 'bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white shadow-lg shadow-purple-500/20' : 'bg-gray-200 dark:bg-gray-700 text-gray-400'}`}>
+                                {zdobyta ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Nabożeństwa */}
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Nabożeństwa</h4>
-                          <div className="space-y-1">
-                            {punktacjaConfig.filter(p => p.klucz.startsWith('nabożeństwo_')).map(p => (
-                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
-                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
-                                <span className="font-bold">{p.wartosc} pkt</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm">{odznaka.nazwa}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{odznaka.opis}</div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
+                              {odznaka.bonus_pkt > 0 && <span className={`text-xs font-extrabold shrink-0 tabular-nums ${zdobyta ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400'}`}>+{odznaka.bonus_pkt}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                        {/* Mnożniki */}
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Mnożniki sezonowe</h4>
-                          <div className="space-y-1">
-                            {punktacjaConfig.filter(p => p.klucz.startsWith('mnoznik_')).map(p => (
-                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
-                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
-                                <span className="font-bold">x{p.wartosc}</span>
+                    {/* === QUEST REWARDS === */}
+                    <div className="rounded-2xl overflow-hidden border dark:border-gray-700">
+                      <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3">
+                        <h3 className="font-extrabold text-white flex items-center gap-2 text-sm tracking-tight uppercase"><Star className="w-4 h-4" /> Zdobywanie XP</h3>
+                      </div>
+                      <div className="bg-white dark:bg-gray-900 p-4 space-y-5">
+                        {[
+                          { title: 'Msze (pon-sob)', filter: 'msza_', icon: '⛪', prefix: '', suffix: ' XP' },
+                          { title: 'Nabożeństwa', filter: 'nabożeństwo_', icon: '🙏', prefix: '', suffix: ' XP' },
+                          { title: 'Mnożniki sezonowe', filter: 'mnoznik_', icon: '⚡', prefix: 'x', suffix: '' },
+                          { title: 'Bonusy za serie', filter: 'bonus_seria_', icon: '🔥', prefix: '+', suffix: ' XP' },
+                        ].map(section => {
+                          const items = punktacjaConfig.filter(p => p.klucz.startsWith(section.filter));
+                          if (items.length === 0) return null;
+                          return (
+                            <div key={section.filter}>
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5"><span>{section.icon}</span> {section.title}</h4>
+                              <div className="space-y-1">
+                                {items.map(p => (
+                                  <div key={p.klucz} className="flex justify-between items-center text-sm py-1 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
+                                    <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
+                                    <span className="font-extrabold text-amber-600 dark:text-amber-400 tabular-nums">{section.prefix}{p.wartosc}{section.suffix}</span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Bonusy za serie */}
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Bonusy za serie</h4>
-                          <div className="space-y-1">
-                            {punktacjaConfig.filter(p => p.klucz.startsWith('bonus_seria_')).map(p => (
-                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
-                                <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
-                                <span className="font-bold text-green-700 dark:text-green-300">+{p.wartosc} pkt</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Ranking miesięczny */}
+                            </div>
+                          );
+                        })}
                         {punktacjaConfig.filter(p => p.klucz.startsWith('ranking_')).length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Bonusy za ranking miesięczny</h4>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5"><span>🏆</span> Ranking miesięczny</h4>
                             <div className="space-y-1">
                               {punktacjaConfig.filter(p => p.klucz.startsWith('ranking_')).map(p => (
-                                <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                                <div key={p.klucz} className="flex justify-between items-center text-sm py-1 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
                                   <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
-                                  <span className="font-bold text-amber-700 dark:text-amber-300">+{p.wartosc} pkt</span>
+                                  <span className="font-extrabold text-amber-600 dark:text-amber-400 tabular-nums">+{p.wartosc} XP</span>
                                 </div>
                               ))}
                             </div>
                           </div>
                         )}
-
-                        {/* Minusowe */}
                         <div>
-                          <h4 className="text-sm font-medium text-red-700 dark:text-red-300 mb-1">Minusowe punkty</h4>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-red-400 mb-2 flex items-center gap-1.5"><span>💀</span> Kary</h4>
                           <div className="space-y-1">
                             {punktacjaConfig.filter(p => p.klucz.startsWith('minus_')).map(p => (
-                              <div key={p.klucz} className="flex justify-between text-sm py-0.5">
+                              <div key={p.klucz} className="flex justify-between items-center text-sm py-1 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
                                 <span className="text-gray-600 dark:text-gray-300">{p.opis}</span>
-                                <span className="font-bold text-red-600 dark:text-red-400">{p.wartosc} pkt</span>
+                                <span className="font-extrabold text-red-500 tabular-nums">{p.wartosc} XP</span>
                               </div>
                             ))}
                           </div>
                         </div>
-
-                        {/* Ogólne zasady */}
-                        <div className="border-t pt-3">
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Ogólne zasady</h4>
-                          <ul className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
-                            <li>• Niedziela jest <strong>obowiązkowa</strong> — 0 pkt</li>
-                            <li>• Zgłoszenie max <strong>{getConfigValue('limit_dni_zgloszenie', 2)} dni</strong> od daty służby</li>
-                            <li>• Nieobecność na dyżurze: <strong>{getConfigValue('minus_nieobecnosc_dyzur', -5)} pkt</strong></li>
-                            <li>• Ksiądz zatwierdza każde zgłoszenie</li>
-                            <li>• Nabożeństwa dają punkty niezależnie od mszy</li>
+                        <div className="border-t border-dashed pt-3">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5"><span>📜</span> Zasady</h4>
+                          <ul className="space-y-1 text-sm text-gray-500 dark:text-gray-400">
+                            <li className="flex gap-2"><span>•</span> Niedziela jest <strong className="text-gray-700 dark:text-gray-200">obowiązkowa</strong> — 0 XP</li>
+                            <li className="flex gap-2"><span>•</span> Zgłoszenie max <strong className="text-gray-700 dark:text-gray-200">{getConfigValue('limit_dni_zgloszenie', 2)} dni</strong> od daty</li>
+                            <li className="flex gap-2"><span>•</span> Brak na dyżurze: <strong className="text-red-600 dark:text-red-400">{getConfigValue('minus_nieobecnosc_dyzur', -5)} XP</strong></li>
+                            <li className="flex gap-2"><span>•</span> Ksiądz zatwierdza każde zgłoszenie</li>
                           </ul>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </div>
                   </div>
                 );
               })()}
@@ -6790,15 +6722,32 @@ export default function MinistranciApp() {
               Dodawaj i usuwaj funkcje przypisywane do wydarzeń
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            {funkcjeConfig.map((f) => {
+          <div className="space-y-1.5">
+            {funkcjeConfig.map((f, idx) => {
               const kolory = KOLOR_KLASY[f.kolor] || KOLOR_KLASY.gray;
               return (
-                <div key={f.id} className="flex items-center gap-3 p-3 rounded-lg border overflow-hidden">
+                <div
+                  key={f.id}
+                  draggable
+                  onDragStart={() => setDraggedFunkcjaIdx(idx)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => { if (draggedFunkcjaIdx !== null) handleMoveFunkcja(draggedFunkcjaIdx, idx); setDraggedFunkcjaIdx(null); }}
+                  onDragEnd={() => setDraggedFunkcjaIdx(null)}
+                  className={`flex items-center gap-2 p-2.5 rounded-lg border overflow-hidden transition-all ${draggedFunkcjaIdx === idx ? 'opacity-50 border-dashed border-indigo-400' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                >
+                  <div className="flex flex-col gap-0.5 shrink-0">
+                    <button onClick={() => handleMoveFunkcja(idx, idx - 1)} disabled={idx === 0} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-20">
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => handleMoveFunkcja(idx, idx + 1)} disabled={idx === funkcjeConfig.length - 1} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-20">
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <GripVertical className="w-4 h-4 text-gray-300 dark:text-gray-600 cursor-grab shrink-0" />
                   {f.obrazek_url ? (
-                    <img src={f.obrazek_url} alt={f.nazwa} className="h-10 w-10 object-contain shrink-0 rounded-full" />
+                    <img src={f.obrazek_url} alt={f.nazwa} className="h-9 w-9 object-contain shrink-0 rounded-full" />
                   ) : (
-                    <div className={`w-10 h-10 rounded-full bg-white ${kolory.border} border-2 flex items-center justify-center text-lg shrink-0`}>
+                    <div className={`w-9 h-9 rounded-full bg-white ${kolory.border} border-2 flex items-center justify-center text-base shrink-0`}>
                       {f.emoji}
                     </div>
                   )}
@@ -7913,48 +7862,44 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal zgłoszenia obecności */}
+      {/* Modal zgłoszenia obecności — Gaming */}
       <Dialog open={showZglosModal} onOpenChange={setShowZglosModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Zgłoś obecność</DialogTitle>
-            <DialogDescription>
-              Zaznacz dzień, w którym służyłeś. Masz {getConfigValue('limit_dni_zgloszenie', 2)} dni od daty służby na zgłoszenie.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
+        <DialogContent className="p-0 overflow-hidden border-0 shadow-2xl shadow-emerald-500/10">
+          <DialogTitle className="sr-only">Zgłoś obecność</DialogTitle>
+          <div className="bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 p-4">
+            <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Nowa misja
+            </h3>
+            <p className="text-emerald-100 text-xs mt-1">Masz {getConfigValue('limit_dni_zgloszenie', 2)} dni od daty służby na zgłoszenie</p>
+          </div>
+          <div className="p-5 space-y-4">
             <div>
-              <Label>Data służby *</Label>
-              <Input
-                type="date"
-                value={zglosForm.data}
-                max={new Date().toISOString().split('T')[0]}
-                onChange={(e) => setZglosForm({ ...zglosForm, data: e.target.value })}
-              />
+              <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Data służby *</Label>
+              <Input type="date" value={zglosForm.data} max={new Date().toISOString().split('T')[0]} onChange={(e) => setZglosForm({ ...zglosForm, data: e.target.value })} className="mt-1" />
             </div>
             <div>
-              <Label>Godzina (opcjonalnie)</Label>
-              <Input
-                type="time"
-                value={zglosForm.godzina}
-                onChange={(e) => setZglosForm({ ...zglosForm, godzina: e.target.value })}
-              />
+              <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Godzina (opcjonalnie)</Label>
+              <Input type="time" value={zglosForm.godzina} onChange={(e) => setZglosForm({ ...zglosForm, godzina: e.target.value })} className="mt-1" />
             </div>
             <div>
-              <Label>Typ</Label>
-              <Select value={zglosForm.typ} onValueChange={(v) => setZglosForm({ ...zglosForm, typ: v as 'msza' | 'nabożeństwo' })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="msza">Msza św.</SelectItem>
-                  <SelectItem value="nabożeństwo">Nabożeństwo</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Typ</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <button onClick={() => setZglosForm({ ...zglosForm, typ: 'msza' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'msza' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                  <span className="text-2xl">⛪</span>
+                  <p className="text-sm font-bold mt-1">Msza</p>
+                </button>
+                <button onClick={() => setZglosForm({ ...zglosForm, typ: 'nabożeństwo' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'nabożeństwo' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                  <span className="text-2xl">🙏</span>
+                  <p className="text-sm font-bold mt-1">Nabożeństwo</p>
+                </button>
+              </div>
             </div>
             {zglosForm.typ === 'nabożeństwo' && (
               <div>
-                <Label>Rodzaj nabożeństwa</Label>
+                <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Rodzaj nabożeństwa</Label>
                 <Select value={zglosForm.nazwa_nabożeństwa} onValueChange={(v) => setZglosForm({ ...zglosForm, nazwa_nabożeństwa: v })}>
-                  <SelectTrigger><SelectValue placeholder="Wybierz..." /></SelectTrigger>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Wybierz..." /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="droga_krzyzowa">Droga Krzyżowa</SelectItem>
                     <SelectItem value="gorzkie_zale">Gorzkie Żale</SelectItem>
@@ -7965,21 +7910,21 @@ export default function MinistranciApp() {
               </div>
             )}
             {zglosForm.data && (
-              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
+              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl border border-amber-200 dark:border-amber-700">
                 {(() => {
                   const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa);
                   const finalne = Math.round(bazowe * mnoznik);
                   return (
                     <div className="flex justify-between items-center">
-                      <span>Punkty za tę służbę:</span>
-                      <span className="font-bold text-lg">{finalne} pkt {mnoznik > 1 && <span className="text-xs text-gray-500 dark:text-gray-400">({bazowe} × {mnoznik})</span>}</span>
+                      <div className="flex items-center gap-2"><Star className="w-5 h-5 text-amber-500" /><span className="font-bold text-sm">Nagroda:</span></div>
+                      <span className="font-extrabold text-xl text-amber-600 dark:text-amber-400 tabular-nums">{finalne} XP {mnoznik > 1 && <span className="text-xs text-gray-500">({bazowe}×{mnoznik})</span>}</span>
                     </div>
                   );
                 })()}
               </div>
             )}
-            <Button onClick={zglosObecnosc} className="w-full" disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa)}>
-              <Send className="w-4 h-4 mr-2" />
+            <Button onClick={zglosObecnosc} className="w-full h-12 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold text-base" disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa)}>
+              <Send className="w-5 h-5 mr-2" />
               Wyślij zgłoszenie
             </Button>
           </div>
@@ -8455,31 +8400,36 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal dyżurów */}
+      {/* Modal dyżurów — Gaming */}
       <Dialog open={showDyzuryModal} onOpenChange={setShowDyzuryModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Moje dyżury</DialogTitle>
-            <DialogDescription>
-              Wybierz stałe dni tygodnia, w które pełnisz dyżur. Dyżury pojawią się w Kalendarzu liturgicznym.
-              Nieobecność na dyżurze: {getConfigValue('minus_nieobecnosc_dyzur', -5)} pkt.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
+        <DialogContent className="p-0 overflow-hidden border-0 shadow-2xl shadow-indigo-500/10">
+          <DialogTitle className="sr-only">Moje dyżury</DialogTitle>
+          <div className="bg-gradient-to-r from-indigo-600 via-blue-500 to-cyan-500 p-4">
+            <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Moje dyżury
+            </h3>
+            <p className="text-indigo-100 text-xs mt-1">
+              Nieobecność na dyżurze: <span className="font-bold text-red-200">{getConfigValue('minus_nieobecnosc_dyzur', -5)} XP</span>
+            </p>
+          </div>
+          <div className="p-4 space-y-2">
             {DNI_TYGODNIA_FULL.map((dzien, i) => {
               const dzienIdx = i === 6 ? 0 : i + 1;
               const isActive = dyzury.some(d => d.ministrant_id === currentUser?.id && d.dzien_tygodnia === dzienIdx);
               return (
-                <Button
+                <button
                   key={i}
-                  variant={isActive ? 'default' : 'outline'}
-                  className="w-full justify-start"
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${isActive ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}`}
                   onClick={() => toggleDyzur(dzienIdx)}
                 >
-                  {isActive ? <Check className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                  {dzien}
-                  {dzienIdx === 0 && <span className="ml-auto text-xs opacity-60">obowiązkowa — 0 pkt</span>}
-                </Button>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isActive ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
+                    {isActive ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  </div>
+                  <span className={`font-bold text-sm ${isActive ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>{dzien}</span>
+                  {isActive && <span className="ml-auto text-[10px] font-bold text-indigo-500 uppercase">Aktywny</span>}
+                  {dzienIdx === 0 && !isActive && <span className="ml-auto text-[10px] text-gray-400">0 XP</span>}
+                </button>
               );
             })}
           </div>

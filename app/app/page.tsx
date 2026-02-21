@@ -245,6 +245,7 @@ interface Dyzur {
   parafia_id: string;
   dzien_tygodnia: number;
   aktywny: boolean;
+  status: 'oczekuje' | 'zatwierdzona' | 'odrzucona';
 }
 
 interface Obecnosc {
@@ -714,6 +715,7 @@ export default function MinistranciApp() {
   const [rankingData, setRankingData] = useState<RankingEntry[]>([]);
   const [showZglosModal, setShowZglosModal] = useState(false);
   const [showDyzuryModal, setShowDyzuryModal] = useState(false);
+  const [dyzurConfirm, setDyzurConfirm] = useState<{ dzien: number; type: 'first' | 'change' } | null>(null);
   const [showEditProfilModal, setShowEditProfilModal] = useState(false);
   const [editProfilForm, setEditProfilForm] = useState({ imie: '', nazwisko: '', email: '' });
   const [editDyzury, setEditDyzury] = useState(false);
@@ -1534,20 +1536,33 @@ export default function MinistranciApp() {
     }
   };
 
-  const toggleDyzur = async (dzienTygodnia: number) => {
+  const handleDyzurClick = (dzienTygodnia: number) => {
     if (!currentUser?.parafia_id) return;
-
     const existing = dyzury.find(d => d.ministrant_id === currentUser.id && d.dzien_tygodnia === dzienTygodnia);
 
-    if (existing) {
-      await supabase.from('dyzury').delete().eq('id', existing.id);
-    } else {
-      await supabase.from('dyzury').insert({
-        ministrant_id: currentUser.id,
-        parafia_id: currentUser.parafia_id,
-        dzien_tygodnia: dzienTygodnia,
-      });
+    // Zatwierdzony dyżur — nie można odkliknąć
+    if (existing?.status === 'zatwierdzona') return;
+
+    // Oczekujący — ministrant może cofnąć wniosek
+    if (existing?.status === 'oczekuje') {
+      supabase.from('dyzury').delete().eq('id', existing.id).then(() => loadRankingData());
+      return;
     }
+
+    // Nowy dzień — pokaż dialog potwierdzenia
+    const hasAnyApproved = dyzury.some(d => d.ministrant_id === currentUser.id && d.status === 'zatwierdzona');
+    setDyzurConfirm({ dzien: dzienTygodnia, type: hasAnyApproved ? 'change' : 'first' });
+  };
+
+  const confirmDyzur = async () => {
+    if (!currentUser?.parafia_id || !dyzurConfirm) return;
+    await supabase.from('dyzury').insert({
+      ministrant_id: currentUser.id,
+      parafia_id: currentUser.parafia_id,
+      dzien_tygodnia: dyzurConfirm.dzien,
+      status: dyzurConfirm.type === 'first' ? 'zatwierdzona' : 'oczekuje',
+    });
+    setDyzurConfirm(null);
     loadRankingData();
   };
 
@@ -1606,7 +1621,17 @@ export default function MinistranciApp() {
         ministrant_id: ministrantId,
         parafia_id: currentUser.parafia_id,
         dzien_tygodnia: dzienTygodnia,
+        status: 'zatwierdzona',
       });
+    }
+    loadRankingData();
+  };
+
+  const handleDyzurDecision = async (dyzurId: string, decision: 'zatwierdzona' | 'odrzucona') => {
+    if (decision === 'odrzucona') {
+      await supabase.from('dyzury').delete().eq('id', dyzurId);
+    } else {
+      await supabase.from('dyzury').update({ status: decision }).eq('id', dyzurId);
     }
     loadRankingData();
   };
@@ -5005,8 +5030,8 @@ export default function MinistranciApp() {
                         {myDyzury.length > 0 && (
                           <div className="flex flex-wrap gap-1 justify-center">
                             {myDyzury.map(d => (
-                              <span key={d.id} className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-xs font-medium text-indigo-700 dark:text-indigo-300">
-                                {DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
+                              <span key={d.id} className={`px-2 py-0.5 rounded text-xs font-medium ${d.status === 'oczekuje' ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300' : 'bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'}`}>
+                                {d.status === 'oczekuje' ? '⏳ ' : ''}{DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
                               </span>
                             ))}
                           </div>
@@ -5119,7 +5144,7 @@ export default function MinistranciApp() {
                             {(showAllZgloszenia ? myObecnosci : myObecnosci.slice(0, 3)).map(o => {
                               const d = new Date(o.data);
                               const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-                              const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay());
+                              const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay() && dy.status === 'zatwierdzona');
                               return (
                                 <div key={o.id} className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border ${o.status === 'zatwierdzona' ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10' : o.status === 'odrzucona' ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10' : 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10'}`}>
                                   <div className="flex items-center gap-2 min-w-0">
@@ -5624,7 +5649,7 @@ export default function MinistranciApp() {
                             const member = members.find(m => m.profile_id === o.ministrant_id);
                             const d = new Date(o.data);
                             const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-                            const isDyzur = dyzury.some(dy => dy.ministrant_id === o.ministrant_id && dy.dzien_tygodnia === d.getDay());
+                            const isDyzur = dyzury.some(dy => dy.ministrant_id === o.ministrant_id && dy.dzien_tygodnia === d.getDay() && dy.status === 'zatwierdzona');
                             return (
                               <div key={o.id} className="flex items-center justify-between gap-2 p-2 sm:p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
                                 <div className="min-w-0">
@@ -8436,10 +8461,22 @@ export default function MinistranciApp() {
                           const member = members.find(m => m.profile_id === d.ministrant_id);
                           const grupa = member?.grupa ? grupy.find(g => g.id === member.grupa) : null;
                           const kolor = grupa ? KOLOR_KLASY[grupa.kolor] : null;
+                          const isPending = d.status === 'oczekuje';
                           return (
-                            <span key={d.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium ${kolor ? `${kolor.bg} ${kolor.text}` : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
-                              {grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
+                            <span key={d.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium ${isPending ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700' : kolor ? `${kolor.bg} ${kolor.text}` : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
+                              {isPending && <span className="text-xs">⏳</span>}
+                              {!isPending && grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
                               {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
+                              {isPending && (
+                                <>
+                                  <button onClick={() => handleDyzurDecision(d.id, 'zatwierdzona')} className="ml-1 w-5 h-5 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors" title="Zatwierdź">
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button onClick={() => handleDyzurDecision(d.id, 'odrzucona')} className="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors" title="Odrzuć">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </>
+                              )}
                             </span>
                           );
                         }) : (
@@ -8467,16 +8504,29 @@ export default function MinistranciApp() {
                         const member = members.find(m => m.profile_id === d.ministrant_id);
                         const grupa = member?.grupa ? grupy.find(g => g.id === member.grupa) : null;
                         const kolor = grupa ? KOLOR_KLASY[grupa.kolor] : null;
+                        const isPending = d.status === 'oczekuje';
                         return (
-                          <span key={d.id} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium ${kolor ? `${kolor.bg} ${kolor.text}` : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
-                            {grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
+                          <span key={d.id} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-sm font-medium ${isPending ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700' : kolor ? `${kolor.bg} ${kolor.text}` : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
+                            {isPending && <span className="text-xs">⏳</span>}
+                            {!isPending && grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
                             {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
-                            <button
-                              onClick={() => toggleDyzurAdmin(d.ministrant_id, dzienIdx)}
-                              className="ml-0.5 hover:bg-red-200 dark:hover:bg-red-900/40 rounded-full p-0.5 transition-colors"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
+                            {isPending ? (
+                              <>
+                                <button onClick={() => handleDyzurDecision(d.id, 'zatwierdzona')} className="ml-0.5 w-5 h-5 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors" title="Zatwierdź">
+                                  <Check className="w-3 h-3" />
+                                </button>
+                                <button onClick={() => handleDyzurDecision(d.id, 'odrzucona')} className="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-colors" title="Odrzuć">
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => toggleDyzurAdmin(d.ministrant_id, dzienIdx)}
+                                className="ml-0.5 hover:bg-red-200 dark:hover:bg-red-900/40 rounded-full p-0.5 transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
                           </span>
                         );
                       })}
@@ -8593,17 +8643,26 @@ export default function MinistranciApp() {
           <div className="space-y-2">
             {DNI_TYGODNIA_FULL.map((dzien, i) => {
               const dzienIdx = i === 6 ? 0 : i + 1;
-              const isActive = dyzury.some(d => d.ministrant_id === selectedMember?.profile_id && d.dzien_tygodnia === dzienIdx);
+              const existingDyzur = dyzury.find(d => d.ministrant_id === selectedMember?.profile_id && d.dzien_tygodnia === dzienIdx);
+              const isActive = !!existingDyzur;
+              const isPending = existingDyzur?.status === 'oczekuje';
               return (
-                <Button
-                  key={i}
-                  variant={isActive ? 'default' : 'outline'}
-                  className="w-full justify-start"
-                  onClick={() => selectedMember && toggleDyzurAdmin(selectedMember.profile_id, dzienIdx)}
-                >
-                  {isActive ? <Check className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                  {dzien}
-                </Button>
+                <div key={i} className="flex gap-2 items-center">
+                  <Button
+                    variant={isActive ? (isPending ? 'outline' : 'default') : 'outline'}
+                    className={`flex-1 justify-start ${isPending ? 'border-amber-400 text-amber-700 dark:text-amber-300' : ''}`}
+                    onClick={() => selectedMember && (isPending ? handleDyzurDecision(existingDyzur!.id, 'zatwierdzona') : toggleDyzurAdmin(selectedMember.profile_id, dzienIdx))}
+                  >
+                    {isPending ? <Clock className="w-4 h-4 mr-2" /> : isActive ? <Check className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                    {dzien}
+                    {isPending && <span className="ml-auto text-xs font-bold text-amber-500">Oczekuje</span>}
+                  </Button>
+                  {isPending && (
+                    <Button size="sm" variant="outline" className="text-red-500 border-red-200 hover:bg-red-50" onClick={() => handleDyzurDecision(existingDyzur!.id, 'odrzucona')}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -8623,26 +8682,59 @@ export default function MinistranciApp() {
               Nieobecność na dyżurze: <span className="font-bold text-red-200">{getConfigValue('minus_nieobecnosc_dyzur', -5)} XP</span>
             </p>
           </div>
-          <div className="p-4 space-y-2">
+          {dyzury.some(d => d.ministrant_id === currentUser?.id && d.status === 'zatwierdzona') && (
+            <div className="mx-4 mt-3 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 shrink-0" />
+                Zmiana dyżurów wymaga akceptacji księdza
+              </p>
+            </div>
+          )}
+          <div className="p-4 pt-2 space-y-2">
             {DNI_TYGODNIA_FULL.map((dzien, i) => {
               const dzienIdx = i === 6 ? 0 : i + 1;
-              const isActive = dyzury.some(d => d.ministrant_id === currentUser?.id && d.dzien_tygodnia === dzienIdx);
+              const myDyzur = dyzury.find(d => d.ministrant_id === currentUser?.id && d.dzien_tygodnia === dzienIdx);
+              const isActive = !!myDyzur;
+              const isPending = myDyzur?.status === 'oczekuje';
+              const isApproved = myDyzur?.status === 'zatwierdzona';
               return (
                 <button
                   key={i}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${isActive ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}`}
-                  onClick={() => toggleDyzur(dzienIdx)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${isApproved ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 opacity-80 cursor-default' : isPending ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}`}
+                  onClick={() => handleDyzurClick(dzienIdx)}
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isActive ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
-                    {isActive ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isPending ? 'bg-amber-400 text-white' : isApproved ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
+                    {isPending ? <Clock className="w-4 h-4" /> : isApproved ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                   </div>
-                  <span className={`font-bold text-sm ${isActive ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>{dzien}</span>
-                  {isActive && <span className="ml-auto text-[10px] font-bold text-indigo-500 uppercase">Aktywny</span>}
-                  {dzienIdx === 0 && !isActive && <span className="ml-auto text-[10px] text-gray-400">0 XP</span>}
+                  <span className={`font-bold text-sm ${isPending ? 'text-amber-700 dark:text-amber-300' : isApproved ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>{dzien}</span>
+                  {isPending && <span className="ml-auto text-[10px] font-bold text-amber-500 uppercase">Cofnij wniosek</span>}
+                  {isApproved && <span className="ml-auto text-[10px] font-bold text-indigo-500 uppercase">Aktywny</span>}
+                  {!isActive && <span className="ml-auto text-[10px] text-gray-400">Wybierz</span>}
                 </button>
               );
             })}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog potwierdzenia dyżuru */}
+      <Dialog open={!!dyzurConfirm} onOpenChange={(open) => { if (!open) setDyzurConfirm(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dyzurConfirm?.type === 'first' ? 'Potwierdź dyżur' : 'Zmiana dyżuru'}</DialogTitle>
+            <DialogDescription>
+              {dyzurConfirm?.type === 'first'
+                ? `Czy chcesz wybrać ${DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1]} jako dzień dyżuru? Po zatwierdzeniu nie będzie można go samodzielnie usunąć.`
+                : `Dodanie nowego dnia (${dyzurConfirm ? DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1] : ''}) wymaga akceptacji księdza. Czy chcesz wysłać prośbę?`
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDyzurConfirm(null)}>Anuluj</Button>
+            <Button onClick={confirmDyzur}>
+              {dyzurConfirm?.type === 'first' ? 'Tak, wybieram' : 'Wyślij prośbę'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

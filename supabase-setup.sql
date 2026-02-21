@@ -281,6 +281,7 @@ create table dyzury (
   parafia_id uuid references parafie(id) on delete cascade not null,
   dzien_tygodnia integer not null check (dzien_tygodnia between 0 and 6),
   aktywny boolean default true,
+  status text default 'zatwierdzona' check (status in ('oczekuje', 'zatwierdzona', 'odrzucona')),
   created_at timestamptz default now(),
   unique(ministrant_id, parafia_id, dzien_tygodnia)
 );

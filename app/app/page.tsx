@@ -894,23 +894,27 @@ export default function MinistranciApp() {
   // ==================== FUNKCJE ŁADOWANIA ====================
 
   const loadProfile = useCallback(async (userId: string) => {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    if (profile) {
-      setCurrentUser(profile as Profile);
-      // Sprawdź czy profil wymaga uzupełnienia (użytkownik OAuth z typ='nowy')
-      if (profile.typ === 'nowy' || !profile.imie) {
-        setProfileCompletionForm({
-          imie: profile.imie || '',
-          nazwisko: profile.nazwisko || '',
-          typ: 'ministrant',
-        });
-        setShowProfileCompletion(true);
+      if (profile) {
+        setCurrentUser(profile as Profile);
+        // Sprawdź czy profil wymaga uzupełnienia (użytkownik OAuth z typ='nowy')
+        if (profile.typ === 'nowy' || !profile.imie) {
+          setProfileCompletionForm({
+            imie: profile.imie || '',
+            nazwisko: profile.nazwisko || '',
+            typ: 'ministrant',
+          });
+          setShowProfileCompletion(true);
+        }
       }
+    } catch {
+      // Błąd sieci / sesji — nie blokuj ekranu
     }
     setLoading(false);
   }, []);
@@ -1706,6 +1710,8 @@ export default function MinistranciApp() {
       } else {
         setLoading(false);
       }
+    }).catch(() => {
+      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

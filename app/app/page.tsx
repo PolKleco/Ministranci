@@ -6400,112 +6400,157 @@ export default function MinistranciApp() {
             </Dialog>
           </TabsContent>
 
-          {/* Panel Modlitwy */}
+          {/* Panel Modlitwy — Gaming */}
           <TabsContent value="modlitwy">
             <div className="space-y-4">
-              <h2 className="text-xl sm:text-2xl font-bold">Modlitwy</h2>
+              {/* Header */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-purple-500/20">
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                <div className="relative flex items-center gap-3">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🙏</div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Modlitwy</h2>
+                    <p className="text-purple-200 text-xs sm:text-sm">Duchowe przygotowanie do służby</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modlitwa przed Mszą */}
               <Accordion type="single" collapsible>
-                <AccordionItem value="przed">
-                  <AccordionTrigger className="text-lg font-semibold">
-                    Modlitwa ministranta przed Mszą
+                <AccordionItem value="przed" className="border-0">
+                  <AccordionTrigger className="rounded-xl bg-gradient-to-r from-amber-500/10 to-yellow-500/10 dark:from-amber-500/20 dark:to-yellow-500/20 border border-amber-200/50 dark:border-amber-700/50 px-4 py-3 hover:no-underline hover:from-amber-500/20 hover:to-yellow-500/20">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">⛪</span>
+                      <span className="font-bold text-amber-800 dark:text-amber-300">Modlitwa przed Mszą</span>
+                    </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <Card>
-                      <CardContent className="py-4 whitespace-pre-line">
-                        {MODLITWY.przed}
-                      </CardContent>
-                    </Card>
+                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-amber-200/30 dark:border-amber-700/30 p-4 whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                      {MODLITWY.przed}
+                    </div>
                   </AccordionContent>
                 </AccordionItem>
 
-                <AccordionItem value="po">
-                  <AccordionTrigger className="text-lg font-semibold">
-                    Modlitwa po Mszy Świętej
+                <AccordionItem value="po" className="border-0">
+                  <AccordionTrigger className="rounded-xl bg-gradient-to-r from-emerald-500/10 to-green-500/10 dark:from-emerald-500/20 dark:to-green-500/20 border border-emerald-200/50 dark:border-emerald-700/50 px-4 py-3 hover:no-underline hover:from-emerald-500/20 hover:to-green-500/20 mt-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">✨</span>
+                      <span className="font-bold text-emerald-800 dark:text-emerald-300">Modlitwa po Mszy Świętej</span>
+                    </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <Card>
-                      <CardContent className="py-4 whitespace-pre-line">
-                        {MODLITWY.po}
-                      </CardContent>
-                    </Card>
+                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-emerald-200/30 dark:border-emerald-700/30 p-4 whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                      {MODLITWY.po}
+                    </div>
                   </AccordionContent>
                 </AccordionItem>
 
-                <AccordionItem value="lacina">
-                  <AccordionTrigger className="text-lg font-semibold">
-                    Odpowiedzi ministrantów (łacina)
+                <AccordionItem value="lacina" className="border-0">
+                  <AccordionTrigger className="rounded-xl bg-gradient-to-r from-indigo-500/10 to-blue-500/10 dark:from-indigo-500/20 dark:to-blue-500/20 border border-indigo-200/50 dark:border-indigo-700/50 px-4 py-3 hover:no-underline hover:from-indigo-500/20 hover:to-blue-500/20 mt-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">📜</span>
+                      <span className="font-bold text-indigo-800 dark:text-indigo-300">Odpowiedzi ministrantów (łacina)</span>
+                    </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <Card>
-                      <CardContent className="py-4 whitespace-pre-line font-mono text-sm">
-                        {MODLITWY.lacina}
-                      </CardContent>
-                    </Card>
+                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-indigo-200/30 dark:border-indigo-700/30 p-4 whitespace-pre-line font-mono text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                      {MODLITWY.lacina}
+                    </div>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
             </div>
           </TabsContent>
 
-          {/* Panel Wskazówki */}
+          {/* Panel Wskazówki — Gaming */}
           <TabsContent value="wskazowki">
             <div className="space-y-4">
-              <h2 className="text-xl sm:text-2xl font-bold">Wskazówki dla Ministrantów</h2>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Przed Mszą Świętą</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="list-disc list-inside space-y-1">
-                    {WSKAZOWKI.przed.map((w, i) => (
-                      <li key={i}>{w}</li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Podczas Mszy Świętej</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="list-disc list-inside space-y-1">
-                    {WSKAZOWKI.podczas.map((w, i) => (
-                      <li key={i}>{w}</li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Funkcje podczas Mszy</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {WSKAZOWKI.funkcje.map((f, i) => (
-                      <div key={i}>
-                        <p className="font-semibold">{f.nazwa}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">{f.opis}</p>
-                      </div>
-                    ))}
+              {/* Header */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 p-4 sm:p-5 shadow-lg shadow-blue-500/20">
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                <div className="relative flex items-center gap-3">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📖</div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Przewodnik Ministranta</h2>
+                    <p className="text-blue-200 text-xs sm:text-sm">Twoja baza wiedzy do służby</p>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Ważne zasady</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="list-disc list-inside space-y-1">
-                    {WSKAZOWKI.zasady.map((z, i) => (
-                      <li key={i}>{z}</li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
+              {/* Przed Mszą */}
+              <div className="rounded-2xl overflow-hidden border border-emerald-200/50 dark:border-emerald-700/50 shadow-md shadow-emerald-500/5">
+                <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-4 py-3 flex items-center gap-2">
+                  <span className="text-lg">🟢</span>
+                  <h3 className="font-extrabold text-white text-sm sm:text-base">Przed Mszą Świętą</h3>
+                </div>
+                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 space-y-2">
+                  {WSKAZOWKI.przed.map((w, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <div className="w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0 mt-0.5">
+                        <span className="text-emerald-600 dark:text-emerald-400 text-xs font-bold">{i + 1}</span>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{w}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Podczas Mszy */}
+              <div className="rounded-2xl overflow-hidden border border-blue-200/50 dark:border-blue-700/50 shadow-md shadow-blue-500/5">
+                <div className="bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-3 flex items-center gap-2">
+                  <span className="text-lg">⚡</span>
+                  <h3 className="font-extrabold text-white text-sm sm:text-base">Podczas Mszy Świętej</h3>
+                </div>
+                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 space-y-2">
+                  {WSKAZOWKI.podczas.map((w, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <div className="w-5 h-5 rounded-md bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0 mt-0.5">
+                        <span className="text-blue-600 dark:text-blue-400 text-xs font-bold">{i + 1}</span>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{w}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Funkcje podczas Mszy */}
+              <div className="rounded-2xl overflow-hidden border border-purple-200/50 dark:border-purple-700/50 shadow-md shadow-purple-500/5">
+                <div className="bg-gradient-to-r from-purple-500 to-fuchsia-600 px-4 py-3 flex items-center gap-2">
+                  <span className="text-lg">🎯</span>
+                  <h3 className="font-extrabold text-white text-sm sm:text-base">Funkcje podczas Mszy</h3>
+                </div>
+                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 space-y-3">
+                  {WSKAZOWKI.funkcje.map((f, i) => (
+                    <div key={i} className="flex items-start gap-3 p-2.5 rounded-xl bg-purple-50/50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800/30">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-fuchsia-500 flex items-center justify-center shrink-0 shadow-sm">
+                        <span className="text-white text-xs font-bold">{i + 1}</span>
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-purple-800 dark:text-purple-300">{f.nazwa}</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{f.opis}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Ważne zasady */}
+              <div className="rounded-2xl overflow-hidden border border-amber-200/50 dark:border-amber-700/50 shadow-md shadow-amber-500/5">
+                <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 flex items-center gap-2">
+                  <span className="text-lg">⚠️</span>
+                  <h3 className="font-extrabold text-white text-sm sm:text-base">Ważne zasady</h3>
+                </div>
+                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 space-y-2">
+                  {WSKAZOWKI.zasady.map((z, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <div className="w-5 h-5 rounded-md bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0 mt-0.5">
+                        <span className="text-amber-600 dark:text-amber-400 text-xs">✓</span>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">{z}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </TabsContent>
         </Tabs>

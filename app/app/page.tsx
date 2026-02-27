@@ -5964,18 +5964,34 @@ export default function MinistranciApp() {
             <div className="space-y-4">
               {!showSzablonyView ? (
                 <>
-                  {currentUser.typ === 'ministrant' && (
-                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 p-4 sm:p-5 shadow-lg shadow-indigo-500/20">
-                      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                      <div className="relative flex items-center gap-3">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📅</div>
-                        <div>
-                          <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Wydarzenia</h2>
-                          <p className="text-indigo-200 text-xs sm:text-sm">Msze, nabożeństwa i celebracje</p>
+                  {currentUser.typ === 'ministrant' && (() => {
+                    const litBtn: Record<string, { btn: string; btnHover: string; shadow: string; gradient: string }> = {
+                      zielony: { btn: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600', shadow: 'shadow-emerald-500/20', gradient: 'from-teal-600 via-emerald-600 to-green-600' },
+                      bialy: { btn: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400', shadow: 'shadow-amber-500/20', gradient: 'from-amber-500 via-yellow-500 to-amber-400' },
+                      czerwony: { btn: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500', shadow: 'shadow-red-500/20', gradient: 'from-red-600 via-rose-600 to-red-500' },
+                      fioletowy: { btn: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600', shadow: 'shadow-purple-500/20', gradient: 'from-purple-700 via-violet-600 to-purple-600' },
+                      rozowy: { btn: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400', shadow: 'shadow-pink-500/20', gradient: 'from-pink-500 via-rose-400 to-pink-400' },
+                    };
+                    const lb = litBtn[dzisLiturgiczny?.kolor || 'zielony'] || litBtn.zielony;
+                    return (
+                      <>
+                        <Button onClick={() => setShowZglosModal(true)} className={`w-full h-14 bg-gradient-to-r ${lb.btn} ${lb.btnHover} text-white shadow-xl ${lb.shadow} font-extrabold text-lg rounded-xl`}>
+                          <Plus className="w-5 h-5 mr-2" />
+                          Zgłoś obecność
+                        </Button>
+                        <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lb.gradient} p-4 sm:p-5 shadow-lg ${lb.shadow}`}>
+                          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                          <div className="relative flex items-center gap-3">
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📅</div>
+                            <div>
+                              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Wydarzenia</h2>
+                              <p className="text-white/70 text-xs sm:text-sm">Msze, nabożeństwa i celebracje</p>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
+                      </>
+                    );
+                  })()}
                   {currentUser.typ === 'ksiadz' && (
                     <div className="flex gap-2 flex-wrap">
                       <Button variant="outline" size="sm" onClick={() => setShowFunkcjeConfigModal(true)}>
@@ -6521,18 +6537,28 @@ export default function MinistranciApp() {
           {/* Panel Posługi — Gaming */}
           <TabsContent value="poslugi">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-pink-500/20">
-                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                  <div className="relative flex items-center gap-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">⛪</div>
-                    <div>
-                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Posługi Liturgiczne</h2>
-                      <p className="text-pink-200 text-xs sm:text-sm">{poslugi.length} {poslugi.length === 1 ? 'posługa' : poslugi.length < 5 ? 'posługi' : 'posług'} w bazie</p>
+              {currentUser.typ === 'ministrant' && (() => {
+                const litG: Record<string, { gradient: string; shadow: string }> = {
+                  zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
+                  bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
+                  fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
+                  rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+                };
+                const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
+                return (
+                  <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lg.gradient} p-4 sm:p-5 shadow-lg ${lg.shadow}`}>
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                    <div className="relative flex items-center gap-3">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">⛪</div>
+                      <div>
+                        <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Posługi Liturgiczne</h2>
+                        <p className="text-white/70 text-xs sm:text-sm">{poslugi.length} {poslugi.length === 1 ? 'posługa' : poslugi.length < 5 ? 'posługi' : 'posług'} w bazie</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
               {currentUser.typ === 'ksiadz' && (
                 <div className="flex gap-2 flex-wrap">
                   <Button size="sm" onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }}>
@@ -6666,18 +6692,34 @@ export default function MinistranciApp() {
           {/* Panel Kalendarz Liturgiczny */}
           <TabsContent value="kalendarz">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 p-4 sm:p-5 shadow-lg shadow-orange-500/20">
-                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                  <div className="relative flex items-center gap-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🗓️</div>
-                    <div>
-                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Kalendarz Liturgiczny</h2>
-                      <p className="text-orange-200 text-xs sm:text-sm">Okresy, święta i wspomnienia</p>
+              {currentUser.typ === 'ministrant' && (() => {
+                const litBtn: Record<string, { btn: string; btnHover: string; shadow: string; gradient: string }> = {
+                  zielony: { btn: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600', shadow: 'shadow-emerald-500/20', gradient: 'from-teal-600 via-emerald-600 to-green-600' },
+                  bialy: { btn: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400', shadow: 'shadow-amber-500/20', gradient: 'from-amber-500 via-yellow-500 to-amber-400' },
+                  czerwony: { btn: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500', shadow: 'shadow-red-500/20', gradient: 'from-red-600 via-rose-600 to-red-500' },
+                  fioletowy: { btn: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600', shadow: 'shadow-purple-500/20', gradient: 'from-purple-700 via-violet-600 to-purple-600' },
+                  rozowy: { btn: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400', shadow: 'shadow-pink-500/20', gradient: 'from-pink-500 via-rose-400 to-pink-400' },
+                };
+                const lb = litBtn[dzisLiturgiczny?.kolor || 'zielony'] || litBtn.zielony;
+                return (
+                  <>
+                    <Button onClick={() => setShowZglosModal(true)} className={`w-full h-14 bg-gradient-to-r ${lb.btn} ${lb.btnHover} text-white shadow-xl ${lb.shadow} font-extrabold text-lg rounded-xl`}>
+                      <Plus className="w-5 h-5 mr-2" />
+                      Zgłoś obecność
+                    </Button>
+                    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lb.gradient} p-4 sm:p-5 shadow-lg ${lb.shadow}`}>
+                      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                      <div className="relative flex items-center gap-3">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🗓️</div>
+                        <div>
+                          <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Kalendarz Liturgiczny</h2>
+                          <p className="text-white/70 text-xs sm:text-sm">Okresy, święta i wspomnienia</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
+                  </>
+                );
+              })()}
               {/* Nawigacja miesięczna */}
               <div className="flex items-center justify-between">
                 <Button
@@ -6824,18 +6866,28 @@ export default function MinistranciApp() {
           {/* Panel Modlitwy — Gaming */}
           <TabsContent value="modlitwy">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-purple-500/20">
-                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                  <div className="relative flex items-center gap-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🙏</div>
-                    <div>
-                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Modlitwy</h2>
-                      <p className="text-purple-200 text-xs sm:text-sm">Duchowe przygotowanie do służby</p>
+              {currentUser.typ === 'ministrant' && (() => {
+                const litG: Record<string, { gradient: string; shadow: string }> = {
+                  zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
+                  bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
+                  fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
+                  rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+                };
+                const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
+                return (
+                  <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lg.gradient} p-4 sm:p-5 shadow-lg ${lg.shadow}`}>
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                    <div className="relative flex items-center gap-3">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🙏</div>
+                      <div>
+                        <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Modlitwy</h2>
+                        <p className="text-white/70 text-xs sm:text-sm">Duchowe przygotowanie do służby</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
               {/* Modlitwa przed Mszą */}
               <Accordion type="single" collapsible>
                 <AccordionItem value="przed" className="border-0">
@@ -6886,18 +6938,28 @@ export default function MinistranciApp() {
           {/* Panel Wskazówki — Gaming */}
           <TabsContent value="wskazowki">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (
-                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 p-4 sm:p-5 shadow-lg shadow-blue-500/20">
-                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                  <div className="relative flex items-center gap-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📖</div>
-                    <div>
-                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Przewodnik Ministranta</h2>
-                      <p className="text-blue-200 text-xs sm:text-sm">Twoja baza wiedzy do służby</p>
+              {currentUser.typ === 'ministrant' && (() => {
+                const litG: Record<string, { gradient: string; shadow: string }> = {
+                  zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
+                  bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
+                  fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
+                  rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+                };
+                const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
+                return (
+                  <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lg.gradient} p-4 sm:p-5 shadow-lg ${lg.shadow}`}>
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                    <div className="relative flex items-center gap-3">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📖</div>
+                      <div>
+                        <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Przewodnik Ministranta</h2>
+                        <p className="text-white/70 text-xs sm:text-sm">Twoja baza wiedzy do służby</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
               {/* Przed Mszą */}
               <div className="rounded-2xl overflow-hidden border border-emerald-200/50 dark:border-emerald-700/50 shadow-md shadow-emerald-500/5">
                 <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-4 py-3 flex items-center gap-2">
@@ -8529,72 +8591,89 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal zgłoszenia obecności — Gaming */}
+      {/* Modal zgłoszenia obecności — Liturgiczny */}
       <Dialog open={showZglosModal} onOpenChange={setShowZglosModal}>
-        <DialogContent className="p-0 overflow-hidden border-0 shadow-2xl shadow-emerald-500/10">
+        <DialogContent className="p-0 overflow-hidden border-0 shadow-2xl">
           <DialogTitle className="sr-only">Zgłoś obecność</DialogTitle>
-          <div className="bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 p-4">
-            <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
-              <Plus className="w-5 h-5" />
-              Nowa misja
-            </h3>
-            <p className="text-emerald-100 text-xs mt-1">Masz {getConfigValue('limit_dni_zgloszenie', 2)} dni od daty służby na zgłoszenie</p>
-          </div>
-          <div className="p-5 space-y-4">
-            <div>
-              <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Data służby *</Label>
-              <Input type="date" value={zglosForm.data} max={new Date().toISOString().split('T')[0]} onChange={(e) => setZglosForm({ ...zglosForm, data: e.target.value })} className="mt-1" />
-            </div>
-            <div>
-              <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Godzina (opcjonalnie)</Label>
-              <Input type="time" value={zglosForm.godzina} onChange={(e) => setZglosForm({ ...zglosForm, godzina: e.target.value })} className="mt-1" />
-            </div>
-            <div>
-              <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Typ</Label>
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                <button onClick={() => setZglosForm({ ...zglosForm, typ: 'msza' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'msza' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
-                  <span className="text-2xl">⛪</span>
-                  <p className="text-sm font-bold mt-1">Msza</p>
-                </button>
-                <button onClick={() => setZglosForm({ ...zglosForm, typ: 'nabożeństwo' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'nabożeństwo' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
-                  <span className="text-2xl">🙏</span>
-                  <p className="text-sm font-bold mt-1">Nabożeństwo</p>
-                </button>
-              </div>
-            </div>
-            {zglosForm.typ === 'nabożeństwo' && (
-              <div>
-                <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Rodzaj nabożeństwa</Label>
-                <Select value={zglosForm.nazwa_nabożeństwa} onValueChange={(v) => setZglosForm({ ...zglosForm, nazwa_nabożeństwa: v })}>
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Wybierz..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="droga_krzyzowa">Droga Krzyżowa</SelectItem>
-                    <SelectItem value="gorzkie_zale">Gorzkie Żale</SelectItem>
-                    <SelectItem value="majowe">Nabożeństwo Majowe</SelectItem>
-                    <SelectItem value="rozaniec">Różaniec</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {zglosForm.data && (
-              <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl border border-amber-200 dark:border-amber-700">
-                {(() => {
-                  const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa);
-                  const finalne = Math.round(bazowe * mnoznik);
-                  return (
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2"><Star className="w-5 h-5 text-amber-500" /><span className="font-bold text-sm">Nagroda:</span></div>
-                      <span className="font-extrabold text-xl text-amber-600 dark:text-amber-400 tabular-nums">{finalne} XP {mnoznik > 1 && <span className="text-xs text-gray-500">({bazowe}×{mnoznik})</span>}</span>
+          {(() => {
+            const litModal: Record<string, { gradient: string; subtitleColor: string; border: string; activeBg: string; activeBorder: string; btnGradient: string; btnHover: string }> = {
+              zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', subtitleColor: 'text-emerald-100', border: 'border-emerald-500', activeBg: 'bg-emerald-50 dark:bg-emerald-900/20', activeBorder: 'border-emerald-500', btnGradient: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600' },
+              bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', subtitleColor: 'text-amber-100', border: 'border-amber-500', activeBg: 'bg-amber-50 dark:bg-amber-900/20', activeBorder: 'border-amber-500', btnGradient: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400' },
+              czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', subtitleColor: 'text-red-100', border: 'border-red-500', activeBg: 'bg-red-50 dark:bg-red-900/20', activeBorder: 'border-red-500', btnGradient: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500' },
+              fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', subtitleColor: 'text-purple-100', border: 'border-purple-500', activeBg: 'bg-purple-50 dark:bg-purple-900/20', activeBorder: 'border-purple-500', btnGradient: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600' },
+              rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', subtitleColor: 'text-pink-100', border: 'border-pink-500', activeBg: 'bg-pink-50 dark:bg-pink-900/20', activeBorder: 'border-pink-500', btnGradient: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400' },
+            };
+            const lm = litModal[dzisLiturgiczny?.kolor || 'zielony'] || litModal.zielony;
+            return (
+              <>
+                <div className={`bg-gradient-to-r ${lm.gradient} p-4`}>
+                  <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
+                    <Plus className="w-5 h-5" />
+                    Nowa misja
+                  </h3>
+                  <p className={`${lm.subtitleColor} text-xs mt-1`}>Masz {getConfigValue('limit_dni_zgloszenie', 2)} dni od daty służby na zgłoszenie</p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Data służby *</Label>
+                    <Input type="date" value={zglosForm.data} max={new Date().toISOString().split('T')[0]} onChange={(e) => setZglosForm({ ...zglosForm, data: e.target.value })} className="mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Godzina (opcjonalnie)</Label>
+                    <Input type="time" value={zglosForm.godzina} onChange={(e) => setZglosForm({ ...zglosForm, godzina: e.target.value })} className="mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Typ</Label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <button onClick={() => setZglosForm({ ...zglosForm, typ: 'msza' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'msza' ? `${lm.activeBorder} ${lm.activeBg}` : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                        <span className="text-2xl">⛪</span>
+                        <p className="text-sm font-bold mt-1">Msza</p>
+                      </button>
+                      <button onClick={() => setZglosForm({ ...zglosForm, typ: 'nabożeństwo' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'nabożeństwo' ? `${lm.activeBorder} ${lm.activeBg}` : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                        <span className="text-2xl">🙏</span>
+                        <p className="text-sm font-bold mt-1">Nabożeństwo</p>
+                      </button>
                     </div>
-                  );
-                })()}
-              </div>
-            )}
-            <Button onClick={zglosObecnosc} className="w-full h-12 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-extrabold text-base" disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa)}>
-              <Send className="w-5 h-5 mr-2" />
-              Wyślij zgłoszenie
-            </Button>
-          </div>
+                  </div>
+                  {zglosForm.typ === 'nabożeństwo' && (
+                    <div>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Rodzaj nabożeństwa</Label>
+                      <Select value={zglosForm.nazwa_nabożeństwa} onValueChange={(v) => setZglosForm({ ...zglosForm, nazwa_nabożeństwa: v })}>
+                        <SelectTrigger className="mt-1"><SelectValue placeholder="Wybierz..." /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="droga_krzyzowa">Droga Krzyżowa</SelectItem>
+                          <SelectItem value="gorzkie_zale">Gorzkie Żale</SelectItem>
+                          <SelectItem value="majowe">Nabożeństwo Majowe</SelectItem>
+                          <SelectItem value="rozaniec">Różaniec</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {zglosForm.data && (
+                    <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl border border-amber-200 dark:border-amber-700">
+                      {(() => {
+                        const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa);
+                        const finalne = Math.round(bazowe * mnoznik);
+                        return (
+                          <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2"><Star className="w-5 h-5 text-amber-500" /><span className="font-bold text-sm">Nagroda:</span></div>
+                            <span className="font-extrabold text-xl text-amber-600 dark:text-amber-400 tabular-nums">{finalne} XP {mnoznik > 1 && <span className="text-xs text-gray-500">({bazowe}×{mnoznik})</span>}</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  {zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 font-medium text-center">Wybierz rodzaj nabożeństwa z listy powyżej</p>
+                  )}
+                  <Button onClick={zglosObecnosc} className={`w-full h-12 bg-gradient-to-r ${lm.btnGradient} ${lm.btnHover} text-white font-extrabold text-base`} disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa)}>
+                    <Send className="w-5 h-5 mr-2" />
+                    Wyślij zgłoszenie
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 

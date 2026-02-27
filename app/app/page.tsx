@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { DEKANATY } from '@/lib/dekanaty';
 import {
   Church, Users, Calendar, Book, LogOut, Mail,
   Copy, X, Plus, Check, CheckCircle, Hourglass,
@@ -9,7 +10,7 @@ import {
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
   Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, FileText, GripVertical,
-  Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type
+  Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type, RefreshCw
 } from 'lucide-react';
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -165,6 +166,7 @@ interface Funkcja {
   ministrant_id: string | null;
   aktywna: boolean;
   zaakceptowana: boolean;
+  godzina?: string;
 }
 
 interface Sluzba {
@@ -183,6 +185,11 @@ interface SzablonWydarzenia {
   nazwa: string;
   godzina: string;
   funkcje: Record<string, string>;
+  godziny: string[];
+  auto_publish?: boolean;
+  auto_publish_dzien?: number;
+  auto_publish_okres?: 'tydzien' | '2tygodnie' | 'miesiac';
+  auto_publish_do?: string;
   parafia_id: string;
   utworzono_przez: string;
 }
@@ -607,6 +614,22 @@ export default function MinistranciApp() {
   const [diecezjaSearch, setDiecezjaSearch] = useState('');
   const [diecezjaOpen, setDiecezjaOpen] = useState(false);
   const diecezjaRef = useRef<HTMLDivElement>(null);
+  const [dekanat, setDekanat] = useState('');
+  const [dekanatSearch, setDekanatSearch] = useState('');
+  const [dekanatOpen, setDekanatOpen] = useState(false);
+  const dekanatRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dekanatOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (dekanatRef.current && !dekanatRef.current.contains(e.target as Node)) {
+        setDekanatOpen(false);
+        setDekanatSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [dekanatOpen]);
 
   useEffect(() => {
     if (!diecezjaOpen) return;
@@ -628,6 +651,7 @@ export default function MinistranciApp() {
     imie?: string;
     nazwisko?: string;
     diecezja?: string;
+    dekanat?: string;
     general?: string;
   }>({});
 
@@ -699,10 +723,16 @@ export default function MinistranciApp() {
   const [showSzablonyView, setShowSzablonyView] = useState(false);
   const [showSzablonModal, setShowSzablonModal] = useState(false);
   const [selectedSzablon, setSelectedSzablon] = useState<SzablonWydarzenia | null>(null);
-  const [szablonForm, setSzablonForm] = useState({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+  const [szablonForm, setSzablonForm] = useState<{
+    nazwa: string;
+    godziny: string[];
+    funkcje: Record<FunkcjaType, string>;
+  }>({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
   const [showPublishSzablonModal, setShowPublishSzablonModal] = useState(false);
   const [publishDate, setPublishDate] = useState('');
   const [publishFunkcje, setPublishFunkcje] = useState<Record<FunkcjaType, string>>({} as Record<FunkcjaType, string>);
+  const [showCyclicPublishModal, setShowCyclicPublishModal] = useState(false);
+  const [cyclicForm, setCyclicForm] = useState({ startDate: '', okres: 'tydzien' as 'tydzien' | '2tygodnie' | 'miesiac', iloscPowtorzen: 4 });
 
   // ==================== STAN — RANKING SŁUŻBY ====================
   const [punktacjaConfig, setPunktacjaConfig] = useState<PunktacjaConfig[]>([]);
@@ -882,7 +912,7 @@ export default function MinistranciApp() {
     nazwa: '',
     data: '',
     godzina: '',
-    funkcje: {} as Record<FunkcjaType, string>
+    funkcjePerHour: {} as Record<string, Record<FunkcjaType, string>>
   });
 
   // Kalendarz liturgiczny
@@ -951,7 +981,7 @@ export default function MinistranciApp() {
       .select('*')
       .eq('parafia_id', currentUser.parafia_id);
 
-    if (membersData) setMembers(membersData as Member[]);
+    if (membersData) setMembers(membersData.map(m => ({ ...m, role: m.role ?? [] })) as Member[]);
   }, [currentUser?.parafia_id]);
 
   const loadSluzby = useCallback(async () => {
@@ -1955,6 +1985,7 @@ export default function MinistranciApp() {
       if (!imie.trim()) errors.imie = 'Wpisz swoje imię';
       if (!nazwisko.trim()) errors.nazwisko = 'Wpisz swoje nazwisko';
       if (userType === 'ksiadz' && !diecezja) errors.diecezja = 'Wybierz swoją diecezję';
+      if (userType === 'ksiadz' && diecezja && !dekanat) errors.dekanat = 'Wybierz swój dekanat';
     }
 
     if (Object.keys(errors).length > 0) {
@@ -1987,7 +2018,7 @@ export default function MinistranciApp() {
         email: email.trim(),
         password,
         options: {
-          data: { imie: imie.trim(), nazwisko: nazwisko.trim(), typ: userType, ...(userType === 'ksiadz' && diecezja ? { diecezja } : {}) }
+          data: { imie: imie.trim(), nazwisko: nazwisko.trim(), typ: userType, ...(userType === 'ksiadz' && diecezja ? { diecezja, dekanat: dekanat.trim() } : {}) }
         }
       });
 
@@ -2275,6 +2306,26 @@ export default function MinistranciApp() {
   const FUNKCJE_TYPES: FunkcjaType[] = funkcjeConfig.map(f => f.nazwa);
   const FUNKCJE_OPISY: Record<string, string> = Object.fromEntries(funkcjeConfig.map(f => [f.nazwa, f.opis]));
 
+  const buildFunkcjeRecords = (sluzbaId: string, godzina: string, funkcjePerHour: Record<string, Record<FunkcjaType, string>>) => {
+    const hours = parseGodziny(godzina);
+    const records: { sluzba_id: string; typ: string; ministrant_id: string | null; aktywna: boolean; zaakceptowana: boolean; godzina: string }[] = [];
+    hours.forEach(h => {
+      const hourFunkcje = funkcjePerHour[h] || {};
+      FUNKCJE_TYPES.forEach(typ => {
+        const assigned = hourFunkcje[typ];
+        records.push({
+          sluzba_id: sluzbaId,
+          typ,
+          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
+          aktywna: assigned !== 'BEZ',
+          zaakceptowana: false,
+          godzina: h,
+        });
+      });
+    });
+    return records;
+  };
+
   const handleCreateSluzba = async () => {
     if (!sluzbaForm.nazwa || !sluzbaForm.data || !sluzbaForm.godzina || !currentUser?.parafia_id) {
       alert('Wypełnij wymagane pola!');
@@ -2282,7 +2333,7 @@ export default function MinistranciApp() {
     }
 
     if (selectedSluzba) {
-      // Edycja - zaktualizuj wydarzenie
+      // Edycja
       await supabase
         .from('sluzby')
         .update({
@@ -2292,23 +2343,12 @@ export default function MinistranciApp() {
         })
         .eq('id', selectedSluzba.id);
 
-      // Usuń stare funkcje i dodaj nowe
       await supabase
         .from('funkcje')
         .delete()
         .eq('sluzba_id', selectedSluzba.id);
 
-      const funkcjeToInsert = FUNKCJE_TYPES.map(typ => {
-        const assigned = sluzbaForm.funkcje[typ];
-        return {
-          sluzba_id: selectedSluzba.id,
-          typ,
-          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
-          aktywna: assigned !== 'BEZ',
-          zaakceptowana: false
-        };
-      });
-
+      const funkcjeToInsert = buildFunkcjeRecords(selectedSluzba.id, sluzbaForm.godzina, sluzbaForm.funkcjePerHour);
       await supabase.from('funkcje').insert(funkcjeToInsert);
     } else {
       // Nowe wydarzenie
@@ -2330,20 +2370,9 @@ export default function MinistranciApp() {
         return;
       }
 
-      const funkcjeToInsert = FUNKCJE_TYPES.map(typ => {
-        const assigned = sluzbaForm.funkcje[typ];
-        return {
-          sluzba_id: newSluzba.id,
-          typ,
-          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
-          aktywna: assigned !== 'BEZ',
-          zaakceptowana: false
-        };
-      });
-
+      const funkcjeToInsert = buildFunkcjeRecords(newSluzba.id, sluzbaForm.godzina, sluzbaForm.funkcjePerHour);
       await supabase.from('funkcje').insert(funkcjeToInsert);
 
-      // Push notification o nowym wydarzeniu (fire and forget)
       if (currentParafia) {
         fetch('/api/push/send', {
           method: 'POST',
@@ -2361,31 +2390,57 @@ export default function MinistranciApp() {
       }
     }
 
-    // Odśwież listę
     await loadSluzby();
     setShowSluzbaModal(false);
     setSelectedSluzba(null);
-    setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+    setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+  };
+
+  const parseGodziny = (godzina: string): string[] => {
+    const parts = godzina.split(',').map(g => g.trim()).filter(Boolean);
+    return parts.length > 0 ? parts : [godzina];
   };
 
   const handleEditSluzba = (sluzba: Sluzba) => {
     setSelectedSluzba(sluzba);
-    const funkcjeMap: Record<FunkcjaType, string> = {} as Record<FunkcjaType, string>;
-    sluzba.funkcje.forEach(f => {
-      if (!f.aktywna) {
-        funkcjeMap[f.typ as FunkcjaType] = 'BEZ';
-      } else if (f.ministrant_id) {
-        funkcjeMap[f.typ as FunkcjaType] = f.ministrant_id;
-      } else {
-        funkcjeMap[f.typ as FunkcjaType] = 'UNASSIGNED';
-      }
-    });
+    const hours = parseGodziny(sluzba.godzina);
+    const funkcjePerHour: Record<string, Record<FunkcjaType, string>> = {};
+
+    if (hours.length > 1) {
+      // Multi-hour event: group funkcje by godzina
+      hours.forEach(h => {
+        const hourFunkcje = {} as Record<FunkcjaType, string>;
+        sluzba.funkcje.filter(f => f.godzina === h).forEach(f => {
+          if (!f.aktywna) {
+            hourFunkcje[f.typ as FunkcjaType] = 'BEZ';
+          } else if (f.ministrant_id) {
+            hourFunkcje[f.typ as FunkcjaType] = f.ministrant_id;
+          } else {
+            hourFunkcje[f.typ as FunkcjaType] = 'UNASSIGNED';
+          }
+        });
+        funkcjePerHour[h] = hourFunkcje;
+      });
+    } else {
+      // Single-hour: all funkcje go to that hour
+      const hourFunkcje = {} as Record<FunkcjaType, string>;
+      sluzba.funkcje.forEach(f => {
+        if (!f.aktywna) {
+          hourFunkcje[f.typ as FunkcjaType] = 'BEZ';
+        } else if (f.ministrant_id) {
+          hourFunkcje[f.typ as FunkcjaType] = f.ministrant_id;
+        } else {
+          hourFunkcje[f.typ as FunkcjaType] = 'UNASSIGNED';
+        }
+      });
+      funkcjePerHour[hours[0]] = hourFunkcje;
+    }
 
     setSluzbaForm({
       nazwa: sluzba.nazwa,
       data: sluzba.data,
       godzina: sluzba.godzina,
-      funkcje: funkcjeMap
+      funkcjePerHour,
     });
     setShowSluzbaModal(true);
   };
@@ -2429,28 +2484,35 @@ export default function MinistranciApp() {
 
   // ==================== SZABLONY WYDARZEŃ ====================
 
+  const getSzablonGodziny = (szablon: SzablonWydarzenia): string[] => {
+    if (szablon.godziny && szablon.godziny.length > 0) return szablon.godziny;
+    return [szablon.godzina];
+  };
+
   const handleCreateSzablon = async () => {
-    if (!szablonForm.nazwa || !szablonForm.godzina || !currentUser?.parafia_id) {
+    const validGodziny = szablonForm.godziny.filter(g => g);
+    if (!szablonForm.nazwa || validGodziny.length === 0 || !currentUser?.parafia_id) {
       alert('Wypełnij wymagane pola!');
       return;
     }
 
     const funkcjeData: Record<string, string> = {};
     FUNKCJE_TYPES.forEach(typ => {
-      const val = szablonForm.funkcje[typ];
-      if (val === 'BEZ') {
+      if (szablonForm.funkcje[typ] === 'BEZ') {
         funkcjeData[typ] = 'BEZ';
       }
-      // UNASSIGNED i puste pomijamy — domyślnie nie przypisano
     });
+
+    const sortedGodziny = [...validGodziny].sort();
 
     if (selectedSzablon) {
       await supabase
         .from('szablony_wydarzen')
         .update({
           nazwa: szablonForm.nazwa,
-          godzina: szablonForm.godzina,
+          godzina: sortedGodziny[0],
           funkcje: funkcjeData,
+          godziny: sortedGodziny,
         })
         .eq('id', selectedSzablon.id);
     } else {
@@ -2458,8 +2520,9 @@ export default function MinistranciApp() {
         .from('szablony_wydarzen')
         .insert({
           nazwa: szablonForm.nazwa,
-          godzina: szablonForm.godzina,
+          godzina: sortedGodziny[0],
           funkcje: funkcjeData,
+          godziny: sortedGodziny,
           parafia_id: currentUser.parafia_id,
           utworzono_przez: currentUser.id,
         });
@@ -2468,7 +2531,7 @@ export default function MinistranciApp() {
     await loadSzablony();
     setShowSzablonModal(false);
     setSelectedSzablon(null);
-    setSzablonForm({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+    setSzablonForm({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
   };
 
   const handleDeleteSzablon = async () => {
@@ -2484,18 +2547,17 @@ export default function MinistranciApp() {
     setSelectedSzablon(null);
   };
 
-  const handlePublishSzablon = async () => {
-    if (!selectedSzablon || !publishDate || !currentUser?.parafia_id) {
-      alert('Wybierz datę!');
-      return;
-    }
+  const publishSzablonForDate = async (szablon: SzablonWydarzenia, date: string, funkcjeAssign: Record<FunkcjaType, string>) => {
+    if (!currentUser?.parafia_id) return false;
+    const godziny = getSzablonGodziny(szablon);
+    const godzinyStr = godziny.join(', ');
 
     const { data: newSluzba, error } = await supabase
       .from('sluzby')
       .insert({
-        nazwa: selectedSzablon.nazwa,
-        data: publishDate,
-        godzina: selectedSzablon.godzina,
+        nazwa: szablon.nazwa,
+        data: date,
+        godzina: godzinyStr,
         parafia_id: currentUser.parafia_id,
         utworzono_przez: currentUser.id,
         status: 'zaplanowana'
@@ -2503,27 +2565,43 @@ export default function MinistranciApp() {
       .select()
       .single();
 
-    if (error || !newSluzba) {
+    if (error || !newSluzba) return false;
+
+    const funkcjeToInsert: { sluzba_id: string; typ: string; ministrant_id: string | null; aktywna: boolean; zaakceptowana: boolean; godzina: string }[] = [];
+    godziny.forEach(h => {
+      FUNKCJE_TYPES.forEach(typ => {
+        const szablonVal = szablon.funkcje[typ];
+        const assigned = funkcjeAssign[typ];
+        funkcjeToInsert.push({
+          sluzba_id: newSluzba.id,
+          typ,
+          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
+          aktywna: szablonVal !== 'BEZ' && (!assigned || assigned !== 'BEZ'),
+          zaakceptowana: false,
+          godzina: h,
+        });
+      });
+    });
+
+    await supabase.from('funkcje').insert(funkcjeToInsert);
+    return true;
+  };
+
+  const handlePublishSzablon = async () => {
+    if (!selectedSzablon || !publishDate || !currentUser?.parafia_id) {
+      alert('Wybierz datę!');
+      return;
+    }
+
+    const ok = await publishSzablonForDate(selectedSzablon, publishDate, publishFunkcje);
+    if (!ok) {
       alert('Błąd publikacji wydarzenia!');
       return;
     }
 
-    const funkcjeToInsert = FUNKCJE_TYPES.map(typ => {
-      const szablonVal = selectedSzablon.funkcje[typ];
-      const assigned = publishFunkcje[typ];
-      return {
-        sluzba_id: newSluzba.id,
-        typ,
-        ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
-        aktywna: szablonVal !== 'BEZ' && assigned !== 'BEZ',
-        zaakceptowana: false
-      };
-    });
-
-    await supabase.from('funkcje').insert(funkcjeToInsert);
-
     // Push notification
     if (currentParafia) {
+      const godzinyStr = getSzablonGodziny(selectedSzablon).join(', ');
       fetch('/api/push/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2531,7 +2609,7 @@ export default function MinistranciApp() {
           parafia_id: currentParafia.id,
           grupa_docelowa: 'wszyscy',
           title: 'Nowe wydarzenie',
-          body: `${selectedSzablon.nazwa} — ${new Date(publishDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${selectedSzablon.godzina}`,
+          body: `${selectedSzablon.nazwa} — ${new Date(publishDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${godzinyStr}`,
           url: '/app',
           kategoria: 'wydarzenie',
           autor_id: currentUser.id,
@@ -2547,15 +2625,68 @@ export default function MinistranciApp() {
     setShowSzablonyView(false);
   };
 
+  const handleCyclicPublish = async () => {
+    if (!selectedSzablon || !cyclicForm.startDate || !currentUser?.parafia_id) {
+      alert('Wypełnij wymagane pola!');
+      return;
+    }
+
+    const dates: string[] = [];
+    const start = new Date(cyclicForm.startDate);
+    const daysToAdd = cyclicForm.okres === 'tydzien' ? 7 : cyclicForm.okres === '2tygodnie' ? 14 : 30;
+
+    for (let i = 0; i < cyclicForm.iloscPowtorzen; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + daysToAdd * i);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+
+    let created = 0;
+    for (const date of dates) {
+      const ok = await publishSzablonForDate(selectedSzablon, date, publishFunkcje);
+      if (ok) created++;
+    }
+
+    // Push notification
+    if (currentParafia && created > 0) {
+      const godzinyStr = getSzablonGodziny(selectedSzablon).join(', ');
+      fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parafia_id: currentParafia.id,
+          grupa_docelowa: 'wszyscy',
+          title: 'Nowe wydarzenia',
+          body: `${selectedSzablon.nazwa} — ${created} wydarzeń o ${godzinyStr}`,
+          url: '/app',
+          kategoria: 'wydarzenie',
+          autor_id: currentUser.id,
+        }),
+      }).catch(() => {});
+    }
+
+    await loadSluzby();
+    setShowCyclicPublishModal(false);
+    setSelectedSzablon(null);
+    setPublishFunkcje({} as Record<FunkcjaType, string>);
+    setShowSzablonyView(false);
+    alert(`Utworzono ${created} wydarzeń!`);
+  };
+
   // ==================== MINISTRANCI ====================
 
   const handleUpdatePoslugi = async () => {
     if (!selectedMember) return;
 
-    await supabase
+    const { error } = await supabase
       .from('parafia_members')
       .update({ role: selectedMember.role })
       .eq('id', selectedMember.id);
+
+    if (error) {
+      alert('Błąd zapisu posług: ' + error.message);
+      return;
+    }
 
     await loadParafiaData();
     setShowPoslugiModal(false);
@@ -3617,7 +3748,7 @@ export default function MinistranciApp() {
                       <div className="grid grid-cols-2 gap-3">
                         <button
                           type="button"
-                          onClick={() => { setUserType('ministrant'); setDiecezja(''); setDiecezjaSearch(''); setAuthErrors(prev => ({ ...prev, diecezja: undefined })); }}
+                          onClick={() => { setUserType('ministrant'); setDiecezja(''); setDekanat(''); setDiecezjaSearch(''); setAuthErrors(prev => ({ ...prev, diecezja: undefined, dekanat: undefined })); }}
                           className={`p-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
                             userType === 'ministrant'
                               ? 'border-amber-400/40 bg-amber-400/10 text-amber-300'
@@ -3690,9 +3821,10 @@ export default function MinistranciApp() {
                                       type="button"
                                       onClick={() => {
                                         setDiecezja(d);
+                                        setDekanat('');
                                         setDiecezjaOpen(false);
                                         setDiecezjaSearch('');
-                                        setAuthErrors(prev => ({ ...prev, diecezja: undefined }));
+                                        setAuthErrors(prev => ({ ...prev, diecezja: undefined, dekanat: undefined }));
                                       }}
                                       className={`w-full px-4 py-2.5 text-xs text-left transition-colors flex items-center gap-2 ${
                                         d === diecezja
@@ -3713,6 +3845,77 @@ export default function MinistranciApp() {
                           )}
                         </div>
                         {authErrors.diecezja && <p className="mt-2 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.diecezja}</p>}
+                      </div>
+                    )}
+
+                    {/* Dekanat — pojawia się po wyborze diecezji (ksiądz) */}
+                    {userType === 'ksiadz' && diecezja && DEKANATY[diecezja] && (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Dekanat</label>
+                        <div className="relative" ref={dekanatRef}>
+                          <button
+                            type="button"
+                            onClick={() => setDekanatOpen(!dekanatOpen)}
+                            className={`w-full px-4 py-3 rounded-xl text-sm text-left outline-none transition-all duration-200 flex items-center justify-between ${
+                              authErrors.dekanat
+                                ? 'border border-red-500/50 bg-red-500/5'
+                                : 'border border-white/[0.08] bg-white/[0.03]'
+                            } ${dekanat ? 'text-slate-200' : 'text-slate-500'}`}
+                          >
+                            <span className="truncate">{dekanat || 'Wybierz dekanat...'}</span>
+                            <ChevronDown className={`w-4 h-4 text-slate-500 shrink-0 ml-2 transition-transform duration-200 ${dekanatOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {dekanatOpen && (
+                            <div
+                              className="absolute z-50 bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.1] overflow-hidden"
+                              style={{ background: '#0f0f1e', boxShadow: '0 16px 48px rgba(0,0,0,0.5)' }}
+                            >
+                              <div className="p-2 border-b border-white/[0.06]">
+                                <div className="relative">
+                                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                                  <input
+                                    type="text"
+                                    value={dekanatSearch}
+                                    onChange={(e) => setDekanatSearch(e.target.value)}
+                                    placeholder="Szukaj dekanatu..."
+                                    autoFocus
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-xs text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-400/30"
+                                  />
+                                </div>
+                              </div>
+                              <div className="max-h-[200px] overflow-y-auto py-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(212,168,83,0.3) transparent' }}>
+                                {(DEKANATY[diecezja] || [])
+                                  .filter(d => d.toLowerCase().includes(dekanatSearch.toLowerCase()))
+                                  .map(d => (
+                                    <button
+                                      key={d}
+                                      type="button"
+                                      onClick={() => {
+                                        setDekanat(d);
+                                        setDekanatOpen(false);
+                                        setDekanatSearch('');
+                                        setAuthErrors(prev => ({ ...prev, dekanat: undefined }));
+                                      }}
+                                      className={`w-full px-4 py-2.5 text-xs text-left transition-colors flex items-center gap-2 ${
+                                        d === dekanat
+                                          ? 'bg-amber-400/10 text-amber-300'
+                                          : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
+                                      }`}
+                                    >
+                                      {d === dekanat && <Check className="w-3 h-3 text-amber-400 shrink-0" />}
+                                      <span className={d === dekanat ? '' : 'ml-5'}>{d}</span>
+                                    </button>
+                                  ))
+                                }
+                                {(DEKANATY[diecezja] || []).filter(d => d.toLowerCase().includes(dekanatSearch.toLowerCase())).length === 0 && (
+                                  <p className="px-4 py-3 text-xs text-slate-600 text-center">Nie znaleziono dekanatu</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {authErrors.dekanat && <p className="mt-2 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.dekanat}</p>}
                       </div>
                     )}
 
@@ -3949,7 +4152,7 @@ export default function MinistranciApp() {
         <div className="max-w-7xl mx-auto px-2.5 py-2 sm:px-4 sm:py-3">
           {/* Linia 1: nazwa parafii + tryb nocny + wyloguj */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); } }}>
+            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); setShowSzablonyView(false); } }}>
               <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <div>
                 {editingParafiaNazwa ? (
@@ -4083,16 +4286,16 @@ export default function MinistranciApp() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {(() => {
             const litColor = dzisLiturgiczny ? ({
-              zielony: { list: 'bg-white dark:bg-gray-900', trigger: 'text-green-700 dark:text-green-400 data-[state=active]:text-green-800 dark:data-[state=active]:text-green-300 [&_svg]:text-green-600 dark:[&_svg]:text-green-400' },
-              bialy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-amber-700 dark:text-amber-400 data-[state=active]:text-amber-800 dark:data-[state=active]:text-amber-300 [&_svg]:text-amber-600 dark:[&_svg]:text-amber-400' },
-              czerwony: { list: 'bg-white dark:bg-gray-900', trigger: 'text-red-700 dark:text-red-400 data-[state=active]:text-red-800 dark:data-[state=active]:text-red-300 [&_svg]:text-red-600 dark:[&_svg]:text-red-400' },
-              fioletowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-purple-700 dark:text-purple-400 data-[state=active]:text-purple-800 dark:data-[state=active]:text-purple-300 [&_svg]:text-purple-600 dark:[&_svg]:text-purple-400' },
-              rozowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-pink-600 dark:text-pink-400 data-[state=active]:text-pink-700 dark:data-[state=active]:text-pink-300 [&_svg]:text-pink-500 dark:[&_svg]:text-pink-400' },
+              zielony: { list: 'bg-white dark:bg-gray-900', trigger: 'text-green-700 dark:text-green-400 data-[state=active]:bg-green-100 dark:data-[state=active]:bg-green-900/40 data-[state=active]:text-green-900 dark:data-[state=active]:text-green-200 data-[state=active]:border-green-300 dark:data-[state=active]:border-green-700 [&_svg]:text-green-600 dark:[&_svg]:text-green-400' },
+              bialy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-amber-700 dark:text-amber-400 data-[state=active]:bg-amber-100 dark:data-[state=active]:bg-amber-900/40 data-[state=active]:text-amber-900 dark:data-[state=active]:text-amber-200 data-[state=active]:border-amber-300 dark:data-[state=active]:border-amber-700 [&_svg]:text-amber-600 dark:[&_svg]:text-amber-400' },
+              czerwony: { list: 'bg-white dark:bg-gray-900', trigger: 'text-red-700 dark:text-red-400 data-[state=active]:bg-red-100 dark:data-[state=active]:bg-red-900/40 data-[state=active]:text-red-900 dark:data-[state=active]:text-red-200 data-[state=active]:border-red-300 dark:data-[state=active]:border-red-700 [&_svg]:text-red-600 dark:[&_svg]:text-red-400' },
+              fioletowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-purple-700 dark:text-purple-400 data-[state=active]:bg-purple-100 dark:data-[state=active]:bg-purple-900/40 data-[state=active]:text-purple-900 dark:data-[state=active]:text-purple-200 data-[state=active]:border-purple-300 dark:data-[state=active]:border-purple-700 [&_svg]:text-purple-600 dark:[&_svg]:text-purple-400' },
+              rozowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-pink-600 dark:text-pink-400 data-[state=active]:bg-pink-100 dark:data-[state=active]:bg-pink-900/40 data-[state=active]:text-pink-900 dark:data-[state=active]:text-pink-200 data-[state=active]:border-pink-300 dark:data-[state=active]:border-pink-700 [&_svg]:text-pink-500 dark:[&_svg]:text-pink-400' },
             } as Record<string, { list: string; trigger: string }>)[dzisLiturgiczny.kolor] || { list: 'bg-white dark:bg-gray-900', trigger: 'text-green-700 dark:text-green-400' } : { list: 'bg-muted', trigger: '' };
             const tc = litColor.trigger;
             return (
           <TabsList className={`grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6 ${litColor.list}`}>
-            <TabsTrigger value="tablica" className={`relative ${tc}`} onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); }}>
+            <TabsTrigger value="tablica" className={`relative ${tc}`} onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); }}>
               <MessageSquare className="w-4 h-4 sm:mr-2" />
               Aktualności
               {nieprzeczytanePowiadomienia > 0 && (
@@ -4117,7 +4320,7 @@ export default function MinistranciApp() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="sluzby" className={tc}>
+            <TabsTrigger value="sluzby" className={tc} onClick={() => { setShowSzablonyView(false); }}>
               <Star className="w-4 h-4 sm:mr-2" />
               <span className="hidden sm:inline">Wydarzenia</span><span className="sm:hidden">Wydarzenia</span>
               {sluzby.length > 0 && <span className="ml-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full px-1.5">{sluzby.length}</span>}
@@ -4157,7 +4360,13 @@ export default function MinistranciApp() {
                 </div>
               ) : (
                 <>
-                  {(() => {
+                  {currentUser.typ === 'ministrant' && (
+                    <Button onClick={() => setShowZglosModal(true)} className="w-full h-14 bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 hover:from-emerald-600 hover:via-green-600 hover:to-teal-600 text-white shadow-xl shadow-emerald-500/30 font-extrabold text-lg rounded-xl">
+                      <Plus className="w-5 h-5 mr-2" />
+                      Zgłoś obecność
+                    </Button>
+                  )}
+                  {currentUser.typ === 'ministrant' && (() => {
                     const litGradient: Record<string, { gradient: string; shadow: string; subtitle: string }> = {
                       zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20', subtitle: 'text-emerald-200' },
                       bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100' },
@@ -4167,28 +4376,27 @@ export default function MinistranciApp() {
                     };
                     const litStyle = litGradient[dzisLiturgiczny?.kolor || 'zielony'] || litGradient.zielony;
                     return (
-                  <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${litStyle.gradient} p-4 sm:p-5 shadow-lg ${litStyle.shadow}`}>
-                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                    <div className="relative flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📢</div>
-                        <div>
-                          <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Aktualności</h2>
-                          <p className={`${litStyle.subtitle} text-xs sm:text-sm`}>{dzisLiturgiczny ? `${dzisLiturgiczny.nazwa || dzisLiturgiczny.okres}` : 'Ogłoszenia, dyskusje i ankiety'}</p>
+                      <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${litStyle.gradient} p-4 sm:p-5 shadow-lg ${litStyle.shadow}`}>
+                        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                        <div className="relative flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📢</div>
+                            <div>
+                              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Aktualności</h2>
+                              <p className={`${litStyle.subtitle} text-xs sm:text-sm`}>{dzisLiturgiczny ? `${dzisLiturgiczny.nazwa || dzisLiturgiczny.okres}` : 'Ogłoszenia, dyskusje i ankiety'}</p>
+                            </div>
+                          </div>
+                          <Button size="sm" onClick={() => {
+                            setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
+                            setShowNewWatekModal(true);
+                          }} className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm shadow-none">
+                            <Plus className="w-4 h-4 mr-1" />
+                            Dyskusja
+                          </Button>
                         </div>
                       </div>
-                      {currentUser.typ === 'ministrant' && (
-                        <Button size="sm" onClick={() => {
-                          setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
-                          setShowNewWatekModal(true);
-                        }} className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm shadow-none">
-                          <Plus className="w-4 h-4 mr-1" />
-                          Dyskusja
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                    ); })()}
+                    );
+                  })()}
                   {currentUser.typ === 'ksiadz' && (
                     <div className="flex gap-1.5 sm:gap-2 flex-wrap">
                       <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
@@ -5756,11 +5964,10 @@ export default function MinistranciApp() {
             <div className="space-y-4">
               {!showSzablonyView ? (
                 <>
-                  {/* === Widok wydarzeń === */}
-                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 p-4 sm:p-5 shadow-lg shadow-indigo-500/20">
-                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                    <div className="relative flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                  {currentUser.typ === 'ministrant' && (
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 p-4 sm:p-5 shadow-lg shadow-indigo-500/20">
+                      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                      <div className="relative flex items-center gap-3">
                         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📅</div>
                         <div>
                           <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Wydarzenia</h2>
@@ -5768,7 +5975,7 @@ export default function MinistranciApp() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                   {currentUser.typ === 'ksiadz' && (
                     <div className="flex gap-2 flex-wrap">
                       <Button variant="outline" size="sm" onClick={() => setShowFunkcjeConfigModal(true)}>
@@ -5781,7 +5988,7 @@ export default function MinistranciApp() {
                       </Button>
                       <Button size="sm" onClick={() => {
                         setSelectedSluzba(null);
-                        setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+                        setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
                         setShowSluzbaModal(true);
                       }}>
                         <Plus className="w-4 h-4 mr-2" />
@@ -5827,29 +6034,68 @@ export default function MinistranciApp() {
                             </CardHeader>
                             <CardContent>
                               {/* Widok księdza — pełna lista funkcji */}
-                              {currentUser.typ === 'ksiadz' && (
-                                <div className="space-y-2">
-                                  {sluzba.funkcje
-                                    .filter(f => f.aktywna)
-                                    .map((funkcja) => (
-                                      <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded border">
-                                        <span className="font-medium text-sm shrink-0">{funkcja.typ}:</span>
-                                        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                          <span className="text-sm truncate">
-                                            {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
-                                          </span>
-                                          {funkcja.ministrant_id && (
-                                            funkcja.zaakceptowana ? (
-                                              <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                            ) : (
-                                              <Hourglass className="w-4 h-4 text-amber-600" />
-                                            )
-                                          )}
+                              {currentUser.typ === 'ksiadz' && (() => {
+                                const hours = parseGodziny(sluzba.godzina);
+                                const hasPerHour = hours.length > 1 && sluzba.funkcje.some(f => f.godzina);
+                                if (hasPerHour) {
+                                  return (
+                                    <div className="space-y-3">
+                                      {hours.map(h => {
+                                        const hourFunkcje = sluzba.funkcje.filter(f => f.godzina === h && f.aktywna);
+                                        if (hourFunkcje.length === 0) return null;
+                                        return (
+                                          <div key={h}>
+                                            <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-1">{h}</p>
+                                            <div className="space-y-1">
+                                              {hourFunkcje.map((funkcja) => (
+                                                <div key={funkcja.id} className="flex items-center justify-between gap-2 p-1.5 bg-white dark:bg-gray-800 rounded border text-sm">
+                                                  <span className="font-medium shrink-0">{funkcja.typ}:</span>
+                                                  <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="truncate">
+                                                      {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
+                                                    </span>
+                                                    {funkcja.ministrant_id && (
+                                                      funkcja.zaakceptowana ? (
+                                                        <CheckCircle className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                                                      ) : (
+                                                        <Hourglass className="w-3.5 h-3.5 text-amber-600" />
+                                                      )
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                }
+                                // Single hour or legacy
+                                return (
+                                  <div className="space-y-2">
+                                    {sluzba.funkcje
+                                      .filter(f => f.aktywna)
+                                      .map((funkcja) => (
+                                        <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded border">
+                                          <span className="font-medium text-sm shrink-0">{funkcja.typ}:</span>
+                                          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                                            <span className="text-sm truncate">
+                                              {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
+                                            </span>
+                                            {funkcja.ministrant_id && (
+                                              funkcja.zaakceptowana ? (
+                                                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                              ) : (
+                                                <Hourglass className="w-4 h-4 text-amber-600" />
+                                              )
+                                            )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
-                                </div>
-                              )}
+                                      ))}
+                                  </div>
+                                );
+                              })()}
 
                               {/* Widok ministranta — tylko jego funkcje */}
                               {currentUser.typ === 'ministrant' && (() => {
@@ -5918,7 +6164,7 @@ export default function MinistranciApp() {
                     </div>
                     <Button onClick={() => {
                       setSelectedSzablon(null);
-                      setSzablonForm({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+                      setSzablonForm({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
                       setShowSzablonModal(true);
                     }}>
                       <Plus className="w-4 h-4 mr-2" />
@@ -5937,6 +6183,7 @@ export default function MinistranciApp() {
                       </Card>
                     ) : (
                       szablony.map(szablon => {
+                        const godziny = getSzablonGodziny(szablon);
                         const aktywnaFunkcje = FUNKCJE_TYPES.filter(t => szablon.funkcje[t] !== 'BEZ');
                         return (
                           <Card key={szablon.id} className="border-indigo-200 dark:border-indigo-800">
@@ -5946,7 +6193,7 @@ export default function MinistranciApp() {
                                   <CardTitle className="text-base">{szablon.nazwa}</CardTitle>
                                   <CardDescription>
                                     <Clock className="w-3 h-3 inline mr-1" />
-                                    {szablon.godzina} • {aktywnaFunkcje.length} funkcji
+                                    {godziny.join(', ')} • {aktywnaFunkcje.length} funkcji
                                   </CardDescription>
                                 </div>
                                 <div className="flex gap-1">
@@ -5958,7 +6205,7 @@ export default function MinistranciApp() {
                                       setSelectedSzablon(szablon);
                                       setSzablonForm({
                                         nazwa: szablon.nazwa,
-                                        godzina: szablon.godzina,
+                                        godziny: godziny.length > 0 ? [...godziny] : [''],
                                         funkcje: { ...szablon.funkcje } as Record<FunkcjaType, string>,
                                       });
                                       setShowSzablonModal(true);
@@ -5975,22 +6222,41 @@ export default function MinistranciApp() {
                                   <Badge key={f} variant="outline" className="text-xs">{f}</Badge>
                                 ))}
                               </div>
-                              <Button
-                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-700 dark:hover:bg-indigo-600"
-                                onClick={() => {
-                                  setSelectedSzablon(szablon);
-                                  setPublishDate('');
-                                  const initialFunkcje = {} as Record<FunkcjaType, string>;
-                                  FUNKCJE_TYPES.forEach(typ => {
-                                    initialFunkcje[typ] = szablon.funkcje[typ] === 'BEZ' ? 'BEZ' : 'UNASSIGNED';
-                                  });
-                                  setPublishFunkcje(initialFunkcje);
-                                  setShowPublishSzablonModal(true);
-                                }}
-                              >
-                                <Send className="w-4 h-4 mr-2" />
-                                Publikuj wydarzenie
-                              </Button>
+                              <div className="flex flex-col gap-2">
+                                <Button
+                                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-700 dark:hover:bg-indigo-600"
+                                  onClick={() => {
+                                    setSelectedSzablon(szablon);
+                                    setPublishDate('');
+                                    const initialFunkcje = {} as Record<FunkcjaType, string>;
+                                    FUNKCJE_TYPES.forEach(typ => {
+                                      initialFunkcje[typ] = szablon.funkcje[typ] === 'BEZ' ? 'BEZ' : 'UNASSIGNED';
+                                    });
+                                    setPublishFunkcje(initialFunkcje);
+                                    setShowPublishSzablonModal(true);
+                                  }}
+                                >
+                                  <Send className="w-4 h-4 mr-2" />
+                                  Publikuj wydarzenie
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  className="w-full"
+                                  onClick={() => {
+                                    setSelectedSzablon(szablon);
+                                    setCyclicForm({ startDate: '', okres: 'tydzien', iloscPowtorzen: 4 });
+                                    const initialFunkcje = {} as Record<FunkcjaType, string>;
+                                    FUNKCJE_TYPES.forEach(typ => {
+                                      initialFunkcje[typ] = szablon.funkcje[typ] === 'BEZ' ? 'BEZ' : 'UNASSIGNED';
+                                    });
+                                    setPublishFunkcje(initialFunkcje);
+                                    setShowCyclicPublishModal(true);
+                                  }}
+                                >
+                                  <RefreshCw className="w-4 h-4 mr-2" />
+                                  Publikuj cyklicznie
+                                </Button>
+                              </div>
                             </CardContent>
                           </Card>
                         );
@@ -6006,8 +6272,7 @@ export default function MinistranciApp() {
           {currentUser.typ === 'ksiadz' && (
             <TabsContent value="ministranci">
               <div className="space-y-4">
-                <div className="flex justify-between items-center flex-wrap gap-2">
-                  <h2 className="text-xl sm:text-2xl font-bold">Ministranci</h2>
+                <div className="flex justify-end items-center flex-wrap gap-2">
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setEmailSelectedMinistranci([]); setEmailSearchMinistrant(''); setShowEmailModal(true); }} variant="outline">
                       Wyślij maila
@@ -6051,6 +6316,22 @@ export default function MinistranciApp() {
                                 <p className="font-semibold">{member.imie}</p>
                                 {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
                                 <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
+                                  {(member.role || []).length > 0 && (
+                                    <div className="mt-2">
+                                      <div className="flex flex-wrap gap-1 items-center">
+                                        {(member.role || []).map(r => {
+                                          const posluga = poslugi.find(p => p.slug === r);
+                                          return (
+                                            <Badge key={r} variant="outline" className="flex items-center gap-1">
+                                              {posluga?.obrazek_url ? (
+                                                <img src={posluga.obrazek_url} alt={posluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
+                                              ) : posluga?.emoji} {posluga?.nazwa}
+                                            </Badge>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0">
                                   <Button
@@ -6062,19 +6343,9 @@ export default function MinistranciApp() {
                                       setShowGrupaModal(true);
                                     }}
                                   >
-                                    Zmień grupę
+                                    Przypisz grupę
                                   </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="w-full"
-                                    onClick={() => {
-                                      setSelectedMember(member);
-                                      setShowPoslugiModal(true);
-                                    }}
-                                  >
-                                    Przypisz posługi
-                                  </Button>
+                                  <p className="text-[10px] text-amber-600 dark:text-amber-400">Najpierw przypisz grupę, potem posługi</p>
                                 {(() => {
                                   const memberDyzury = dyzury.filter(d => d.ministrant_id === member.profile_id);
                                   if (memberDyzury.length > 0) {
@@ -6138,10 +6409,11 @@ export default function MinistranciApp() {
                                   <p className="font-semibold">{member.imie}</p>
                                   {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
                                   <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
-                                  {member.role.length > 0 && (
+                                  {(member.role || []).length > 0 && (
                                     <div className="mt-2">
                                       {(() => {
-                                        const firstRole = member.role[0];
+                                        const roles = member.role || [];
+                                        const firstRole = roles[0];
                                         const firstPosluga = poslugi.find(p => p.slug === firstRole);
                                         return (
                                           <div className="flex flex-wrap gap-1 items-center">
@@ -6150,11 +6422,11 @@ export default function MinistranciApp() {
                                                 <img src={firstPosluga.obrazek_url} alt={firstPosluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
                                               ) : firstPosluga?.emoji} {firstPosluga?.nazwa}
                                             </Badge>
-                                            {member.role.length > 1 && (
+                                            {roles.length > 1 && (
                                               <details className="inline">
-                                                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 list-none">+{member.role.length - 1} więcej</summary>
+                                                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 list-none">+{roles.length - 1} więcej</summary>
                                                 <div className="flex flex-wrap gap-1 mt-1">
-                                                  {member.role.slice(1).map(r => {
+                                                  {roles.slice(1).map(r => {
                                                     const posluga = poslugi.find(p => p.slug === r);
                                                     return (
                                                       <Badge key={r} variant="outline" className="flex items-center gap-1">
@@ -6190,6 +6462,10 @@ export default function MinistranciApp() {
                                       variant="outline"
                                       className="w-full"
                                       onClick={() => {
+                                        if (!member.grupa) {
+                                          alert('Najpierw przypisz grupę temu ministrantowi, a potem posługi.');
+                                          return;
+                                        }
                                         setSelectedMember(member);
                                         setShowPoslugiModal(true);
                                       }}
@@ -6245,25 +6521,26 @@ export default function MinistranciApp() {
           {/* Panel Posługi — Gaming */}
           <TabsContent value="poslugi">
             <div className="space-y-4">
-              {/* Header */}
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-pink-500/20">
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                <div className="relative flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+              {currentUser.typ === 'ministrant' && (
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-rose-600 via-pink-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-pink-500/20">
+                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                  <div className="relative flex items-center gap-3">
                     <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">⛪</div>
                     <div>
                       <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Posługi Liturgiczne</h2>
                       <p className="text-pink-200 text-xs sm:text-sm">{poslugi.length} {poslugi.length === 1 ? 'posługa' : poslugi.length < 5 ? 'posługi' : 'posług'} w bazie</p>
                     </div>
                   </div>
-                  {currentUser.typ === 'ksiadz' && (
-                    <Button onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }} className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm shadow-none">
-                      <Plus className="w-4 h-4 mr-1" />
-                      Dodaj
-                    </Button>
-                  )}
                 </div>
-              </div>
+              )}
+              {currentUser.typ === 'ksiadz' && (
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Dodaj posługę
+                  </Button>
+                </div>
+              )}
 
               {currentUser.typ === 'ksiadz' && (
                 <div className="rounded-xl bg-pink-50 dark:bg-pink-900/10 border border-pink-200/50 dark:border-pink-800/30 px-4 py-3">
@@ -6389,17 +6666,18 @@ export default function MinistranciApp() {
           {/* Panel Kalendarz Liturgiczny */}
           <TabsContent value="kalendarz">
             <div className="space-y-4">
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 p-4 sm:p-5 shadow-lg shadow-orange-500/20">
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                <div className="relative flex items-center gap-3">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🗓️</div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Kalendarz Liturgiczny</h2>
-                    <p className="text-orange-200 text-xs sm:text-sm">Okresy, święta i wspomnienia</p>
+              {currentUser.typ === 'ministrant' && (
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 p-4 sm:p-5 shadow-lg shadow-orange-500/20">
+                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                  <div className="relative flex items-center gap-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🗓️</div>
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Kalendarz Liturgiczny</h2>
+                      <p className="text-orange-200 text-xs sm:text-sm">Okresy, święta i wspomnienia</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-
+              )}
               {/* Nawigacja miesięczna */}
               <div className="flex items-center justify-between">
                 <Button
@@ -6546,18 +6824,18 @@ export default function MinistranciApp() {
           {/* Panel Modlitwy — Gaming */}
           <TabsContent value="modlitwy">
             <div className="space-y-4">
-              {/* Header */}
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-purple-500/20">
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                <div className="relative flex items-center gap-3">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🙏</div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Modlitwy</h2>
-                    <p className="text-purple-200 text-xs sm:text-sm">Duchowe przygotowanie do służby</p>
+              {currentUser.typ === 'ministrant' && (
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 p-4 sm:p-5 shadow-lg shadow-purple-500/20">
+                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                  <div className="relative flex items-center gap-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🙏</div>
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Modlitwy</h2>
+                      <p className="text-purple-200 text-xs sm:text-sm">Duchowe przygotowanie do służby</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-
+              )}
               {/* Modlitwa przed Mszą */}
               <Accordion type="single" collapsible>
                 <AccordionItem value="przed" className="border-0">
@@ -6608,18 +6886,18 @@ export default function MinistranciApp() {
           {/* Panel Wskazówki — Gaming */}
           <TabsContent value="wskazowki">
             <div className="space-y-4">
-              {/* Header */}
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 p-4 sm:p-5 shadow-lg shadow-blue-500/20">
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                <div className="relative flex items-center gap-3">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📖</div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Przewodnik Ministranta</h2>
-                    <p className="text-blue-200 text-xs sm:text-sm">Twoja baza wiedzy do służby</p>
+              {currentUser.typ === 'ministrant' && (
+                <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 p-4 sm:p-5 shadow-lg shadow-blue-500/20">
+                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                  <div className="relative flex items-center gap-3">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📖</div>
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Przewodnik Ministranta</h2>
+                      <p className="text-blue-200 text-xs sm:text-sm">Twoja baza wiedzy do służby</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-
+              )}
               {/* Przed Mszą */}
               <div className="rounded-2xl overflow-hidden border border-emerald-200/50 dark:border-emerald-700/50 shadow-md shadow-emerald-500/5">
                 <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-4 py-3 flex items-center gap-2">
@@ -6824,7 +7102,7 @@ export default function MinistranciApp() {
         setShowSluzbaModal(open);
         if (!open) {
           setSelectedSluzba(null);
-          setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+          setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
         }
       }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -6855,41 +7133,104 @@ export default function MinistranciApp() {
                 <Input
                   type="time"
                   value={sluzbaForm.godzina}
-                  onChange={(e) => setSluzbaForm({ ...sluzbaForm, godzina: e.target.value })}
+                  onChange={(e) => {
+                    const newGodzina = e.target.value;
+                    // For single-hour manual creation: auto-update key
+                    const oldHours = parseGodziny(sluzbaForm.godzina);
+                    if (oldHours.length === 1) {
+                      const oldFunkcje = sluzbaForm.funkcjePerHour[oldHours[0]] || {};
+                      setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: { [newGodzina]: oldFunkcje } });
+                    } else {
+                      setSluzbaForm({ ...sluzbaForm, godzina: newGodzina });
+                    }
+                  }}
                 />
               </div>
             </div>
 
-            <div>
-              <Label className="mb-2 block">Przypisz funkcje</Label>
-              <div className="space-y-2">
-                {FUNKCJE_TYPES.map(funkcja => (
-                  <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                    <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
-                    <Select
-                      value={sluzbaForm.funkcje[funkcja] || 'UNASSIGNED'}
-                      onValueChange={(v) => setSluzbaForm({
-                        ...sluzbaForm,
-                        funkcje: { ...sluzbaForm.funkcje, [funkcja]: v }
-                      })}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="-- Nie przypisano --" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
-                        <SelectItem value="BEZ">🚫 Bez {funkcja}</SelectItem>
-                        {members.filter(m => m.typ === 'ministrant').map(m => (
-                          <SelectItem key={m.profile_id} value={m.profile_id}>
-                            {m.imie} {m.nazwisko || ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+            {(() => {
+              const hours = parseGodziny(sluzbaForm.godzina);
+              if (hours.length <= 1) {
+                // Single hour — flat list
+                const h = hours[0] || '';
+                return (
+                  <div>
+                    <Label className="mb-2 block">Przypisz funkcje</Label>
+                    <div className="space-y-2">
+                      {FUNKCJE_TYPES.map(funkcja => (
+                        <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                          <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
+                          <Select
+                            value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'UNASSIGNED'}
+                            onValueChange={(v) => setSluzbaForm({
+                              ...sluzbaForm,
+                              funkcjePerHour: {
+                                ...sluzbaForm.funkcjePerHour,
+                                [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcja]: v }
+                              }
+                            })}
+                          >
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="-- Nie przypisano --" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                              <SelectItem value="BEZ">Wyłączona</SelectItem>
+                              {members.filter(m => m.typ === 'ministrant').map(m => (
+                                <SelectItem key={m.profile_id} value={m.profile_id}>
+                                  {m.imie} {m.nazwisko || ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                );
+              }
+              // Multi-hour — sections per hour
+              return (
+                <div className="space-y-3">
+                  <Label className="block">Przypisz funkcje do każdej godziny</Label>
+                  {hours.map(h => (
+                    <div key={h} className="border rounded-lg p-3 space-y-2 bg-gray-50 dark:bg-gray-900">
+                      <Label className="font-semibold block text-indigo-600 dark:text-indigo-400">{h}</Label>
+                      <div className="space-y-1">
+                        {FUNKCJE_TYPES.map(funkcja => (
+                          <div key={funkcja} className="flex items-center gap-2">
+                            <span className="w-28 text-xs font-medium truncate">{funkcja}:</span>
+                            <Select
+                              value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'UNASSIGNED'}
+                              onValueChange={(v) => setSluzbaForm({
+                                ...sluzbaForm,
+                                funkcjePerHour: {
+                                  ...sluzbaForm.funkcjePerHour,
+                                  [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcja]: v }
+                                }
+                              })}
+                            >
+                              <SelectTrigger className="flex-1 h-8 text-xs">
+                                <SelectValue placeholder="--" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                                <SelectItem value="BEZ">Wyłączona</SelectItem>
+                                {members.filter(m => m.typ === 'ministrant').map(m => (
+                                  <SelectItem key={m.profile_id} value={m.profile_id}>
+                                    {m.imie} {m.nazwisko || ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             <div className="flex gap-2">
               <Button onClick={handleCreateSluzba} className="flex-1">
@@ -7198,14 +7539,14 @@ export default function MinistranciApp() {
         setShowSzablonModal(open);
         if (!open) {
           setSelectedSzablon(null);
-          setSzablonForm({ nazwa: '', godzina: '', funkcje: {} as Record<FunkcjaType, string> });
+          setSzablonForm({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
         }
       }}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedSzablon ? 'Edytuj szablon' : 'Nowy szablon'}</DialogTitle>
             <DialogDescription>
-              Szablon pozwala szybko tworzyć powtarzające się wydarzenia
+              Wybierz funkcje i dodaj godziny — te same funkcje obowiązują na każdą godzinę
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -7218,22 +7559,54 @@ export default function MinistranciApp() {
               />
             </div>
 
-            <div>
-              <Label>Godzina *</Label>
-              <Input
-                type="time"
-                value={szablonForm.godzina}
-                onChange={(e) => setSzablonForm({ ...szablonForm, godzina: e.target.value })}
-              />
+            <div className="border rounded-lg p-3 space-y-3 bg-gray-50 dark:bg-gray-900">
+              <Label className="font-semibold block">Godziny *</Label>
+              <div className="space-y-2">
+                {szablonForm.godziny.map((godz, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      type="time"
+                      value={godz}
+                      className="flex-1"
+                      onChange={(e) => {
+                        const newGodziny = [...szablonForm.godziny];
+                        newGodziny[i] = e.target.value;
+                        setSzablonForm({ ...szablonForm, godziny: newGodziny });
+                      }}
+                    />
+                    {szablonForm.godziny.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-700 h-8 px-2"
+                        onClick={() => {
+                          setSzablonForm({ ...szablonForm, godziny: szablonForm.godziny.filter((_, j) => j !== i) });
+                        }}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full border-dashed"
+                onClick={() => setSzablonForm({ ...szablonForm, godziny: [...szablonForm.godziny, ''] })}
+              >
+                <Plus className="w-3 h-3 mr-1" />
+                Dodaj godzinę
+              </Button>
             </div>
 
             <div>
               <Label className="mb-2 block">Funkcje w szablonie</Label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Wybierz, które funkcje mają być aktywne. Ministrantów przypiszesz przy publikacji.</p>
-              <div className="space-y-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Te same funkcje obowiązują na każdą godzinę. Ministrantów przypiszesz przy publikacji.</p>
+              <div className="space-y-1">
                 {FUNKCJE_TYPES.map(funkcja => (
                   <div key={funkcja} className="flex items-center gap-2">
-                    <span className="w-32 text-sm font-medium">{funkcja}:</span>
+                    <span className="w-32 text-xs font-medium truncate">{funkcja}:</span>
                     <Select
                       value={szablonForm.funkcje[funkcja] || 'UNASSIGNED'}
                       onValueChange={(v) => setSzablonForm({
@@ -7241,11 +7614,11 @@ export default function MinistranciApp() {
                         funkcje: { ...szablonForm.funkcje, [funkcja]: v }
                       })}
                     >
-                      <SelectTrigger className="flex-1">
+                      <SelectTrigger className="flex-1 h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="UNASSIGNED">Aktywna (do przypisania)</SelectItem>
+                        <SelectItem value="UNASSIGNED">Aktywna</SelectItem>
                         <SelectItem value="BEZ">Wyłączona</SelectItem>
                       </SelectContent>
                     </Select>
@@ -7282,7 +7655,7 @@ export default function MinistranciApp() {
           <DialogHeader>
             <DialogTitle>Publikuj wydarzenie</DialogTitle>
             <DialogDescription>
-              Szablon: {selectedSzablon?.nazwa} • {selectedSzablon?.godzina}
+              {selectedSzablon?.nazwa} • {selectedSzablon ? getSzablonGodziny(selectedSzablon).join(', ') : ''}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -7333,6 +7706,106 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal publikacji cyklicznej */}
+      <Dialog open={showCyclicPublishModal} onOpenChange={(open) => {
+        setShowCyclicPublishModal(open);
+        if (!open) {
+          setSelectedSzablon(null);
+          setPublishFunkcje({} as Record<FunkcjaType, string>);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Publikuj cyklicznie</DialogTitle>
+            <DialogDescription>
+              {selectedSzablon?.nazwa} • {selectedSzablon ? getSzablonGodziny(selectedSzablon).join(', ') : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Data pierwszego wydarzenia *</Label>
+              <Input
+                type="date"
+                value={cyclicForm.startDate}
+                onChange={(e) => setCyclicForm({ ...cyclicForm, startDate: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <Label>Powtarzaj co</Label>
+              <Select
+                value={cyclicForm.okres}
+                onValueChange={(v) => setCyclicForm({ ...cyclicForm, okres: v as typeof cyclicForm.okres })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tydzien">Tydzień</SelectItem>
+                  <SelectItem value="2tygodnie">2 tygodnie</SelectItem>
+                  <SelectItem value="miesiac">Miesiąc</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Ile razy powtórzyć</Label>
+              <Input
+                type="number"
+                min={1}
+                max={52}
+                value={cyclicForm.iloscPowtorzen}
+                onChange={(e) => setCyclicForm({ ...cyclicForm, iloscPowtorzen: parseInt(e.target.value) || 1 })}
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {cyclicForm.startDate && (() => {
+                  const start = new Date(cyclicForm.startDate);
+                  const daysToAdd = cyclicForm.okres === 'tydzien' ? 7 : cyclicForm.okres === '2tygodnie' ? 14 : 30;
+                  const end = new Date(start);
+                  end.setDate(end.getDate() + daysToAdd * (cyclicForm.iloscPowtorzen - 1));
+                  return `Od ${start.toLocaleDateString('pl-PL')} do ${end.toLocaleDateString('pl-PL')} (${cyclicForm.iloscPowtorzen} wydarzeń)`;
+                })()}
+              </p>
+            </div>
+
+            <div>
+              <Label className="mb-2 block">Przypisz ministrantów do funkcji</Label>
+              <div className="space-y-2">
+                {FUNKCJE_TYPES.filter(typ => selectedSzablon?.funkcje[typ] !== 'BEZ').map(funkcja => (
+                  <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
+                    <Select
+                      value={publishFunkcje[funkcja] || 'UNASSIGNED'}
+                      onValueChange={(v) => setPublishFunkcje({
+                        ...publishFunkcje,
+                        [funkcja]: v
+                      })}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="-- Nie przypisano --" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                        {members.filter(m => m.typ === 'ministrant').map(m => (
+                          <SelectItem key={m.profile_id} value={m.profile_id}>
+                            {m.imie} {m.nazwisko || ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Button onClick={handleCyclicPublish} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Publikuj {cyclicForm.iloscPowtorzen} wydarzeń
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal posług */}
       <Dialog open={showPoslugiModal} onOpenChange={(open) => {
         setShowPoslugiModal(open);
@@ -7352,12 +7825,13 @@ export default function MinistranciApp() {
                 <div key={posluga.id} className="flex items-start gap-3 p-3 border rounded">
                   <input
                     type="checkbox"
-                    checked={selectedMember?.role.includes(posluga.slug) || false}
+                    checked={(selectedMember?.role || []).includes(posluga.slug)}
                     onChange={(e) => {
                       if (!selectedMember) return;
+                      const currentRole = selectedMember.role || [];
                       const newRole = e.target.checked
-                        ? [...selectedMember.role, posluga.slug]
-                        : selectedMember.role.filter(r => r !== posluga.slug);
+                        ? [...currentRole, posluga.slug]
+                        : currentRole.filter(r => r !== posluga.slug);
                       setSelectedMember({ ...selectedMember, role: newRole });
                     }}
                     className="mt-1"

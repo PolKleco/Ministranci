@@ -67,7 +67,8 @@ create table funkcje (
   typ text not null,
   ministrant_id uuid references profiles(id),
   aktywna boolean default true,
-  zaakceptowana boolean default false
+  zaakceptowana boolean default false,
+  godzina text
 );
 
 -- 6. Harmonogram mszy
@@ -651,6 +652,7 @@ create table szablony_wydarzen (
   nazwa text not null,
   godzina text not null,
   funkcje jsonb default '{}',
+  godziny jsonb default '[]',
   parafia_id uuid references parafie(id) on delete cascade not null,
   utworzono_przez uuid references profiles(id) not null,
   created_at timestamptz default now()

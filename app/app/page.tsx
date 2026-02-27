@@ -4360,41 +4360,41 @@ export default function MinistranciApp() {
                 </div>
               ) : (
                 <>
-                  {currentUser.typ === 'ministrant' && (
-                    <Button onClick={() => setShowZglosModal(true)} className="w-full h-14 bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 hover:from-emerald-600 hover:via-green-600 hover:to-teal-600 text-white shadow-xl shadow-emerald-500/30 font-extrabold text-lg rounded-xl">
-                      <Plus className="w-5 h-5 mr-2" />
-                      Zgłoś obecność
-                    </Button>
-                  )}
                   {currentUser.typ === 'ministrant' && (() => {
-                    const litGradient: Record<string, { gradient: string; shadow: string; subtitle: string }> = {
-                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20', subtitle: 'text-emerald-200' },
-                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100' },
-                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20', subtitle: 'text-red-200' },
-                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20', subtitle: 'text-purple-200' },
-                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20', subtitle: 'text-pink-200' },
+                    const litGradient: Record<string, { gradient: string; shadow: string; subtitle: string; btn: string; btnHover: string }> = {
+                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20', subtitle: 'text-emerald-200', btn: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600' },
+                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100', btn: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400' },
+                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20', subtitle: 'text-red-200', btn: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500' },
+                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20', subtitle: 'text-purple-200', btn: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600' },
+                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20', subtitle: 'text-pink-200', btn: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400' },
                     };
                     const litStyle = litGradient[dzisLiturgiczny?.kolor || 'zielony'] || litGradient.zielony;
                     return (
-                      <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${litStyle.gradient} p-4 sm:p-5 shadow-lg ${litStyle.shadow}`}>
-                        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                        <div className="relative flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📢</div>
-                            <div>
-                              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Aktualności</h2>
-                              <p className={`${litStyle.subtitle} text-xs sm:text-sm`}>{dzisLiturgiczny ? `${dzisLiturgiczny.nazwa || dzisLiturgiczny.okres}` : 'Ogłoszenia, dyskusje i ankiety'}</p>
+                      <>
+                        <Button onClick={() => setShowZglosModal(true)} className={`w-full h-14 bg-gradient-to-r ${litStyle.btn} ${litStyle.btnHover} text-white shadow-xl ${litStyle.shadow} font-extrabold text-lg rounded-xl`}>
+                          <Plus className="w-5 h-5 mr-2" />
+                          Zgłoś obecność
+                        </Button>
+                        <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${litStyle.gradient} p-4 sm:p-5 shadow-lg ${litStyle.shadow}`}>
+                          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+                          <div className="relative flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📢</div>
+                              <div>
+                                <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Aktualności</h2>
+                                <p className={`${litStyle.subtitle} text-xs sm:text-sm`}>{dzisLiturgiczny ? `${dzisLiturgiczny.nazwa || dzisLiturgiczny.okres}` : 'Ogłoszenia, dyskusje i ankiety'}</p>
+                              </div>
                             </div>
+                            <Button size="sm" onClick={() => {
+                              setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
+                              setShowNewWatekModal(true);
+                            }} className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm shadow-none">
+                              <Plus className="w-4 h-4 mr-1" />
+                              Dyskusja
+                            </Button>
                           </div>
-                          <Button size="sm" onClick={() => {
-                            setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
-                            setShowNewWatekModal(true);
-                          }} className="bg-white/20 hover:bg-white/30 text-white border-0 backdrop-blur-sm shadow-none">
-                            <Plus className="w-4 h-4 mr-1" />
-                            Dyskusja
-                          </Button>
                         </div>
-                      </div>
+                      </>
                     );
                   })()}
                   {currentUser.typ === 'ksiadz' && (

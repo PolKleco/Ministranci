@@ -44,6 +44,7 @@ create table parafia_members (
   typ text not null check (typ in ('ksiadz', 'ministrant')),
   grupa text check (grupa in ('mlodsi', 'starsi', 'lektorzy')),
   role text[] default '{}',
+  zatwierdzony boolean default true,
   created_at timestamptz default now(),
   unique(profile_id, parafia_id)
 );
@@ -57,6 +58,7 @@ create table sluzby (
   parafia_id uuid references parafie(id) on delete cascade not null,
   utworzono_przez uuid references profiles(id) not null,
   status text default 'zaplanowana' check (status in ('zaplanowana', 'wykonana')),
+  ekstra_punkty integer default null,
   created_at timestamptz default now()
 );
 
@@ -294,7 +296,7 @@ create table obecnosci (
   parafia_id uuid references parafie(id) on delete cascade not null,
   data date not null,
   godzina text default '',
-  typ text not null check (typ in ('msza', 'nabożeństwo')),
+  typ text not null check (typ in ('msza', 'nabożeństwo', 'wydarzenie')),
   nazwa_nabożeństwa text default '',
   status text default 'oczekuje' check (status in ('oczekuje', 'zatwierdzona', 'odrzucona')),
   punkty_bazowe numeric default 0,

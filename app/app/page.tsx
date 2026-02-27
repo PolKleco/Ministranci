@@ -6,7 +6,7 @@ import { DEKANATY } from '@/lib/dekanaty';
 import {
   Church, Users, Calendar, Book, LogOut, Mail,
   Copy, X, Plus, Check, CheckCircle, Hourglass,
-  UserPlus, Send, Loader2, Bell, Pencil, Trash2,
+  UserPlus, UserCheck, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
   Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, FileText, GripVertical,
@@ -157,6 +157,8 @@ interface Member {
   typ: UserType;
   grupa: GrupaType | null;
   role: string[];
+  zatwierdzony: boolean;
+  created_at?: string;
 }
 
 interface Funkcja {
@@ -178,6 +180,7 @@ interface Sluzba {
   utworzono_przez: string;
   status: 'zaplanowana' | 'wykonana';
   funkcje: Funkcja[];
+  ekstra_punkty?: number | null;
 }
 
 interface SzablonWydarzenia {
@@ -261,7 +264,7 @@ interface Obecnosc {
   parafia_id: string;
   data: string;
   godzina: string;
-  typ: 'msza' | 'nabożeństwo';
+  typ: 'msza' | 'nabożeństwo' | 'wydarzenie';
   nazwa_nabożeństwa: string;
   status: 'oczekuje' | 'zatwierdzona' | 'odrzucona';
   punkty_bazowe: number;
@@ -438,15 +441,35 @@ Błogosław mojej służbie i pomóż mi być wiernym ministrantem.
 Niech to, czego doświadczyłem przy ołtarzu, owocuje w moim życiu.
 Amen.`,
 
-  lacina: `V: Ad Deum qui laetificat iuventutem meam.
-R: Amen.
-
-V: Introibo ad altare Dei.
-R: Ad Deum qui laetificat iuventutem meam.
-
-Confiteor Deo omnipotenti...
-Misereatur nostri omnipotens Deus...
-Indulgentiam, absolutionem...`
+  lacina: [
+    { k: 'In nomine Patris, et Filii, et Spiritus Sancti.', m: 'Amen.', kPl: 'W imię Ojca i Syna, i Ducha Świętego.', mPl: 'Amen.' },
+    { k: 'Gratia Domini nostri Iesu Christi, et caritas Dei, et communicatio Sancti Spiritus sit cum omnibus vobis.', m: 'Et cum spiritu tuo.', kPl: 'Łaska Pana naszego Jezusa Chrystusa, miłość Boga Ojca i dar jedności Ducha Świętego niech będą z wami wszystkimi.', mPl: 'I z duchem twoim.' },
+    { k: 'Dominus vobiscum.', m: 'Et cum spiritu tuo.', kPl: 'Pan z wami.', mPl: 'I z duchem twoim.' },
+    { k: 'Fratres, agnoscamus peccata nostra, ut apti simus ad sacra mysteria celebranda.', m: 'Confiteor Deo omnipotenti et vobis, fratres, quia peccavi nimis cogitatione, verbo, opere et omissione: mea culpa, mea culpa, mea maxima culpa. Ideo precor beatam Mariam semper Virginem, omnes Angelos et Sanctos, et vos, fratres, orare pro me ad Dominum Deum nostrum.', kPl: 'Bracia, uznajmy nasze grzechy, abyśmy mogli z czystym sercem złożyć Najświętszą Ofiarę.', mPl: 'Spowiadam się Bogu wszechmogącemu i wam, bracia i siostry, że bardzo zgrzeszyłem myślą, mową, uczynkiem i zaniedbaniem: moja wina, moja wina, moja bardzo wielka wina. Przeto błagam Najświętszą Maryję, zawsze Dziewicę, wszystkich Aniołów i Świętych, i was, bracia i siostry, o modlitwę za mnie do Pana Boga naszego.' },
+    { k: 'Kyrie, eleison.', m: 'Kyrie, eleison.', kPl: 'Panie, zmiłuj się.', mPl: 'Panie, zmiłuj się.' },
+    { k: 'Christe, eleison.', m: 'Christe, eleison.', kPl: 'Chryste, zmiłuj się.', mPl: 'Chryste, zmiłuj się.' },
+    { k: 'Kyrie, eleison.', m: 'Kyrie, eleison.', kPl: 'Panie, zmiłuj się.', mPl: 'Panie, zmiłuj się.' },
+    { k: 'Gloria in excelsis Deo...', m: 'Et in terra pax hominibus bonae voluntatis. Laudamus te, benedicimus te, adoramus te, glorificamus te, gratias agimus tibi propter magnam gloriam tuam, Domine Deus, Rex caelestis, Deus Pater omnipotens. Domine Fili Unigenite, Iesu Christe, Domine Deus, Agnus Dei, Filius Patris, qui tollis peccata mundi, miserere nobis; qui tollis peccata mundi, suscipe deprecationem nostram. Qui sedes ad dexteram Patris, miserere nobis. Quoniam tu solus Sanctus, tu solus Dominus, tu solus Altissimus, Iesu Christe, cum Sancto Spiritu: in gloria Dei Patris. Amen.', kPl: 'Chwała na wysokości Bogu...', mPl: 'A na ziemi pokój ludziom dobrej woli. Chwalimy Cię, błogosławimy Cię, wielbimy Cię, wysławiamy Cię, dzięki Ci składamy, bo wielka jest chwała Twoja, Panie Boże, Królu nieba, Boże Ojcze wszechmogący. Panie, Synu Jednorodzony, Jezu Chryste, Panie Boże, Baranku Boży, Synu Ojca, który gładzisz grzechy świata, zmiłuj się nad nami; który gładzisz grzechy świata, przyjm błaganie nasze. Który siedzisz po prawicy Ojca, zmiłuj się nad nami. Albowiem tylko Tyś jest święty, tylko Tyś jest Panem, tylko Tyś Najwyższy, Jezu Chryste, z Duchem Świętym: w chwale Boga Ojca. Amen.' },
+    { k: 'Verbum Domini.', m: 'Deo gratias.', kPl: 'Oto słowo Boże.', mPl: 'Bogu niech będą dzięki.' },
+    { k: 'Lectio sancti Evangelii secundum...', m: 'Gloria tibi, Domine.', kPl: 'Słowa Ewangelii według świętego...', mPl: 'Chwała Tobie, Panie.' },
+    { k: 'Evangelium Domini nostri Iesu Christi.', m: 'Laus tibi, Christe.', kPl: 'Oto słowo Pańskie.', mPl: 'Chwała Tobie, Chryste.' },
+    { k: 'Credo in unum Deum...', m: 'Patrem omnipotentem, factorem caeli et terrae, visibilium omnium et invisibilium. Et in unum Dominum Iesum Christum, Filium Dei Unigenitum, et ex Patre natum ante omnia saecula. Deum de Deo, lumen de lumine, Deum verum de Deo vero, genitum, non factum, consubstantialem Patri: per quem omnia facta sunt. Qui propter nos homines et propter nostram salutem descendit de caelis. Et incarnatus est de Spiritu Sancto ex Maria Virgine, et homo factus est. Crucifixus etiam pro nobis sub Pontio Pilato; passus et sepultus est, et resurrexit tertia die, secundum Scripturas, et ascendit in caelum, sedet ad dexteram Patris. Et iterum venturus est cum gloria, iudicare vivos et mortuos, cuius regni non erit finis. Et in Spiritum Sanctum, Dominum et vivificantem: qui ex Patre Filioque procedit. Qui cum Patre et Filio simul adoratur et conglorificatur: qui locutus est per prophetas. Et unam, sanctam, catholicam et apostolicam Ecclesiam. Confiteor unum baptisma in remissionem peccatorum. Et expecto resurrectionem mortuorum, et vitam venturi saeculi. Amen.', kPl: 'Wierzę w jednego Boga...', mPl: 'Ojca wszechmogącego, Stworzyciela nieba i ziemi, wszystkich rzeczy widzialnych i niewidzialnych. I w jednego Pana Jezusa Chrystusa, Syna Bożego Jednorodzonego, który z Ojca jest zrodzony przed wszystkimi wiekami. Bóg z Boga, Światłość ze Światłości, Bóg prawdziwy z Boga prawdziwego, zrodzony a nie stworzony, współistotny Ojcu, a przez Niego wszystko się stało. On to dla nas ludzi i dla naszego zbawienia zstąpił z nieba. I za sprawą Ducha Świętego przyjął ciało z Maryi Dziewicy i stał się człowiekiem. Ukrzyżowany również za nas pod Poncjuszem Piłatem, został umęczony i pogrzebany, i zmartwychwstał dnia trzeciego, jak oznajmia Pismo, i wstąpił do nieba; siedzi po prawicy Ojca. I powtórnie przyjdzie w chwale sądzić żywych i umarłych, a królestwu Jego nie będzie końca. Wierzę w Ducha Świętego, Pana i Ożywiciela, który od Ojca i Syna pochodzi. Który z Ojcem i Synem wspólnie odbiera uwielbienie i chwałę; który mówił przez Proroków. Wierzę w jeden, święty, powszechny i apostolski Kościół. Wyznaję jeden chrzest na odpuszczenie grzechów. I oczekuję wskrzeszenia umarłych i życia wiecznego w przyszłym świecie. Amen.' },
+    { k: 'Orate, fratres...', m: 'Suscipiat Dominus sacrificium de manibus tuis ad laudem et gloriam nominis sui, ad utilitatem quoque nostram totiusque Ecclesiae suae sanctae.', kPl: 'Módlcie się, aby moją i waszą ofiarę przyjął Bóg Ojciec wszechmogący.', mPl: 'Niech Pan przyjmie ofiarę z rąk twoich na cześć i chwałę swojego imienia, a także na pożytek nasz i całego Kościoła świętego.' },
+    { k: 'Per omnia saecula saeculorum.', m: 'Amen.', kPl: 'Na wieki wieków.', mPl: 'Amen.' },
+    { k: 'Dominus vobiscum.', m: 'Et cum spiritu tuo.', kPl: 'Pan z wami.', mPl: 'I z duchem twoim.' },
+    { k: 'Sursum corda.', m: 'Habemus ad Dominum.', kPl: 'W górę serca.', mPl: 'Wznosimy je do Pana.' },
+    { k: 'Gratias agamus Domino Deo nostro.', m: 'Dignum et iustum est.', kPl: 'Dzięki składajmy Panu Bogu naszemu.', mPl: 'Godne to i sprawiedliwe.' },
+    { k: 'Sanctus...', m: 'Sanctus, Sanctus, Sanctus Dominus Deus Sabaoth. Pleni sunt caeli et terra gloria tua. Hosanna in excelsis. Benedictus qui venit in nomine Domini. Hosanna in excelsis.', kPl: 'Święty...', mPl: 'Święty, Święty, Święty, Pan Bóg Zastępów. Pełne są niebiosa i ziemia chwały Twojej. Hosanna na wysokości. Błogosławiony, który idzie w imię Pańskie. Hosanna na wysokości.' },
+    { k: 'Mysterium fidei.', m: 'Mortem tuam annuntiamus, Domine, et tuam resurrectionem confitemur, donec venias.', kPl: 'Oto wielka tajemnica wiary.', mPl: 'Głosimy śmierć Twoją, Panie Jezu, wyznajemy Twoje zmartwychwstanie i oczekujemy Twego przyjścia w chwale.' },
+    { k: 'Per ipsum, et cum ipso... per omnia saecula saeculorum.', m: 'Amen.', kPl: 'Przez Chrystusa, z Chrystusem i w Chrystusie... przez wszystkie wieki wieków.', mPl: 'Amen.' },
+    { k: 'Praeceptis salutaribus moniti... audemus dicere:', m: 'Pater noster, qui es in caelis, sanctificetur nomen tuum. Adveniat regnum tuum. Fiat voluntas tua, sicut in caelo et in terra. Panem nostrum quotidianum da nobis hodie, et dimitte nobis debita nostra sicut et nos dimittimus debitoribus nostris. Et ne nos inducas in tentationem, sed libera nos a malo.', kPl: 'Pouczeni przez Zbawiciela... ośmielamy się mówić:', mPl: 'Ojcze nasz, któryś jest w niebie, święć się imię Twoje; przyjdź królestwo Twoje; bądź wola Twoja jako w niebie, tak i na ziemi. Chleba naszego powszedniego daj nam dzisiaj i odpuść nam nasze winy, jako i my odpuszczamy naszym winowajcom. I nie wódź nas na pokuszenie, ale nas zbaw ode złego.' },
+    { k: 'Libera nos, quaesumus, Domine... Iesu Christi.', m: 'Quia tuum est regnum, et potestas, et gloria in saecula.', kPl: 'Wybaw nas, Panie, od zła wszelkiego... Jezusa Chrystusa.', mPl: 'Bo Twoje jest królestwo i potęga, i chwała na wieki.' },
+    { k: 'Pax Domini sit semper vobiscum.', m: 'Et cum spiritu tuo.', kPl: 'Pokój Pański niech zawsze będzie z wami.', mPl: 'I z duchem twoim.' },
+    { k: 'Agnus Dei...', m: 'Agnus Dei, qui tollis peccata mundi, miserere nobis. Agnus Dei, qui tollis peccata mundi, miserere nobis. Agnus Dei, qui tollis peccata mundi, dona nobis pacem.', kPl: 'Baranku Boży...', mPl: 'Baranku Boży, który gładzisz grzechy świata, zmiłuj się nad nami. Baranku Boży, który gładzisz grzechy świata, zmiłuj się nad nami. Baranku Boży, który gładzisz grzechy świata, obdarz nas pokojem.' },
+    { k: 'Ecce Agnus Dei, ecce qui tollit peccata mundi. Beati qui ad cenam Agni vocati sunt.', m: 'Domine, non sum dignus, ut intres sub tectum meum, sed tantum dic verbo, et sanabitur anima mea.', kPl: 'Oto Baranek Boży, który gładzi grzechy świata. Błogosławieni, którzy zostali wezwani na Jego ucztę.', mPl: 'Panie, nie jestem godzien, abyś przyszedł do mnie, ale powiedz tylko słowo, a będzie uzdrowiona dusza moja.' },
+    { k: 'Corpus Christi.', m: 'Amen.', kPl: 'Ciało Chrystusa.', mPl: 'Amen.' },
+    { k: 'Ite, missa est.', m: 'Deo gratias.', kPl: 'Idźcie, ofiara spełniona.', mPl: 'Bogu niech będą dzięki.' },
+  ]
 };
 
 // ==================== WSKAZÓWKI ====================
@@ -751,6 +774,7 @@ export default function MinistranciApp() {
   const [editDyzury, setEditDyzury] = useState(false);
   const [showGrafikModal, setShowGrafikModal] = useState(false);
   const [showDyzuryAdminModal, setShowDyzuryAdminModal] = useState(false);
+  const [showZatwierdzModal, setShowZatwierdzModal] = useState(false);
   const [searchMinistrant, setSearchMinistrant] = useState('');
   const [showDeleteMemberModal, setShowDeleteMemberModal] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
@@ -758,7 +782,8 @@ export default function MinistranciApp() {
   const [dodajPunktyForm, setDodajPunktyForm] = useState({ punkty: '', powod: '' });
   const [showRankingSettings, setShowRankingSettings] = useState(false);
   const [showResetPunktacjaModal, setShowResetPunktacjaModal] = useState(false);
-  const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo', nazwa_nabożeństwa: '', godzina: '' });
+  const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo' | 'wydarzenie', nazwa_nabożeństwa: '', godzina: '', wydarzenie_id: '' });
+  const [zglosSuccess, setZglosSuccess] = useState(false);
   const [rankingSettingsTab, setRankingSettingsTab] = useState<'punkty' | 'rangi' | 'odznaki' | 'ogolne'>('punkty');
   const [newPunktacjaForm, setNewPunktacjaForm] = useState({ klucz: '', wartosc: 0, opis: '' });
   const [showNewPunktacjaForm, setShowNewPunktacjaForm] = useState(false);
@@ -787,6 +812,13 @@ export default function MinistranciApp() {
   const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
   const [showInfoBanner, setShowInfoBanner] = useState(true);
   const [infoBanerTresc, setInfoBanerTresc] = useState({ tytul: '', opis: '' });
+  const [modlitwyTresc, setModlitwyTresc] = useState({ przed: '', po: '' });
+  const [editingModlitwa, setEditingModlitwa] = useState<'przed' | 'po' | null>(null);
+  const [modlitwaEditText, setModlitwaEditText] = useState('');
+  const [lacinaData, setLacinaData] = useState<typeof MODLITWY.lacina | null>(null);
+  const [editingLacinaIdx, setEditingLacinaIdx] = useState<number | null>(null);
+  const [lacinaEditForm, setLacinaEditForm] = useState({ k: '', m: '', kPl: '', mPl: '' });
+  const [editingLacinaMode, setEditingLacinaMode] = useState(false);
   const [editingParafiaNazwa, setEditingParafiaNazwa] = useState(false);
   const [parafiaNazwaInput, setParafiaNazwaInput] = useState('');
   const [editingAnkietaId, setEditingAnkietaId] = useState<string | null>(null);
@@ -914,6 +946,7 @@ export default function MinistranciApp() {
     godzina: '',
     funkcjePerHour: {} as Record<string, Record<FunkcjaType, string>>
   });
+  const [sluzbaEkstraPunkty, setSluzbaEkstraPunkty] = useState<number | null>(null);
 
   // Kalendarz liturgiczny
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -1204,7 +1237,11 @@ export default function MinistranciApp() {
   }, [punktacjaConfig]);
 
   // Helper: oblicz punkty bazowe na podstawie rangi liturgicznej dnia
-  const obliczPunktyBazowe = useCallback((data: string, typ: 'msza' | 'nabożeństwo', nazwa_nabożeństwa: string): { bazowe: number; mnoznik: number } => {
+  const obliczPunktyBazowe = useCallback((data: string, typ: 'msza' | 'nabożeństwo' | 'wydarzenie', nazwa_nabożeństwa: string, wydarzenieId?: string): { bazowe: number; mnoznik: number } => {
+    if (typ === 'wydarzenie' && wydarzenieId) {
+      const wyd = sluzby.find(s => s.id === wydarzenieId);
+      return { bazowe: wyd?.ekstra_punkty || 0, mnoznik: 1 };
+    }
     if (typ === 'nabożeństwo') {
       const klucz = `nabożeństwo_${nazwa_nabożeństwa}`;
       return { bazowe: getConfigValue(klucz, 8), mnoznik: 1 };
@@ -1239,7 +1276,7 @@ export default function MinistranciApp() {
     }
 
     return { bazowe, mnoznik };
-  }, [getConfigValue]);
+  }, [getConfigValue, sluzby]);
 
   // Helper: pobierz aktualną rangę ministranta
   const getRanga = useCallback((pkt: number): RangaConfig | null => {
@@ -1279,7 +1316,9 @@ export default function MinistranciApp() {
       return;
     }
 
-    const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa);
+    const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa, zglosForm.wydarzenie_id);
+
+    const wydarzenieNazwa = zglosForm.typ === 'wydarzenie' ? (sluzby.find(s => s.id === zglosForm.wydarzenie_id)?.nazwa || '') : '';
 
     const { error } = await supabase.from('obecnosci').insert({
       ministrant_id: currentUser.id,
@@ -1287,7 +1326,7 @@ export default function MinistranciApp() {
       data: zglosForm.data,
       godzina: zglosForm.godzina,
       typ: zglosForm.typ,
-      nazwa_nabożeństwa: zglosForm.typ === 'nabożeństwo' ? zglosForm.nazwa_nabożeństwa : '',
+      nazwa_nabożeństwa: zglosForm.typ === 'nabożeństwo' ? zglosForm.nazwa_nabożeństwa : (zglosForm.typ === 'wydarzenie' ? wydarzenieNazwa : ''),
       punkty_bazowe: bazowe,
       mnoznik,
       punkty_finalne: Math.round(bazowe * mnoznik),
@@ -1297,8 +1336,10 @@ export default function MinistranciApp() {
       alert('Błąd zgłoszenia: ' + error.message);
     } else {
       setShowZglosModal(false);
-      setZglosForm({ data: '', typ: 'msza', nazwa_nabożeństwa: '', godzina: '' });
+      setZglosForm({ data: '', typ: 'msza', nazwa_nabożeństwa: '', godzina: '', wydarzenie_id: '' });
       loadRankingData();
+      setZglosSuccess(true);
+      setTimeout(() => setZglosSuccess(false), 3000);
     }
   };
 
@@ -1882,6 +1923,25 @@ export default function MinistranciApp() {
       });
   }, [currentUser?.typ]);
 
+  // Zaladuj modlitwy z app_config
+  useEffect(() => {
+    if (!currentUser?.parafia_id) return;
+    const pid = currentUser.parafia_id;
+    supabase.from('app_config').select('klucz, wartosc')
+      .in('klucz', [`modlitwa_przed_${pid}`, `modlitwa_po_${pid}`, `modlitwa_lacina_${pid}`])
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const przed = data.find((d: any) => d.klucz === `modlitwa_przed_${pid}`)?.wartosc || '';
+          const po = data.find((d: any) => d.klucz === `modlitwa_po_${pid}`)?.wartosc || '';
+          setModlitwyTresc({ przed, po });
+          const lacinaJson = data.find((d: any) => d.klucz === `modlitwa_lacina_${pid}`)?.wartosc;
+          if (lacinaJson) {
+            try { setLacinaData(JSON.parse(lacinaJson)); } catch { /* ignore */ }
+          }
+        }
+      });
+  }, [currentUser?.parafia_id]);
+
   // Pokaż baner instalacji PWA na iOS Safari
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2134,6 +2194,21 @@ export default function MinistranciApp() {
     setEditingParafiaNazwa(false);
   };
 
+  const saveModlitwa = async (typ: 'przed' | 'po', text: string) => {
+    if (!currentUser?.parafia_id) return;
+    const klucz = `modlitwa_${typ}_${currentUser.parafia_id}`;
+    await supabase.from('app_config').upsert({ klucz, wartosc: text }, { onConflict: 'klucz' });
+    setModlitwyTresc(prev => ({ ...prev, [typ]: text }));
+    setEditingModlitwa(null);
+  };
+
+  const saveLacinaData = async (data: typeof MODLITWY.lacina) => {
+    if (!currentUser?.parafia_id) return;
+    const klucz = `modlitwa_lacina_${currentUser.parafia_id}`;
+    await supabase.from('app_config').upsert({ klucz, wartosc: JSON.stringify(data) }, { onConflict: 'klucz' });
+    setLacinaData(data);
+  };
+
   // ==================== PARAFIA ====================
 
   const generateInviteCode = () => {
@@ -2235,7 +2310,7 @@ export default function MinistranciApp() {
       return;
     }
 
-    // Dodaj jako członka
+    // Dodaj jako członka (ministrant oczekuje na zatwierdzenie)
     const { error: memberError } = await supabase.from('parafia_members').insert({
       profile_id: currentUser.id,
       parafia_id: parafia.id,
@@ -2243,7 +2318,8 @@ export default function MinistranciApp() {
       imie: currentUser.imie,
       nazwisko: currentUser.nazwisko,
       typ: currentUser.typ,
-      role: []
+      role: [],
+      zatwierdzony: currentUser.typ === 'ksiadz'
     });
 
     if (memberError) {
@@ -2265,7 +2341,7 @@ export default function MinistranciApp() {
   const handleAcceptInvite = async (zaproszenie: Zaproszenie) => {
     if (!currentUser) return;
 
-    // Dodaj jako członka parafii
+    // Dodaj jako członka parafii (ministrant oczekuje na zatwierdzenie)
     await supabase.from('parafia_members').insert({
       profile_id: currentUser.id,
       parafia_id: zaproszenie.parafia_id,
@@ -2273,7 +2349,8 @@ export default function MinistranciApp() {
       imie: currentUser.imie,
       nazwisko: currentUser.nazwisko,
       typ: currentUser.typ,
-      role: []
+      role: [],
+      zatwierdzony: currentUser.typ === 'ksiadz'
     });
 
     // Zaktualizuj profil
@@ -2339,7 +2416,8 @@ export default function MinistranciApp() {
         .update({
           nazwa: sluzbaForm.nazwa,
           data: sluzbaForm.data,
-          godzina: sluzbaForm.godzina
+          godzina: sluzbaForm.godzina,
+          ekstra_punkty: sluzbaEkstraPunkty
         })
         .eq('id', selectedSluzba.id);
 
@@ -2360,7 +2438,8 @@ export default function MinistranciApp() {
           godzina: sluzbaForm.godzina,
           parafia_id: currentUser.parafia_id,
           utworzono_przez: currentUser.id,
-          status: 'zaplanowana'
+          status: 'zaplanowana',
+          ekstra_punkty: sluzbaEkstraPunkty
         })
         .select()
         .single();
@@ -2442,6 +2521,7 @@ export default function MinistranciApp() {
       godzina: sluzba.godzina,
       funkcjePerHour,
     });
+    setSluzbaEkstraPunkty(sluzba.ekstra_punkty ?? null);
     setShowSluzbaModal(true);
   };
 
@@ -4143,6 +4223,38 @@ export default function MinistranciApp() {
     );
   }
 
+  // ==================== EKRAN OCZEKIWANIA NA ZATWIERDZENIE ====================
+
+  const currentMember = members.find(m => m.profile_id === currentUser.id);
+  if (currentUser.typ === 'ministrant' && currentMember && currentMember.zatwierdzony === false) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
+        <div className="max-w-md w-full">
+          <Card className="shadow-xl border-amber-200 dark:border-amber-800">
+            <CardContent className="pt-8 pb-8 text-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto text-3xl">
+                ⏳
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Oczekiwanie na zatwierdzenie</h2>
+              <p className="text-gray-600 dark:text-gray-300 text-sm">
+                Twoje konto zostało zgłoszone do parafii <strong>{currentParafia?.nazwa}</strong>. Ksiądz musi zatwierdzić Twoje konto, zanim uzyskasz dostęp do aplikacji.
+              </p>
+              <div className="pt-2 flex gap-2 justify-center">
+                <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                  Odśwież
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleLogout}>
+                  <LogOut className="w-4 h-4 mr-1" />
+                  Wyloguj
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   // ==================== GŁÓWNY INTERFEJS ====================
 
   return (
@@ -4305,10 +4417,15 @@ export default function MinistranciApp() {
               )}
             </TabsTrigger>
             {currentUser.typ === 'ksiadz' && (
-              <TabsTrigger value="ministranci" className={tc}>
+              <TabsTrigger value="ministranci" className={`${tc} relative`}>
                 <Users className="w-4 h-4 sm:mr-2" />
                 Ministranci
-                <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5">{members.filter(m => m.typ === 'ministrant').length}</span>
+                <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5">{members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length}</span>
+                {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1">
+                    {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length}
+                  </span>
+                )}
               </TabsTrigger>
             )}
             <TabsTrigger value="ranking" className={`${tc} relative`}>
@@ -4361,17 +4478,17 @@ export default function MinistranciApp() {
               ) : (
                 <>
                   {currentUser.typ === 'ministrant' && (() => {
-                    const litGradient: Record<string, { gradient: string; shadow: string; subtitle: string; btn: string; btnHover: string }> = {
-                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20', subtitle: 'text-emerald-200', btn: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600' },
-                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100', btn: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400' },
-                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20', subtitle: 'text-red-200', btn: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500' },
-                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20', subtitle: 'text-purple-200', btn: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600' },
-                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20', subtitle: 'text-pink-200', btn: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400' },
+                    const litGradient: Record<string, { gradient: string; shadow: string; subtitle: string }> = {
+                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20', subtitle: 'text-emerald-200' },
+                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100' },
+                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20', subtitle: 'text-red-200' },
+                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20', subtitle: 'text-purple-200' },
+                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20', subtitle: 'text-pink-200' },
                     };
                     const litStyle = litGradient[dzisLiturgiczny?.kolor || 'zielony'] || litGradient.zielony;
                     return (
                       <>
-                        <Button onClick={() => setShowZglosModal(true)} className={`w-full h-14 bg-gradient-to-r ${litStyle.btn} ${litStyle.btnHover} text-white shadow-xl ${litStyle.shadow} font-extrabold text-lg rounded-xl`}>
+                        <Button onClick={() => setShowZglosModal(true)} className="w-full h-14 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-xl shadow-blue-500/25 font-extrabold text-lg rounded-xl">
                           <Plus className="w-5 h-5 mr-2" />
                           Zgłoś obecność
                         </Button>
@@ -4723,7 +4840,7 @@ export default function MinistranciApp() {
                           {currentUser.typ === 'ministrant' && (() => {
                             const juzOdpowiedzial = mojeOdpowiedzi.length > 0;
                             const pokazWyniki = juzOdpowiedzial && !watekAnkieta.wyniki_ukryte;
-                            const totalMinistranci = members.filter(m => m.typ === 'ministrant').length;
+                            const totalMinistranci = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length;
                             const terminMinal = watekAnkieta.termin ? new Date(watekAnkieta.termin) < new Date() : false;
 
                             return (
@@ -4799,9 +4916,9 @@ export default function MinistranciApp() {
 
                           {/* === WIDOK KSIĘDZA — wyniki (gdy nie edytuje) === */}
                           {currentUser.typ === 'ksiadz' && editingAnkietaId !== watekAnkieta.id && (() => {
-                            const totalMinistranci = members.filter(m => m.typ === 'ministrant').length;
+                            const totalMinistranci = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length;
                             const respondenci = new Set(wszystkieOdpowiedzi.map(o => o.respondent_id));
-                            const brakOdpowiedzi = members.filter(m => m.typ === 'ministrant' && !respondenci.has(m.profile_id));
+                            const brakOdpowiedzi = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false && !respondenci.has(m.profile_id));
                             const zmienione = wszystkieOdpowiedzi.filter(o => o.zmieniona);
 
                             return (
@@ -5226,12 +5343,12 @@ export default function MinistranciApp() {
                   <div className="space-y-5">
                     {/* Przyciski akcji */}
                     <div className="flex gap-3">
-                      <Button onClick={() => setShowZglosModal(true)} className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white shadow-lg shadow-emerald-500/20 font-bold">
+                      <Button onClick={() => setShowZglosModal(true)} className="flex-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/25 font-bold">
                         <Plus className="w-4 h-4 mr-2" />
                         Zgłoś obecność
                       </Button>
                       <div className="flex-1 flex flex-col gap-1.5">
-                        <Button variant="outline" onClick={() => setShowDyzuryModal(true)} className="w-full font-bold">
+                        <Button onClick={() => setShowDyzuryModal(true)} className="w-full bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-600 hover:from-teal-600 hover:via-cyan-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/20 font-bold">
                           <Clock className="w-4 h-4 mr-2" />
                           Moje dyżury
                         </Button>
@@ -5365,6 +5482,9 @@ export default function MinistranciApp() {
                                     {isDyzur && <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">DYŻUR</span>}
                                     {o.typ === 'nabożeństwo' && (
                                       <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-[10px] font-medium text-purple-600 dark:text-purple-400">{o.nazwa_nabożeństwa}</span>
+                                    )}
+                                    {o.typ === 'wydarzenie' && (
+                                      <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-[10px] font-medium text-amber-600 dark:text-amber-400">⭐ {o.nazwa_nabożeństwa}</span>
                                     )}
                                   </div>
                                   <span className={`font-extrabold text-sm tabular-nums ${o.status === 'zatwierdzona' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
@@ -5867,7 +5987,7 @@ export default function MinistranciApp() {
                                     {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
                                   </div>
                                   <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-                                    {o.typ === 'nabożeństwo' ? o.nazwa_nabożeństwa : 'Msza'}
+                                    {o.typ === 'wydarzenie' ? `⭐ ${o.nazwa_nabożeństwa}` : o.typ === 'nabożeństwo' ? o.nazwa_nabożeństwa : 'Msza'}
                                     {' • '}{o.punkty_finalne} pkt {o.mnoznik > 1 ? `(${o.punkty_bazowe} × ${o.mnoznik})` : ''}
                                   </div>
                                 </div>
@@ -5965,21 +6085,21 @@ export default function MinistranciApp() {
               {!showSzablonyView ? (
                 <>
                   {currentUser.typ === 'ministrant' && (() => {
-                    const litBtn: Record<string, { btn: string; btnHover: string; shadow: string; gradient: string }> = {
-                      zielony: { btn: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600', shadow: 'shadow-emerald-500/20', gradient: 'from-teal-600 via-emerald-600 to-green-600' },
-                      bialy: { btn: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400', shadow: 'shadow-amber-500/20', gradient: 'from-amber-500 via-yellow-500 to-amber-400' },
-                      czerwony: { btn: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500', shadow: 'shadow-red-500/20', gradient: 'from-red-600 via-rose-600 to-red-500' },
-                      fioletowy: { btn: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600', shadow: 'shadow-purple-500/20', gradient: 'from-purple-700 via-violet-600 to-purple-600' },
-                      rozowy: { btn: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400', shadow: 'shadow-pink-500/20', gradient: 'from-pink-500 via-rose-400 to-pink-400' },
+                    const litG: Record<string, { gradient: string; shadow: string }> = {
+                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
+                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
+                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
+                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
                     };
-                    const lb = litBtn[dzisLiturgiczny?.kolor || 'zielony'] || litBtn.zielony;
+                    const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
                     return (
                       <>
-                        <Button onClick={() => setShowZglosModal(true)} className={`w-full h-14 bg-gradient-to-r ${lb.btn} ${lb.btnHover} text-white shadow-xl ${lb.shadow} font-extrabold text-lg rounded-xl`}>
+                        <Button onClick={() => setShowZglosModal(true)} className="w-full h-14 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-xl shadow-blue-500/25 font-extrabold text-lg rounded-xl">
                           <Plus className="w-5 h-5 mr-2" />
                           Zgłoś obecność
                         </Button>
-                        <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lb.gradient} p-4 sm:p-5 shadow-lg ${lb.shadow}`}>
+                        <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lg.gradient} p-4 sm:p-5 shadow-lg ${lg.shadow}`}>
                           <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
                           <div className="relative flex items-center gap-3">
                             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📅</div>
@@ -6005,6 +6125,7 @@ export default function MinistranciApp() {
                       <Button size="sm" onClick={() => {
                         setSelectedSluzba(null);
                         setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+                        setSluzbaEkstraPunkty(null);
                         setShowSluzbaModal(true);
                       }}>
                         <Plus className="w-4 h-4 mr-2" />
@@ -6288,6 +6409,12 @@ export default function MinistranciApp() {
           {currentUser.typ === 'ksiadz' && (
             <TabsContent value="ministranci">
               <div className="space-y-4">
+                {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length > 0 && (
+                  <Button className="w-full py-5 text-base font-semibold bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:via-orange-600 hover:to-amber-700 text-white shadow-lg shadow-amber-500/20" onClick={() => setShowZatwierdzModal(true)}>
+                    <UserCheck className="w-5 h-5 mr-2" />
+                    Zatwierdź ministrantów ({members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length})
+                  </Button>
+                )}
                 <div className="flex justify-end items-center flex-wrap gap-2">
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setEmailSelectedMinistranci([]); setEmailSearchMinistrant(''); setShowEmailModal(true); }} variant="outline">
@@ -6318,42 +6445,24 @@ export default function MinistranciApp() {
                 </Button>
 
                 {/* Nieprzypisani */}
-                {members.filter(m => !m.grupa && m.typ === 'ministrant').length > 0 && (
+                {members.filter(m => !m.grupa && m.typ === 'ministrant' && m.zatwierdzony !== false).length > 0 && (
                   <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-lg font-bold">⚠️ Nieprzypisani</h3>
+                    <div className="bg-gradient-to-r from-red-500 via-rose-500 to-red-600 rounded-xl px-4 py-2 mb-2 shadow-md shadow-red-500/15">
+                      <h3 className="text-lg font-bold text-white">⚠️ Nieprzypisani</h3>
                     </div>
                     <div className="grid gap-3">
-                      {members.filter(m => !m.grupa && m.typ === 'ministrant' && (!searchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(searchMinistrant.toLowerCase()))).map(member => (
+                      {members.filter(m => !m.grupa && m.typ === 'ministrant' && m.zatwierdzony !== false && (!searchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(searchMinistrant.toLowerCase()))).map(member => (
                         <Card key={member.id} className="border-amber-400 dark:border-amber-600 overflow-hidden">
                           <CardContent className="py-3 sm:py-4">
                             <div className="flex justify-between items-start gap-2">
                               <div className="min-w-0">
                                 <p className="font-semibold">{member.imie}</p>
                                 {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
-                                <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
-                                  {(member.role || []).length > 0 && (
-                                    <div className="mt-2">
-                                      <div className="flex flex-wrap gap-1 items-center">
-                                        {(member.role || []).map(r => {
-                                          const posluga = poslugi.find(p => p.slug === r);
-                                          return (
-                                            <Badge key={r} variant="outline" className="flex items-center gap-1">
-                                              {posluga?.obrazek_url ? (
-                                                <img src={posluga.obrazek_url} alt={posluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
-                                              ) : posluga?.emoji} {posluga?.nazwa}
-                                            </Badge>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0">
                                   <Button
                                     size="sm"
-                                    variant="outline"
-                                    className="w-full"
+                                    className="w-full bg-red-500 hover:bg-red-600 text-white"
                                     onClick={() => {
                                       setSelectedMember(member);
                                       setShowGrupaModal(true);
@@ -6361,39 +6470,6 @@ export default function MinistranciApp() {
                                   >
                                     Przypisz grupę
                                   </Button>
-                                  <p className="text-[10px] text-amber-600 dark:text-amber-400">Najpierw przypisz grupę, potem posługi</p>
-                                {(() => {
-                                  const memberDyzury = dyzury.filter(d => d.ministrant_id === member.profile_id);
-                                  if (memberDyzury.length > 0) {
-                                    const biernik: Record<string, string> = { 'Środa': 'Środę', 'Sobota': 'Sobotę', 'Niedziela': 'Niedzielę' };
-                                    const dniNazwy = memberDyzury.map(d => {
-                                      const idx = d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1;
-                                      const nazwa = DNI_TYGODNIA_FULL[idx];
-                                      return biernik[nazwa] || nazwa;
-                                    });
-                                    const prefix = dniNazwy[0] === 'Wtorek' ? 'we' : 'w';
-                                    return <p className="text-xs text-gray-500 dark:text-gray-400">Dyżur {prefix} {dniNazwy.join(', ')}</p>;
-                                  }
-                                  return (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="w-full"
-                                      onClick={() => {
-                                        setSelectedMember(member);
-                                        setShowDyzuryAdminModal(true);
-                                      }}
-                                    >
-                                      Dodaj dyżur
-                                    </Button>
-                                  );
-                                })()}
-                                <button
-                                  className="text-[10px] text-gray-400 hover:text-red-500 transition-colors mt-1"
-                                  onClick={() => { setMemberToDelete(member); setShowDeleteMemberModal(true); }}
-                                >
-                                  usuń konto
-                                </button>
                               </div>
                             </div>
                           </CardContent>
@@ -6405,7 +6481,7 @@ export default function MinistranciApp() {
 
                 {/* Grupy */}
                 {grupy.map(grupa => {
-                  const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant' && (!searchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(searchMinistrant.toLowerCase())));
+                  const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant' && m.zatwierdzony !== false && (!searchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(searchMinistrant.toLowerCase())));
                   const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
 
                   return groupMembers.length > 0 && (
@@ -6693,21 +6769,21 @@ export default function MinistranciApp() {
           <TabsContent value="kalendarz">
             <div className="space-y-4">
               {currentUser.typ === 'ministrant' && (() => {
-                const litBtn: Record<string, { btn: string; btnHover: string; shadow: string; gradient: string }> = {
-                  zielony: { btn: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600', shadow: 'shadow-emerald-500/20', gradient: 'from-teal-600 via-emerald-600 to-green-600' },
-                  bialy: { btn: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400', shadow: 'shadow-amber-500/20', gradient: 'from-amber-500 via-yellow-500 to-amber-400' },
-                  czerwony: { btn: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500', shadow: 'shadow-red-500/20', gradient: 'from-red-600 via-rose-600 to-red-500' },
-                  fioletowy: { btn: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600', shadow: 'shadow-purple-500/20', gradient: 'from-purple-700 via-violet-600 to-purple-600' },
-                  rozowy: { btn: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400', shadow: 'shadow-pink-500/20', gradient: 'from-pink-500 via-rose-400 to-pink-400' },
+                const litG: Record<string, { gradient: string; shadow: string }> = {
+                  zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
+                  bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
+                  fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
+                  rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
                 };
-                const lb = litBtn[dzisLiturgiczny?.kolor || 'zielony'] || litBtn.zielony;
+                const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
                 return (
                   <>
-                    <Button onClick={() => setShowZglosModal(true)} className={`w-full h-14 bg-gradient-to-r ${lb.btn} ${lb.btnHover} text-white shadow-xl ${lb.shadow} font-extrabold text-lg rounded-xl`}>
+                    <Button onClick={() => setShowZglosModal(true)} className="w-full h-14 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-xl shadow-blue-500/25 font-extrabold text-lg rounded-xl">
                       <Plus className="w-5 h-5 mr-2" />
                       Zgłoś obecność
                     </Button>
-                    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lb.gradient} p-4 sm:p-5 shadow-lg ${lb.shadow}`}>
+                    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lg.gradient} p-4 sm:p-5 shadow-lg ${lg.shadow}`}>
                       <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
                       <div className="relative flex items-center gap-3">
                         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">🗓️</div>
@@ -6898,8 +6974,31 @@ export default function MinistranciApp() {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-amber-200/30 dark:border-amber-700/30 p-4 whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-                      {MODLITWY.przed}
+                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-amber-200/30 dark:border-amber-700/30 p-4">
+                      {editingModlitwa === 'przed' ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={modlitwaEditText}
+                            onChange={(e) => setModlitwaEditText(e.target.value)}
+                            className="w-full min-h-[150px] rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-900 p-3 text-sm leading-relaxed text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => saveModlitwa('przed', modlitwaEditText)}>
+                              <Check className="w-3 h-3 mr-1" />Zapisz
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditingModlitwa(null)}>Anuluj</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          {currentUser.typ === 'ksiadz' && (
+                            <Button size="sm" variant="ghost" className="absolute top-0 right-0 h-7 w-7 p-0 text-amber-400 hover:text-amber-600" onClick={() => { setModlitwaEditText(modlitwyTresc.przed || MODLITWY.przed); setEditingModlitwa('przed'); }}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300 pr-8">{modlitwyTresc.przed || MODLITWY.przed}</p>
+                        </div>
+                      )}
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -6912,8 +7011,31 @@ export default function MinistranciApp() {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-emerald-200/30 dark:border-emerald-700/30 p-4 whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-                      {MODLITWY.po}
+                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-emerald-200/30 dark:border-emerald-700/30 p-4">
+                      {editingModlitwa === 'po' ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={modlitwaEditText}
+                            onChange={(e) => setModlitwaEditText(e.target.value)}
+                            className="w-full min-h-[150px] rounded-lg border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-gray-900 p-3 text-sm leading-relaxed text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-y"
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => saveModlitwa('po', modlitwaEditText)}>
+                              <Check className="w-3 h-3 mr-1" />Zapisz
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditingModlitwa(null)}>Anuluj</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          {currentUser.typ === 'ksiadz' && (
+                            <Button size="sm" variant="ghost" className="absolute top-0 right-0 h-7 w-7 p-0 text-emerald-400 hover:text-emerald-600" onClick={() => { setModlitwaEditText(modlitwyTresc.po || MODLITWY.po); setEditingModlitwa('po'); }}>
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300 pr-8">{modlitwyTresc.po || MODLITWY.po}</p>
+                        </div>
+                      )}
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -6926,8 +7048,88 @@ export default function MinistranciApp() {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-indigo-200/30 dark:border-indigo-700/30 p-4 whitespace-pre-line font-mono text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-                      {MODLITWY.lacina}
+                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-indigo-200/30 dark:border-indigo-700/30 p-4 space-y-3">
+                      {currentUser.typ === 'ksiadz' && (
+                        <div className="flex justify-end">
+                          <Button size="sm" variant={editingLacinaMode ? 'default' : 'outline'} className={editingLacinaMode ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : ''} onClick={() => { setEditingLacinaMode(!editingLacinaMode); setEditingLacinaIdx(null); }}>
+                            <Pencil className="w-3 h-3 mr-1" />{editingLacinaMode ? 'Gotowe' : 'Edytuj'}
+                          </Button>
+                        </div>
+                      )}
+                      {(lacinaData || MODLITWY.lacina).map((item, i) => (
+                        <div key={i} className="rounded-lg border border-indigo-100 dark:border-indigo-800/30 overflow-hidden">
+                          {editingLacinaMode && editingLacinaIdx === i ? (
+                            <div className="p-3 space-y-2 bg-indigo-50/50 dark:bg-indigo-900/10">
+                              <div>
+                                <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase">Kapłan (łacina):</label>
+                                <textarea value={lacinaEditForm.k} onChange={(e) => setLacinaEditForm(prev => ({ ...prev, k: e.target.value }))} className="w-full rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 p-2 text-sm resize-y min-h-[40px]" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase">Kapłan (polski):</label>
+                                <textarea value={lacinaEditForm.kPl} onChange={(e) => setLacinaEditForm(prev => ({ ...prev, kPl: e.target.value }))} className="w-full rounded border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 p-2 text-sm resize-y min-h-[40px]" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Ministrant (łacina):</label>
+                                <textarea value={lacinaEditForm.m} onChange={(e) => setLacinaEditForm(prev => ({ ...prev, m: e.target.value }))} className="w-full rounded border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-gray-900 p-2 text-sm resize-y min-h-[40px]" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Ministrant (polski):</label>
+                                <textarea value={lacinaEditForm.mPl} onChange={(e) => setLacinaEditForm(prev => ({ ...prev, mPl: e.target.value }))} className="w-full rounded border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-gray-900 p-2 text-sm resize-y min-h-[40px]" />
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => {
+                                  const current = [...(lacinaData || MODLITWY.lacina)];
+                                  current[i] = { ...lacinaEditForm };
+                                  saveLacinaData(current);
+                                  setEditingLacinaIdx(null);
+                                }}>
+                                  <Check className="w-3 h-3 mr-1" />Zapisz
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => setEditingLacinaIdx(null)}>Anuluj</Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              {editingLacinaMode && (
+                                <div className="absolute top-1 right-1 flex gap-1 z-10">
+                                  <button className="w-6 h-6 rounded-full bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-800 dark:hover:bg-indigo-700 flex items-center justify-center" onClick={() => { setLacinaEditForm({ k: item.k, m: item.m, kPl: item.kPl, mPl: item.mPl }); setEditingLacinaIdx(i); }}>
+                                    <Pencil className="w-3 h-3 text-indigo-600 dark:text-indigo-300" />
+                                  </button>
+                                  <button className="w-6 h-6 rounded-full bg-red-100 hover:bg-red-200 dark:bg-red-900/40 dark:hover:bg-red-800/60 flex items-center justify-center" onClick={() => {
+                                    if (!confirm('Usunąć tę odpowiedź?')) return;
+                                    const current = [...(lacinaData || MODLITWY.lacina)];
+                                    current.splice(i, 1);
+                                    saveLacinaData(current);
+                                  }}>
+                                    <Trash2 className="w-3 h-3 text-red-500" />
+                                  </button>
+                                </div>
+                              )}
+                              <div className="bg-indigo-50/80 dark:bg-indigo-900/20 px-3 py-2">
+                                <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">Kapłan:</p>
+                                <p className="text-sm text-indigo-900 dark:text-indigo-200 italic">{item.k}</p>
+                                <p className="text-xs text-indigo-400 dark:text-indigo-500 mt-0.5">{item.kPl}</p>
+                              </div>
+                              <div className="bg-white/80 dark:bg-gray-800/80 px-3 py-2">
+                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Ministrant:</p>
+                                <p className="text-sm text-gray-800 dark:text-gray-200 font-semibold">{item.m}</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{item.mPl}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {editingLacinaMode && (
+                        <Button size="sm" variant="outline" className="w-full" onClick={() => {
+                          const current = [...(lacinaData || MODLITWY.lacina)];
+                          current.push({ k: '', m: '', kPl: '', mPl: '' });
+                          saveLacinaData(current);
+                          setLacinaEditForm({ k: '', m: '', kPl: '', mPl: '' });
+                          setEditingLacinaIdx(current.length - 1);
+                        }}>
+                          <Plus className="w-4 h-4 mr-1" />Dodaj odpowiedź
+                        </Button>
+                      )}
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -6996,27 +7198,6 @@ export default function MinistranciApp() {
                 </div>
               </div>
 
-              {/* Funkcje podczas Mszy */}
-              <div className="rounded-2xl overflow-hidden border border-purple-200/50 dark:border-purple-700/50 shadow-md shadow-purple-500/5">
-                <div className="bg-gradient-to-r from-purple-500 to-fuchsia-600 px-4 py-3 flex items-center gap-2">
-                  <span className="text-lg">🎯</span>
-                  <h3 className="font-extrabold text-white text-sm sm:text-base">Funkcje podczas Mszy</h3>
-                </div>
-                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 space-y-3">
-                  {WSKAZOWKI.funkcje.map((f, i) => (
-                    <div key={i} className="flex items-start gap-3 p-2.5 rounded-xl bg-purple-50/50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800/30">
-                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-fuchsia-500 flex items-center justify-center shrink-0 shadow-sm">
-                        <span className="text-white text-xs font-bold">{i + 1}</span>
-                      </div>
-                      <div>
-                        <p className="font-bold text-sm text-purple-800 dark:text-purple-300">{f.nazwa}</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{f.opis}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Ważne zasady */}
               <div className="rounded-2xl overflow-hidden border border-amber-200/50 dark:border-amber-700/50 shadow-md shadow-amber-500/5">
                 <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3 flex items-center gap-2">
@@ -7064,6 +7245,16 @@ export default function MinistranciApp() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Toast sukcesu zgłoszenia */}
+      {zglosSuccess && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="bg-green-500 text-white px-5 py-3 rounded-xl shadow-lg shadow-green-500/30 flex items-center gap-2 font-semibold text-sm">
+            <Check className="w-5 h-5" />
+            Zgłoszenie zostało wysłane!
+          </div>
+        </div>
+      )}
 
       {/* Baner instalacji PWA na iOS */}
       {showIOSInstallBanner && (
@@ -7165,6 +7356,7 @@ export default function MinistranciApp() {
         if (!open) {
           setSelectedSluzba(null);
           setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+          setSluzbaEkstraPunkty(null);
         }
       }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -7210,6 +7402,30 @@ export default function MinistranciApp() {
               </div>
             </div>
 
+            <div className="rounded-lg border border-amber-200 dark:border-amber-700 p-3 bg-amber-50/50 dark:bg-amber-900/10">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sluzbaEkstraPunkty !== null}
+                  onChange={(e) => setSluzbaEkstraPunkty(e.target.checked ? 10 : null)}
+                  className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span className="text-sm font-medium text-amber-800 dark:text-amber-300">Ekstra punkty za obecność</span>
+              </label>
+              {sluzbaEkstraPunkty !== null && (
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={sluzbaEkstraPunkty}
+                    onChange={(e) => setSluzbaEkstraPunkty(Number(e.target.value))}
+                    className="w-24"
+                    min={1}
+                  />
+                  <span className="text-xs text-amber-600 dark:text-amber-400">pkt — wydarzenie pojawi się w &quot;Zgłoś obecność&quot;</span>
+                </div>
+              )}
+            </div>
+
             {(() => {
               const hours = parseGodziny(sluzbaForm.godzina);
               if (hours.length <= 1) {
@@ -7238,7 +7454,7 @@ export default function MinistranciApp() {
                             <SelectContent>
                               <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
                               <SelectItem value="BEZ">Wyłączona</SelectItem>
-                              {members.filter(m => m.typ === 'ministrant').map(m => (
+                              {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
                                 <SelectItem key={m.profile_id} value={m.profile_id}>
                                   {m.imie} {m.nazwisko || ''}
                                 </SelectItem>
@@ -7278,7 +7494,7 @@ export default function MinistranciApp() {
                               <SelectContent>
                                 <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
                                 <SelectItem value="BEZ">Wyłączona</SelectItem>
-                                {members.filter(m => m.typ === 'ministrant').map(m => (
+                                {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
                                   <SelectItem key={m.profile_id} value={m.profile_id}>
                                     {m.imie} {m.nazwisko || ''}
                                   </SelectItem>
@@ -7748,7 +7964,7 @@ export default function MinistranciApp() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
-                        {members.filter(m => m.typ === 'ministrant').map(m => (
+                        {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
                           <SelectItem key={m.profile_id} value={m.profile_id}>
                             {m.imie} {m.nazwisko || ''}
                           </SelectItem>
@@ -7848,7 +8064,7 @@ export default function MinistranciApp() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
-                        {members.filter(m => m.typ === 'ministrant').map(m => (
+                        {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
                           <SelectItem key={m.profile_id} value={m.profile_id}>
                             {m.imie} {m.nazwisko || ''}
                           </SelectItem>
@@ -8003,7 +8219,7 @@ export default function MinistranciApp() {
                   )}
                 </div>
                 <div className="max-h-48 overflow-y-auto space-y-1 border rounded-lg p-2 dark:border-gray-700">
-                  {members.filter(m => m.typ === 'ministrant' && (!emailSearchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(emailSearchMinistrant.toLowerCase()))).map(m => {
+                  {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false && (!emailSearchMinistrant || `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(emailSearchMinistrant.toLowerCase()))).map(m => {
                     const isChecked = emailSelectedMinistranci.includes(m.profile_id);
                     const grupa = m.grupa ? grupy.find(g => g.id === m.grupa) : null;
                     return (
@@ -8030,7 +8246,7 @@ export default function MinistranciApp() {
 
             {/* Do wszystkich */}
             {!emailSelectedGrupy.includes('__pick__') && (() => {
-              const allMinistrants = members.filter(m => m.typ === 'ministrant');
+              const allMinistrants = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false);
               const allSelected = emailSelectedGrupy.includes('__all__');
               return (
                 <button
@@ -8054,7 +8270,7 @@ export default function MinistranciApp() {
 
             {/* Grupy */}
             {!emailSelectedGrupy.includes('__all__') && !emailSelectedGrupy.includes('__pick__') && grupy.map(grupa => {
-              const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant');
+              const groupMembers = members.filter(m => m.grupa === grupa.id && m.typ === 'ministrant' && m.zatwierdzony !== false);
               const kolory = KOLOR_KLASY[grupa.kolor] || KOLOR_KLASY.gray;
               const isSelected = emailSelectedGrupy.includes(grupa.id);
 
@@ -8090,7 +8306,7 @@ export default function MinistranciApp() {
                     .map(m => m.email)
                     .join(',');
                 } else if (emailSelectedGrupy.includes('__all__')) {
-                  emails = members.filter(m => m.typ === 'ministrant').map(m => m.email).join(',');
+                  emails = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => m.email).join(',');
                 } else {
                   emails = members
                     .filter(m => emailSelectedGrupy.includes(m.grupa || '') && m.typ === 'ministrant')
@@ -8625,14 +8841,26 @@ export default function MinistranciApp() {
                   <div>
                     <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Typ</Label>
                     <div className="grid grid-cols-2 gap-2 mt-1">
-                      <button onClick={() => setZglosForm({ ...zglosForm, typ: 'msza' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'msza' ? `${lm.activeBorder} ${lm.activeBg}` : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                      <button onClick={() => setZglosForm({ ...zglosForm, typ: 'msza', wydarzenie_id: '' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'msza' ? `${lm.activeBorder} ${lm.activeBg}` : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
                         <span className="text-2xl">⛪</span>
                         <p className="text-sm font-bold mt-1">Msza</p>
                       </button>
-                      <button onClick={() => setZglosForm({ ...zglosForm, typ: 'nabożeństwo' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'nabożeństwo' ? `${lm.activeBorder} ${lm.activeBg}` : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                      <button onClick={() => setZglosForm({ ...zglosForm, typ: 'nabożeństwo', wydarzenie_id: '' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'nabożeństwo' ? `${lm.activeBorder} ${lm.activeBg}` : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
                         <span className="text-2xl">🙏</span>
                         <p className="text-sm font-bold mt-1">Nabożeństwo</p>
                       </button>
+                      {sluzby.filter(s => s.ekstra_punkty && s.ekstra_punkty > 0 && (() => {
+                        const eventDate = new Date(s.data + 'T00:00:00');
+                        const now = new Date(); now.setHours(0,0,0,0);
+                        const diff = (now.getTime() - eventDate.getTime()) / (1000*60*60*24);
+                        return diff <= 3;
+                      })()).map(wyd => (
+                        <button key={wyd.id} onClick={() => setZglosForm({ ...zglosForm, typ: 'wydarzenie', wydarzenie_id: wyd.id, nazwa_nabożeństwa: '' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'wydarzenie' && zglosForm.wydarzenie_id === wyd.id ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                          <span className="text-2xl">⭐</span>
+                          <p className="text-sm font-bold mt-1 truncate">{wyd.nazwa}</p>
+                          <p className="text-[10px] text-amber-600 dark:text-amber-400">+{wyd.ekstra_punkty} pkt</p>
+                        </button>
+                      ))}
                     </div>
                   </div>
                   {zglosForm.typ === 'nabożeństwo' && (
@@ -8652,7 +8880,7 @@ export default function MinistranciApp() {
                   {zglosForm.data && (
                     <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl border border-amber-200 dark:border-amber-700">
                       {(() => {
-                        const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa);
+                        const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa, zglosForm.wydarzenie_id);
                         const finalne = Math.round(bazowe * mnoznik);
                         return (
                           <div className="flex justify-between items-center">
@@ -8666,7 +8894,7 @@ export default function MinistranciApp() {
                   {zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 font-medium text-center">Wybierz rodzaj nabożeństwa z listy powyżej</p>
                   )}
-                  <Button onClick={zglosObecnosc} className={`w-full h-12 bg-gradient-to-r ${lm.btnGradient} ${lm.btnHover} text-white font-extrabold text-base`} disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa)}>
+                  <Button onClick={zglosObecnosc} className={`w-full h-12 bg-gradient-to-r ${lm.btnGradient} ${lm.btnHover} text-white font-extrabold text-base`} disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa) || (zglosForm.typ === 'wydarzenie' && !zglosForm.wydarzenie_id)}>
                     <Send className="w-5 h-5 mr-2" />
                     Wyślij zgłoszenie
                   </Button>
@@ -8976,6 +9204,76 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal zatwierdzania ministrantów */}
+      <Dialog open={showZatwierdzModal} onOpenChange={setShowZatwierdzModal}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0">
+          <DialogTitle className="sr-only">Zatwierdzanie ministrantów</DialogTitle>
+          <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-4">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <UserCheck className="w-5 h-5" />
+              Zatwierdzanie ministrantów
+            </h3>
+            <p className="text-amber-100 text-sm">Nowi ministranci oczekujący na dostęp</p>
+          </div>
+          <div className="p-4 space-y-3">
+            {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length === 0 ? (
+              <p className="text-center text-gray-500 py-4">Brak oczekujących ministrantów</p>
+            ) : (
+              members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).map(member => (
+                <div key={member.id} className="flex items-center justify-between p-3 border rounded-lg bg-white dark:bg-gray-900">
+                  <div className="min-w-0">
+                    <p className="font-semibold truncate">{member.imie} {member.nazwisko || ''}</p>
+                    <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                    {member.created_at && (
+                      <p className="text-xs text-gray-400">{new Date(member.created_at).toLocaleDateString('pl-PL')}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2 shrink-0 ml-2">
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700 text-white"
+                      onClick={async () => {
+                        await supabase.from('parafia_members').update({ zatwierdzony: true }).eq('id', member.id);
+                        setMembers(prev => {
+                          const updated = prev.map(m => m.id === member.id ? { ...m, zatwierdzony: true } : m);
+                          if (updated.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length === 0) {
+                            setShowZatwierdzModal(false);
+                          }
+                          return updated;
+                        });
+                      }}
+                    >
+                      <Check className="w-4 h-4 mr-1" />
+                      Zatwierdź
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      onClick={async () => {
+                        if (!confirm(`Czy na pewno chcesz odrzucić ${member.imie} ${member.nazwisko || ''}?`)) return;
+                        await supabase.from('parafia_members').delete().eq('id', member.id);
+                        await supabase.from('profiles').update({ parafia_id: null }).eq('id', member.profile_id);
+                        setMembers(prev => {
+                          const updated = prev.filter(m => m.id !== member.id);
+                          if (updated.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length === 0) {
+                            setShowZatwierdzModal(false);
+                          }
+                          return updated;
+                        });
+                      }}
+                    >
+                      <X className="w-4 h-4 mr-1" />
+                      Odrzuć
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal grafik dyżurów */}
       <Dialog open={showGrafikModal} onOpenChange={(open) => { setShowGrafikModal(open); if (!open) setEditDyzury(false); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -9047,7 +9345,7 @@ export default function MinistranciApp() {
                 const dzienIdx = i === 6 ? 0 : i + 1;
                 const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
                 const ministranciNaDyzurze = dyzuryDnia.map(d => d.ministrant_id);
-                const dostepniMinistranci = members.filter(m => m.typ === 'ministrant' && !ministranciNaDyzurze.includes(m.profile_id));
+                const dostepniMinistranci = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false && !ministranciNaDyzurze.includes(m.profile_id));
                 const isWeekend = i >= 5;
                 return (
                   <div key={i} className={`p-3 rounded-xl border ${isWeekend ? 'bg-indigo-50/30 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800/40' : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'}`}>
@@ -9218,6 +9516,12 @@ export default function MinistranciApp() {
                 </div>
               );
             })}
+          </div>
+          <div className="pt-2">
+            <Button className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold" onClick={() => setShowDyzuryAdminModal(false)}>
+              <Check className="w-4 h-4 mr-2" />
+              Zatwierdź
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

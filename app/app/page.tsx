@@ -6033,23 +6033,47 @@ export default function MinistranciApp() {
                       </>
                     );
                   })()}
-                  {currentUser.typ === 'ksiadz' && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button variant="outline" size="sm" className="w-full" onClick={() => setShowFunkcjeConfigModal(true)}>
-                        <Settings className="w-4 h-4 mr-2" />
-                        Funkcje ministrantów
-                      </Button>
-                      <Button size="sm" className="w-full" onClick={() => {
-                        setSelectedSluzba(null);
-                        setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
-                        setSluzbaEkstraPunkty(null);
-                        setShowSluzbaModal(true);
-                      }}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Dodaj wydarzenie
-                        </Button>
-                      </div>
-                    )}
+                  {currentUser.typ === 'ksiadz' && (() => {
+                    const litBtn: Record<string, { gradient: string; hoverGradient: string; shadow: string; headerGradient: string }> = {
+                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', hoverGradient: 'hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', shadow: 'shadow-emerald-500/25', headerGradient: 'from-teal-600/10 via-emerald-600/5 to-transparent' },
+                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', hoverGradient: 'hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', shadow: 'shadow-amber-500/25', headerGradient: 'from-amber-500/10 via-yellow-500/5 to-transparent' },
+                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', hoverGradient: 'hover:from-red-700 hover:via-rose-700 hover:to-red-600', shadow: 'shadow-red-500/25', headerGradient: 'from-red-600/10 via-rose-600/5 to-transparent' },
+                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', hoverGradient: 'hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', shadow: 'shadow-purple-500/25', headerGradient: 'from-purple-700/10 via-violet-600/5 to-transparent' },
+                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', hoverGradient: 'hover:from-pink-600 hover:via-rose-500 hover:to-pink-500', shadow: 'shadow-pink-500/25', headerGradient: 'from-pink-500/10 via-rose-400/5 to-transparent' },
+                    };
+                    const lb = litBtn[dzisLiturgiczny?.kolor || 'zielony'] || litBtn.zielony;
+                    return (
+                      <>
+                        <div className={`relative overflow-hidden rounded-xl bg-gradient-to-r ${lb.gradient} px-3 py-2 shadow ${lb.shadow}`}>
+                          <div className="relative flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">📅</span>
+                              <h2 className="text-sm font-bold text-white">Wydarzenia</h2>
+                              <span className="text-white/50 text-[10px] hidden sm:inline truncate max-w-[180px]">{dzisLiturgiczny?.nazwa || ''}</span>
+                            </div>
+                            <span className="text-lg opacity-15 select-none">✝</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-700 hover:via-sky-700 hover:to-blue-700 text-white shadow shadow-sky-500/20 transition-all duration-200"
+                            onClick={() => setShowFunkcjeConfigModal(true)}>
+                            <Settings className="w-4 h-4 mr-2" />
+                            Funkcje ministrantów
+                          </button>
+                          <button className={`inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r ${lb.gradient} ${lb.hoverGradient} text-white shadow-lg ${lb.shadow} transition-all duration-200`}
+                            onClick={() => {
+                              setSelectedSluzba(null);
+                              setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+                              setSluzbaEkstraPunkty(null);
+                              setShowSluzbaModal(true);
+                            }}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Dodaj wydarzenie
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   <div className="grid gap-4">
                     {sluzby.length === 0 ? (
@@ -6065,19 +6089,36 @@ export default function MinistranciApp() {
                         const needsAcceptance = hasUnacceptedFunkcje(sluzba);
 
                         return (
-                          <Card key={sluzba.id} className={isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : ''}>
-                            <CardHeader>
+                          <Card key={sluzba.id} className={`overflow-hidden ${isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : 'border border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white via-white to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800/50'}`}>
+                            {currentUser.typ === 'ksiadz' && (() => {
+                              const cg: Record<string, string> = { zielony: 'from-teal-500 to-emerald-500', bialy: 'from-amber-400 to-yellow-400', czerwony: 'from-red-500 to-rose-500', fioletowy: 'from-purple-600 to-violet-500', rozowy: 'from-pink-400 to-rose-400' };
+                              return <div className={`h-1.5 bg-gradient-to-r ${cg[dzisLiturgiczny?.kolor || 'zielony'] || cg.zielony}`} />;
+                            })()}
+                            <CardHeader className="pb-2">
                               <div className="flex justify-between items-start">
-                                <div>
-                                  <CardTitle>{sluzba.nazwa}</CardTitle>
-                                  <CardDescription>
-                                    {new Date(sluzba.data).toLocaleDateString('pl-PL')} • {sluzba.godzina}
+                                <div className="space-y-1">
+                                  <CardTitle className="flex items-center gap-2.5 text-lg">
+                                    {(() => {
+                                      const cc: Record<string, string> = { zielony: 'from-teal-600 to-emerald-700 dark:from-teal-400 dark:to-emerald-400', bialy: 'from-amber-600 to-yellow-700 dark:from-amber-400 dark:to-yellow-400', czerwony: 'from-red-600 to-rose-700 dark:from-red-400 dark:to-rose-400', fioletowy: 'from-purple-600 to-violet-700 dark:from-purple-400 dark:to-violet-400', rozowy: 'from-pink-500 to-rose-600 dark:from-pink-400 dark:to-rose-400' };
+                                      return <span className={`bg-gradient-to-r ${cc[dzisLiturgiczny?.kolor || 'zielony'] || cc.zielony} bg-clip-text text-transparent font-extrabold`}>{sluzba.nazwa}</span>;
+                                    })()}
+                                    {sluzba.ekstra_punkty && sluzba.ekstra_punkty > 0 && (
+                                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">+{sluzba.ekstra_punkty} pkt</span>
+                                    )}
+                                  </CardTitle>
+                                  <CardDescription className="flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5" />
+                                    {new Date(sluzba.data).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'long' })}
+                                    <span className="text-gray-300 dark:text-gray-600">|</span>
+                                    <Clock className="w-3.5 h-3.5" />
+                                    {sluzba.godzina}
                                   </CardDescription>
                                 </div>
                                 {currentUser.typ === 'ksiadz' && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
+                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                                     title="Edytuj wydarzenie"
                                     onClick={() => handleEditSluzba(sluzba)}
                                   >
@@ -6098,21 +6139,21 @@ export default function MinistranciApp() {
                                         const hourFunkcje = sluzba.funkcje.filter(f => f.godzina === h && f.aktywna);
                                         if (hourFunkcje.length === 0) return null;
                                         return (
-                                          <div key={h}>
-                                            <p className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-1">{h}</p>
+                                          <div key={h} className="rounded-lg bg-indigo-50/50 dark:bg-indigo-900/10 p-2.5 border border-indigo-100 dark:border-indigo-800/30">
+                                            <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" />{h}</p>
                                             <div className="space-y-1">
                                               {hourFunkcje.map((funkcja) => (
-                                                <div key={funkcja.id} className="flex items-center justify-between gap-2 p-1.5 bg-white dark:bg-gray-800 rounded border text-sm">
-                                                  <span className="font-medium shrink-0">{funkcja.typ}:</span>
+                                                <div key={funkcja.id} className="flex items-center justify-between gap-2 p-1.5 bg-white dark:bg-gray-800 rounded-md border border-gray-100 dark:border-gray-700 text-sm shadow-sm">
+                                                  <span className="font-semibold text-gray-700 dark:text-gray-200 shrink-0">{funkcja.typ}:</span>
                                                   <div className="flex items-center gap-1.5 min-w-0">
-                                                    <span className="truncate">
-                                                      {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
+                                                    <span className={`truncate ${funkcja.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
+                                                      {getMemberName(funkcja.ministrant_id) || 'nie przypisano'}
                                                     </span>
                                                     {funkcja.ministrant_id && (
                                                       funkcja.zaakceptowana ? (
-                                                        <CheckCircle className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                                                        <CheckCircle className="w-3.5 h-3.5 text-green-500 dark:text-green-400 shrink-0" />
                                                       ) : (
-                                                        <Hourglass className="w-3.5 h-3.5 text-amber-600" />
+                                                        <Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                                                       )
                                                     )}
                                                   </div>
@@ -6127,21 +6168,21 @@ export default function MinistranciApp() {
                                 }
                                 // Single hour or legacy
                                 return (
-                                  <div className="space-y-2">
+                                  <div className="space-y-1.5">
                                     {sluzba.funkcje
                                       .filter(f => f.aktywna)
                                       .map((funkcja) => (
-                                        <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800 rounded border">
-                                          <span className="font-medium text-sm shrink-0">{funkcja.typ}:</span>
+                                        <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm">
+                                          <span className="font-semibold text-sm text-gray-700 dark:text-gray-200 shrink-0">{funkcja.typ}:</span>
                                           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                            <span className="text-sm truncate">
-                                              {getMemberName(funkcja.ministrant_id) || '(nie przypisano)'}
+                                            <span className={`text-sm truncate ${funkcja.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
+                                              {getMemberName(funkcja.ministrant_id) || 'nie przypisano'}
                                             </span>
                                             {funkcja.ministrant_id && (
                                               funkcja.zaakceptowana ? (
-                                                <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                                <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 shrink-0" />
                                               ) : (
-                                                <Hourglass className="w-4 h-4 text-amber-600" />
+                                                <Hourglass className="w-4 h-4 text-amber-500 shrink-0" />
                                               )
                                             )}
                                           </div>

@@ -183,19 +183,6 @@ interface Sluzba {
   ekstra_punkty?: number | null;
 }
 
-interface SzablonWydarzenia {
-  id: string;
-  nazwa: string;
-  godzina: string;
-  funkcje: Record<string, string>;
-  godziny: string[];
-  auto_publish?: boolean;
-  auto_publish_dzien?: number;
-  auto_publish_okres?: 'tydzien' | '2tygodnie' | 'miesiac';
-  auto_publish_do?: string;
-  parafia_id: string;
-  utworzono_przez: string;
-}
 
 interface Zaproszenie {
   id: string;
@@ -624,7 +611,7 @@ export default function MinistranciApp() {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [isLogin, setIsLogin] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset-sent'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset-sent' | 'email-sent'>('login');
 
   // Stany formularzy
   const [email, setEmail] = useState('');
@@ -706,6 +693,7 @@ export default function MinistranciApp() {
 
   // Dane
   const [sluzby, setSluzby] = useState<Sluzba[]>([]);
+  const [sluzbyArchiwum, setSluzbyArchiwum] = useState<Sluzba[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [selectedSluzba, setSelectedSluzba] = useState<Sluzba | null>(null);
 
@@ -741,22 +729,6 @@ export default function MinistranciApp() {
   const [emailSelectedMinistranci, setEmailSelectedMinistranci] = useState<string[]>([]);
   const [emailSearchMinistrant, setEmailSearchMinistrant] = useState('');
 
-  // Szablony wydarzeń
-  const [szablony, setSzablony] = useState<SzablonWydarzenia[]>([]);
-  const [showSzablonyView, setShowSzablonyView] = useState(false);
-  const [showSzablonModal, setShowSzablonModal] = useState(false);
-  const [selectedSzablon, setSelectedSzablon] = useState<SzablonWydarzenia | null>(null);
-  const [szablonForm, setSzablonForm] = useState<{
-    nazwa: string;
-    godziny: string[];
-    funkcje: Record<FunkcjaType, string>;
-  }>({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
-  const [showPublishSzablonModal, setShowPublishSzablonModal] = useState(false);
-  const [publishDate, setPublishDate] = useState('');
-  const [publishFunkcje, setPublishFunkcje] = useState<Record<FunkcjaType, string>>({} as Record<FunkcjaType, string>);
-  const [showCyclicPublishModal, setShowCyclicPublishModal] = useState(false);
-  const [cyclicForm, setCyclicForm] = useState({ startDate: '', okres: 'tydzien' as 'tydzien' | '2tygodnie' | 'miesiac', iloscPowtorzen: 4 });
-
   // ==================== STAN — RANKING SŁUŻBY ====================
   const [punktacjaConfig, setPunktacjaConfig] = useState<PunktacjaConfig[]>([]);
   const [rangiConfig, setRangiConfig] = useState<RangaConfig[]>([]);
@@ -778,6 +750,9 @@ export default function MinistranciApp() {
   const [searchMinistrant, setSearchMinistrant] = useState('');
   const [showDeleteMemberModal, setShowDeleteMemberModal] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
+  const [showDeleteParafiaModal, setShowDeleteParafiaModal] = useState<1 | 2 | null>(null);
+  const [deleteParafiaLoading, setDeleteParafiaLoading] = useState(false);
+  const [deleteParafiaConfirmText, setDeleteParafiaConfirmText] = useState('');
   const [showDodajPunktyModal, setShowDodajPunktyModal] = useState(false);
   const [dodajPunktyForm, setDodajPunktyForm] = useState({ punkty: '', powod: '' });
   const [showRankingSettings, setShowRankingSettings] = useState(false);
@@ -1030,18 +1005,28 @@ export default function MinistranciApp() {
       .order('data', { ascending: true });
 
     if (sluzbyData) setSluzby(sluzbyData as Sluzba[]);
-  }, [currentUser?.parafia_id]);
 
-  const loadSzablony = useCallback(async () => {
-    if (!currentUser?.parafia_id) return;
+    // Archiwum — wydarzenia z przeszłości (max 30 dni wstecz)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-    const { data } = await supabase
-      .from('szablony_wydarzen')
-      .select('*')
+    const { data: archiwumData } = await supabase
+      .from('sluzby')
+      .select('*, funkcje(*)')
       .eq('parafia_id', currentUser.parafia_id)
-      .order('created_at', { ascending: false });
+      .lt('data', today)
+      .gte('data', thirtyDaysAgoStr)
+      .order('data', { ascending: false });
 
-    if (data) setSzablony(data as SzablonWydarzenia[]);
+    if (archiwumData) setSluzbyArchiwum(archiwumData as Sluzba[]);
+
+    // Auto-usuwanie wydarzeń starszych niż 30 dni
+    await supabase
+      .from('sluzby')
+      .delete()
+      .eq('parafia_id', currentUser.parafia_id)
+      .lt('data', thirtyDaysAgoStr);
   }, [currentUser?.parafia_id]);
 
   const loadPoslugi = useCallback(async () => {
@@ -1884,9 +1869,8 @@ export default function MinistranciApp() {
       loadParafiaData();
       loadSluzby();
       loadPoslugi();
-      loadSzablony();
     }
-  }, [currentUser?.parafia_id, loadParafiaData, loadSluzby, loadPoslugi, loadSzablony]);
+  }, [currentUser?.parafia_id, loadParafiaData, loadSluzby, loadPoslugi]);
 
   useEffect(() => {
     if (currentUser?.email) {
@@ -2074,11 +2058,12 @@ export default function MinistranciApp() {
         return;
       }
 
-      const { error } = await supabase.auth.signUp({
+      const { data: signUpData, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
-          data: { imie: imie.trim(), nazwisko: nazwisko.trim(), typ: userType, ...(userType === 'ksiadz' && diecezja ? { diecezja, dekanat: dekanat.trim() } : {}) }
+          data: { imie: imie.trim(), nazwisko: nazwisko.trim(), typ: userType, ...(userType === 'ksiadz' && diecezja ? { diecezja, dekanat: dekanat.trim() } : {}) },
+          emailRedirectTo: `${window.location.origin}/app`
         }
       });
 
@@ -2092,6 +2077,22 @@ export default function MinistranciApp() {
         }
         setAuthLoading(false);
         return;
+      }
+
+      if (userType === 'ksiadz') {
+        setAuthMode('email-sent');
+        setAuthLoading(false);
+        return;
+      }
+
+      // Ministrant — auto-confirm + zaloguj
+      if (signUpData.user) {
+        await fetch('/api/auth/auto-confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: signUpData.user.id })
+        });
+        await supabase.auth.signInWithPassword({ email: email.trim(), password });
       }
     }
 
@@ -2184,6 +2185,32 @@ export default function MinistranciApp() {
     setEmail('');
     setPassword('');
     setImie('');
+  };
+
+  const handleDeleteParafia = async () => {
+    if (!currentUser?.parafia_id || !currentParafia) {
+      alert('Brak danych parafii — odśwież stronę i spróbuj ponownie.');
+      return;
+    }
+    setDeleteParafiaLoading(true);
+    try {
+      const res = await fetch('/api/admin/delete-parish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parafiaId: currentUser.parafia_id, requesterId: currentUser.id })
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert('Błąd usuwania: ' + (result.error || 'Nieznany błąd'));
+        setDeleteParafiaLoading(false);
+        return;
+      }
+      await supabase.auth.signOut();
+      window.location.reload();
+    } catch (err) {
+      alert('Błąd połączenia z serwerem: ' + String(err));
+      setDeleteParafiaLoading(false);
+    }
   };
 
   const saveParafiaNazwa = async () => {
@@ -2389,11 +2416,11 @@ export default function MinistranciApp() {
     hours.forEach(h => {
       const hourFunkcje = funkcjePerHour[h] || {};
       FUNKCJE_TYPES.forEach(typ => {
-        const assigned = hourFunkcje[typ];
+        const assigned = hourFunkcje[typ] || 'BEZ';
         records.push({
           sluzba_id: sluzbaId,
           typ,
-          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
+          ministrant_id: (assigned !== 'BEZ' && assigned !== 'UNASSIGNED') ? assigned : null,
           aktywna: assigned !== 'BEZ',
           zaakceptowana: false,
           godzina: h,
@@ -2404,7 +2431,9 @@ export default function MinistranciApp() {
   };
 
   const handleCreateSluzba = async () => {
-    if (!sluzbaForm.nazwa || !sluzbaForm.data || !sluzbaForm.godzina || !currentUser?.parafia_id) {
+    // Oczyść godzinę z pustych slotów
+    const cleanGodzina = sluzbaForm.godzina.split(',').map(g => g.trim()).filter(Boolean).join(', ');
+    if (!sluzbaForm.nazwa || !sluzbaForm.data || !cleanGodzina || !currentUser?.parafia_id) {
       alert('Wypełnij wymagane pola!');
       return;
     }
@@ -2416,7 +2445,7 @@ export default function MinistranciApp() {
         .update({
           nazwa: sluzbaForm.nazwa,
           data: sluzbaForm.data,
-          godzina: sluzbaForm.godzina,
+          godzina: cleanGodzina,
           ekstra_punkty: sluzbaEkstraPunkty
         })
         .eq('id', selectedSluzba.id);
@@ -2426,7 +2455,7 @@ export default function MinistranciApp() {
         .delete()
         .eq('sluzba_id', selectedSluzba.id);
 
-      const funkcjeToInsert = buildFunkcjeRecords(selectedSluzba.id, sluzbaForm.godzina, sluzbaForm.funkcjePerHour);
+      const funkcjeToInsert = buildFunkcjeRecords(selectedSluzba.id, cleanGodzina, sluzbaForm.funkcjePerHour);
       await supabase.from('funkcje').insert(funkcjeToInsert);
     } else {
       // Nowe wydarzenie
@@ -2435,7 +2464,7 @@ export default function MinistranciApp() {
         .insert({
           nazwa: sluzbaForm.nazwa,
           data: sluzbaForm.data,
-          godzina: sluzbaForm.godzina,
+          godzina: cleanGodzina,
           parafia_id: currentUser.parafia_id,
           utworzono_przez: currentUser.id,
           status: 'zaplanowana',
@@ -2449,7 +2478,7 @@ export default function MinistranciApp() {
         return;
       }
 
-      const funkcjeToInsert = buildFunkcjeRecords(newSluzba.id, sluzbaForm.godzina, sluzbaForm.funkcjePerHour);
+      const funkcjeToInsert = buildFunkcjeRecords(newSluzba.id, cleanGodzina, sluzbaForm.funkcjePerHour);
       await supabase.from('funkcje').insert(funkcjeToInsert);
 
       if (currentParafia) {
@@ -2460,7 +2489,7 @@ export default function MinistranciApp() {
             parafia_id: currentParafia.id,
             grupa_docelowa: 'wszyscy',
             title: 'Nowe wydarzenie',
-            body: `${sluzbaForm.nazwa} — ${new Date(sluzbaForm.data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${sluzbaForm.godzina}`,
+            body: `${sluzbaForm.nazwa} — ${new Date(sluzbaForm.data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${cleanGodzina}`,
             url: '/app',
             kategoria: 'wydarzenie',
             autor_id: currentUser.id,
@@ -2560,197 +2589,6 @@ export default function MinistranciApp() {
       .eq('ministrant_id', currentUser.id);
 
     await loadSluzby();
-  };
-
-  // ==================== SZABLONY WYDARZEŃ ====================
-
-  const getSzablonGodziny = (szablon: SzablonWydarzenia): string[] => {
-    if (szablon.godziny && szablon.godziny.length > 0) return szablon.godziny;
-    return [szablon.godzina];
-  };
-
-  const handleCreateSzablon = async () => {
-    const validGodziny = szablonForm.godziny.filter(g => g);
-    if (!szablonForm.nazwa || validGodziny.length === 0 || !currentUser?.parafia_id) {
-      alert('Wypełnij wymagane pola!');
-      return;
-    }
-
-    const funkcjeData: Record<string, string> = {};
-    FUNKCJE_TYPES.forEach(typ => {
-      if (szablonForm.funkcje[typ] === 'BEZ') {
-        funkcjeData[typ] = 'BEZ';
-      }
-    });
-
-    const sortedGodziny = [...validGodziny].sort();
-
-    if (selectedSzablon) {
-      await supabase
-        .from('szablony_wydarzen')
-        .update({
-          nazwa: szablonForm.nazwa,
-          godzina: sortedGodziny[0],
-          funkcje: funkcjeData,
-          godziny: sortedGodziny,
-        })
-        .eq('id', selectedSzablon.id);
-    } else {
-      await supabase
-        .from('szablony_wydarzen')
-        .insert({
-          nazwa: szablonForm.nazwa,
-          godzina: sortedGodziny[0],
-          funkcje: funkcjeData,
-          godziny: sortedGodziny,
-          parafia_id: currentUser.parafia_id,
-          utworzono_przez: currentUser.id,
-        });
-    }
-
-    await loadSzablony();
-    setShowSzablonModal(false);
-    setSelectedSzablon(null);
-    setSzablonForm({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
-  };
-
-  const handleDeleteSzablon = async () => {
-    if (!selectedSzablon) return;
-
-    await supabase
-      .from('szablony_wydarzen')
-      .delete()
-      .eq('id', selectedSzablon.id);
-
-    await loadSzablony();
-    setShowSzablonModal(false);
-    setSelectedSzablon(null);
-  };
-
-  const publishSzablonForDate = async (szablon: SzablonWydarzenia, date: string, funkcjeAssign: Record<FunkcjaType, string>) => {
-    if (!currentUser?.parafia_id) return false;
-    const godziny = getSzablonGodziny(szablon);
-    const godzinyStr = godziny.join(', ');
-
-    const { data: newSluzba, error } = await supabase
-      .from('sluzby')
-      .insert({
-        nazwa: szablon.nazwa,
-        data: date,
-        godzina: godzinyStr,
-        parafia_id: currentUser.parafia_id,
-        utworzono_przez: currentUser.id,
-        status: 'zaplanowana'
-      })
-      .select()
-      .single();
-
-    if (error || !newSluzba) return false;
-
-    const funkcjeToInsert: { sluzba_id: string; typ: string; ministrant_id: string | null; aktywna: boolean; zaakceptowana: boolean; godzina: string }[] = [];
-    godziny.forEach(h => {
-      FUNKCJE_TYPES.forEach(typ => {
-        const szablonVal = szablon.funkcje[typ];
-        const assigned = funkcjeAssign[typ];
-        funkcjeToInsert.push({
-          sluzba_id: newSluzba.id,
-          typ,
-          ministrant_id: (assigned && assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== '') ? assigned : null,
-          aktywna: szablonVal !== 'BEZ' && (!assigned || assigned !== 'BEZ'),
-          zaakceptowana: false,
-          godzina: h,
-        });
-      });
-    });
-
-    await supabase.from('funkcje').insert(funkcjeToInsert);
-    return true;
-  };
-
-  const handlePublishSzablon = async () => {
-    if (!selectedSzablon || !publishDate || !currentUser?.parafia_id) {
-      alert('Wybierz datę!');
-      return;
-    }
-
-    const ok = await publishSzablonForDate(selectedSzablon, publishDate, publishFunkcje);
-    if (!ok) {
-      alert('Błąd publikacji wydarzenia!');
-      return;
-    }
-
-    // Push notification
-    if (currentParafia) {
-      const godzinyStr = getSzablonGodziny(selectedSzablon).join(', ');
-      fetch('/api/push/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parafia_id: currentParafia.id,
-          grupa_docelowa: 'wszyscy',
-          title: 'Nowe wydarzenie',
-          body: `${selectedSzablon.nazwa} — ${new Date(publishDate).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${godzinyStr}`,
-          url: '/app',
-          kategoria: 'wydarzenie',
-          autor_id: currentUser.id,
-        }),
-      }).catch(() => {});
-    }
-
-    await loadSluzby();
-    setShowPublishSzablonModal(false);
-    setSelectedSzablon(null);
-    setPublishDate('');
-    setPublishFunkcje({} as Record<FunkcjaType, string>);
-    setShowSzablonyView(false);
-  };
-
-  const handleCyclicPublish = async () => {
-    if (!selectedSzablon || !cyclicForm.startDate || !currentUser?.parafia_id) {
-      alert('Wypełnij wymagane pola!');
-      return;
-    }
-
-    const dates: string[] = [];
-    const start = new Date(cyclicForm.startDate);
-    const daysToAdd = cyclicForm.okres === 'tydzien' ? 7 : cyclicForm.okres === '2tygodnie' ? 14 : 30;
-
-    for (let i = 0; i < cyclicForm.iloscPowtorzen; i++) {
-      const d = new Date(start);
-      d.setDate(d.getDate() + daysToAdd * i);
-      dates.push(d.toISOString().split('T')[0]);
-    }
-
-    let created = 0;
-    for (const date of dates) {
-      const ok = await publishSzablonForDate(selectedSzablon, date, publishFunkcje);
-      if (ok) created++;
-    }
-
-    // Push notification
-    if (currentParafia && created > 0) {
-      const godzinyStr = getSzablonGodziny(selectedSzablon).join(', ');
-      fetch('/api/push/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parafia_id: currentParafia.id,
-          grupa_docelowa: 'wszyscy',
-          title: 'Nowe wydarzenia',
-          body: `${selectedSzablon.nazwa} — ${created} wydarzeń o ${godzinyStr}`,
-          url: '/app',
-          kategoria: 'wydarzenie',
-          autor_id: currentUser.id,
-        }),
-      }).catch(() => {});
-    }
-
-    await loadSluzby();
-    setShowCyclicPublishModal(false);
-    setSelectedSzablon(null);
-    setPublishFunkcje({} as Record<FunkcjaType, string>);
-    setShowSzablonyView(false);
-    alert(`Utworzono ${created} wydarzeń!`);
   };
 
   // ==================== MINISTRANCI ====================
@@ -3637,12 +3475,14 @@ export default function MinistranciApp() {
               {authMode === 'register' && 'Dołącz do nas'}
               {authMode === 'forgot' && 'Resetowanie hasła'}
               {authMode === 'reset-sent' && 'Sprawdź skrzynkę'}
+              {authMode === 'email-sent' && 'Sprawdź skrzynkę'}
             </h1>
             <p className="text-slate-400 text-sm">
               {authMode === 'login' && 'Zaloguj się do swojego konta'}
               {authMode === 'register' && 'Utwórz nowe konto w aplikacji'}
               {authMode === 'forgot' && 'Wyślemy Ci link do zresetowania hasła'}
               {authMode === 'reset-sent' && 'Link do resetowania hasła został wysłany'}
+              {authMode === 'email-sent' && 'Potwierdź rejestrację konta'}
             </p>
           </div>
 
@@ -3659,8 +3499,29 @@ export default function MinistranciApp() {
               </div>
             )}
 
-            {/* ===== EKRAN: LINK WYSŁANY ===== */}
-            {authMode === 'reset-sent' ? (
+            {/* ===== EKRAN: POTWIERDZENIE EMAIL (KSIĄDZ) ===== */}
+            {authMode === 'email-sent' ? (
+              <div className="text-center py-4">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4" style={{ background: 'rgba(212,168,83,0.1)', border: '1px solid rgba(212,168,83,0.2)' }}>
+                  <Mail className="w-7 h-7 text-amber-400" />
+                </div>
+                <p className="text-slate-200 font-semibold text-lg mb-1">Potwierdź swój adres e-mail</p>
+                <p className="text-amber-400 font-medium mb-4">{email}</p>
+                <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                  Wysłaliśmy wiadomość z linkiem potwierdzającym na Twój adres e-mail.
+                  Kliknij link w wiadomości, aby aktywować konto księdza.
+                </p>
+                <p className="text-slate-500 text-xs leading-relaxed mb-6">
+                  Jeśli nie widzisz wiadomości, sprawdź folder spam.
+                </p>
+                <button
+                  onClick={() => { setAuthMode('login'); setIsLogin(true); setAuthErrors({}); }}
+                  className="text-sm text-amber-400 hover:text-amber-300 transition-colors font-medium"
+                >
+                  Wróć do logowania
+                </button>
+              </div>
+            ) : authMode === 'reset-sent' ? (
               <div className="text-center py-4">
                 <div className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4" style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
                   <Mail className="w-7 h-7 text-green-400" />
@@ -4264,7 +4125,7 @@ export default function MinistranciApp() {
         <div className="max-w-7xl mx-auto px-2.5 py-2 sm:px-4 sm:py-3">
           {/* Linia 1: nazwa parafii + tryb nocny + wyloguj */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); setShowSzablonyView(false); } }}>
+            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); } }}>
               <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <div>
                 {editingParafiaNazwa ? (
@@ -4309,6 +4170,17 @@ export default function MinistranciApp() {
               </div>
             </div>
             <div className="flex items-center gap-1 sm:gap-2">
+              {currentUser.typ === 'ksiadz' && (
+                <button type="button" onClick={() => {
+                  const ok1 = window.confirm('Czy na pewno chcesz usunąć parafię "' + (currentParafia?.nazwa || '') + '"?\n\nZostaną trwale usunięte:\n- Wszystkie dane parafii\n- Konta ministrantów\n- Twoje konto księdza\n\nTej operacji nie można cofnąć!');
+                  if (!ok1) return;
+                  const txt = window.prompt('Wpisz KASUJ aby ostatecznie potwierdzić usunięcie:');
+                  if (!txt || txt.trim().toUpperCase() !== 'KASUJ') { alert('Anulowano — nie wpisano KASUJ.'); return; }
+                  handleDeleteParafia();
+                }} className="h-8 w-8 sm:h-9 sm:w-9 p-0 flex items-center justify-center rounded-md text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Usuń parafię">
+                  <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                </button>
+              )}
               <Button variant="ghost" size="sm" onClick={toggleDarkMode} className="h-8 w-8 sm:h-9 sm:w-9 p-0">
                 {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
               </Button>
@@ -4437,7 +4309,7 @@ export default function MinistranciApp() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="sluzby" className={tc} onClick={() => { setShowSzablonyView(false); }}>
+            <TabsTrigger value="sluzby" className={tc}>
               <Star className="w-4 h-4 sm:mr-2" />
               <span className="hidden sm:inline">Wydarzenia</span><span className="sm:hidden">Wydarzenia</span>
               {sluzby.length > 0 && <span className="ml-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full px-1.5">{sluzby.length}</span>}
@@ -4536,7 +4408,7 @@ export default function MinistranciApp() {
                       </Button>
                       <Button size="sm" variant={showArchiwum ? 'default' : 'ghost'} onClick={() => setShowArchiwum(!showArchiwum)}>
                         <Book className="w-4 h-4 mr-1" />
-                        Archiwum ({archiwalneWatki.length})
+                        Archiwum ({archiwalneWatki.length + sluzbyArchiwum.length})
                       </Button>
                     </div>
                   )}
@@ -4546,7 +4418,7 @@ export default function MinistranciApp() {
               {/* === ARCHIWUM === */}
               {!selectedWatek && showArchiwum && currentUser.typ === 'ksiadz' && (
                 <div className="space-y-3">
-                  {archiwalneWatki.length === 0 && (
+                  {archiwalneWatki.length === 0 && sluzbyArchiwum.length === 0 && (
                     <Card>
                       <CardContent className="py-8 text-center">
                         <Book className="w-10 h-10 text-gray-300 mx-auto mb-2" />
@@ -4593,6 +4465,54 @@ export default function MinistranciApp() {
                                 </Button>
                                 <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                                   onClick={(e) => { e.stopPropagation(); permanentDeleteWatek(watek.id); }}>
+                                  <Trash2 className="w-3 h-3 mr-1" />
+                                  Usuń trwale
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </CardHeader>
+                      </Card>
+                    );
+                  })}
+
+                  {/* === ARCHIWUM WYDARZEŃ === */}
+                  {sluzbyArchiwum.map(sluzba => {
+                    const dniOdWydarzenia = Math.floor((new Date().getTime() - new Date(sluzba.data).getTime()) / (1000 * 60 * 60 * 24));
+                    const dniDoUsuniecia = Math.max(0, 30 - dniOdWydarzenia);
+                    return (
+                      <Card key={`sluzba-${sluzba.id}`} className="opacity-60 hover:opacity-80 border-gray-300 dark:border-gray-600">
+                        <CardHeader className="pb-2 pt-3 px-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500">
+                                  Wydarzenie
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-50 dark:bg-orange-900/20 text-orange-500">
+                                  Usunięcie za {dniDoUsuniecia} dni
+                                </Badge>
+                              </div>
+                              <p className="font-semibold text-sm">{sluzba.nazwa}</p>
+                              <p className="text-[10px] text-gray-400 mt-1">
+                                {new Date(sluzba.data).toLocaleDateString('pl-PL')} • {sluzba.godzina}
+                              </p>
+                              {sluzba.funkcje.filter(f => f.aktywna && f.ministrant_id).length > 0 && (
+                                <div className="mt-1.5 space-y-0.5">
+                                  {sluzba.funkcje.filter(f => f.aktywna && f.ministrant_id).map(f => (
+                                    <p key={f.id} className="text-[10px] text-gray-400">
+                                      {f.typ}: {getMemberName(f.ministrant_id)}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 mt-2">
+                                <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                  onClick={async () => {
+                                    if (!confirm('Czy na pewno chcesz trwale usunąć to wydarzenie?')) return;
+                                    await supabase.from('sluzby').delete().eq('id', sluzba.id);
+                                    await loadSluzby();
+                                  }}>
                                   <Trash2 className="w-3 h-3 mr-1" />
                                   Usuń trwale
                                 </Button>
@@ -5953,19 +5873,13 @@ export default function MinistranciApp() {
                   )}
 
                   {/* Oczekujące zgłoszenia */}
-                  <Card>
+                  <Card className={obecnosci.filter(o => o.status === 'oczekuje').length > 0 ? 'border-yellow-300 dark:border-yellow-600 shadow-md shadow-yellow-100 dark:shadow-yellow-900/20' : ''}>
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-base flex items-center gap-2">
                           <Hourglass className="w-4 h-4 text-yellow-500" />
                           Oczekujące zgłoszenia ({obecnosci.filter(o => o.status === 'oczekuje').length})
                         </CardTitle>
-                        {obecnosci.filter(o => o.status === 'oczekuje').length > 1 && (
-                          <Button size="sm" onClick={zatwierdzWszystkie} className="px-2 sm:px-3">
-                            <Check className="w-4 h-4 sm:mr-1" />
-                            <span className="hidden sm:inline">Zatwierdź wszystkie</span>
-                          </Button>
-                        )}
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -6002,6 +5916,15 @@ export default function MinistranciApp() {
                               </div>
                             );
                           })}
+                          {obecnosci.filter(o => o.status === 'oczekuje').length > 1 && (
+                            <button
+                              onClick={zatwierdzWszystkie}
+                              className="w-full mt-3 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 active:scale-[0.98] text-white font-bold text-base shadow-lg shadow-green-500/25 transition-all flex items-center justify-center gap-2"
+                            >
+                              <CheckCircle className="w-5 h-5" />
+                              Zatwierdź wszystkie ({obecnosci.filter(o => o.status === 'oczekuje').length})
+                            </button>
+                          )}
                         </div>
                       )}
                     </CardContent>
@@ -6082,8 +6005,6 @@ export default function MinistranciApp() {
           {/* Panel Wydarzenia */}
           <TabsContent value="sluzby">
             <div className="space-y-4">
-              {!showSzablonyView ? (
-                <>
                   {currentUser.typ === 'ministrant' && (() => {
                     const litG: Record<string, { gradient: string; shadow: string }> = {
                       zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
@@ -6113,16 +6034,12 @@ export default function MinistranciApp() {
                     );
                   })()}
                   {currentUser.typ === 'ksiadz' && (
-                    <div className="flex gap-2 flex-wrap">
-                      <Button variant="outline" size="sm" onClick={() => setShowFunkcjeConfigModal(true)}>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => setShowFunkcjeConfigModal(true)}>
                         <Settings className="w-4 h-4 mr-2" />
-                        Funkcje
+                        Funkcje ministrantów
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => setShowSzablonyView(true)}>
-                        <FileText className="w-4 h-4 mr-2" />
-                        Szablony
-                      </Button>
-                      <Button size="sm" onClick={() => {
+                      <Button size="sm" className="w-full" onClick={() => {
                         setSelectedSluzba(null);
                         setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
                         setSluzbaEkstraPunkty(null);
@@ -6288,120 +6205,6 @@ export default function MinistranciApp() {
                       })
                     )}
                   </div>
-                </>
-              ) : (
-                <>
-                  {/* === Widok szablonów === */}
-                  <div className="flex justify-between items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => setShowSzablonyView(false)}>
-                        <ArrowLeft className="w-4 h-4" />
-                      </Button>
-                      <h2 className="text-xl sm:text-2xl font-bold">Szablony wydarzeń</h2>
-                    </div>
-                    <Button onClick={() => {
-                      setSelectedSzablon(null);
-                      setSzablonForm({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
-                      setShowSzablonModal(true);
-                    }}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Dodaj szablon
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-4">
-                    {szablony.length === 0 ? (
-                      <Card>
-                        <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
-                          <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                          <p>Brak szablonów</p>
-                          <p className="text-sm mt-1">Utwórz szablon, aby szybko publikować powtarzające się wydarzenia</p>
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      szablony.map(szablon => {
-                        const godziny = getSzablonGodziny(szablon);
-                        const aktywnaFunkcje = FUNKCJE_TYPES.filter(t => szablon.funkcje[t] !== 'BEZ');
-                        return (
-                          <Card key={szablon.id} className="border-indigo-200 dark:border-indigo-800">
-                            <CardHeader className="pb-2">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <CardTitle className="text-base">{szablon.nazwa}</CardTitle>
-                                  <CardDescription>
-                                    <Clock className="w-3 h-3 inline mr-1" />
-                                    {godziny.join(', ')} • {aktywnaFunkcje.length} funkcji
-                                  </CardDescription>
-                                </div>
-                                <div className="flex gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    title="Edytuj szablon"
-                                    onClick={() => {
-                                      setSelectedSzablon(szablon);
-                                      setSzablonForm({
-                                        nazwa: szablon.nazwa,
-                                        godziny: godziny.length > 0 ? [...godziny] : [''],
-                                        funkcje: { ...szablon.funkcje } as Record<FunkcjaType, string>,
-                                      });
-                                      setShowSzablonModal(true);
-                                    }}
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardHeader>
-                            <CardContent className="pt-0">
-                              <div className="flex flex-wrap gap-1 mb-3">
-                                {aktywnaFunkcje.map(f => (
-                                  <Badge key={f} variant="outline" className="text-xs">{f}</Badge>
-                                ))}
-                              </div>
-                              <div className="flex flex-col gap-2">
-                                <Button
-                                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-700 dark:hover:bg-indigo-600"
-                                  onClick={() => {
-                                    setSelectedSzablon(szablon);
-                                    setPublishDate('');
-                                    const initialFunkcje = {} as Record<FunkcjaType, string>;
-                                    FUNKCJE_TYPES.forEach(typ => {
-                                      initialFunkcje[typ] = szablon.funkcje[typ] === 'BEZ' ? 'BEZ' : 'UNASSIGNED';
-                                    });
-                                    setPublishFunkcje(initialFunkcje);
-                                    setShowPublishSzablonModal(true);
-                                  }}
-                                >
-                                  <Send className="w-4 h-4 mr-2" />
-                                  Publikuj wydarzenie
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  className="w-full"
-                                  onClick={() => {
-                                    setSelectedSzablon(szablon);
-                                    setCyclicForm({ startDate: '', okres: 'tydzien', iloscPowtorzen: 4 });
-                                    const initialFunkcje = {} as Record<FunkcjaType, string>;
-                                    FUNKCJE_TYPES.forEach(typ => {
-                                      initialFunkcje[typ] = szablon.funkcje[typ] === 'BEZ' ? 'BEZ' : 'UNASSIGNED';
-                                    });
-                                    setPublishFunkcje(initialFunkcje);
-                                    setShowCyclicPublishModal(true);
-                                  }}
-                                >
-                                  <RefreshCw className="w-4 h-4 mr-2" />
-                                  Publikuj cyklicznie
-                                </Button>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              )}
             </div>
           </TabsContent>
 
@@ -7373,34 +7176,77 @@ export default function MinistranciApp() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Data *</Label>
-                <Input
-                  type="date"
-                  value={sluzbaForm.data}
-                  onChange={(e) => setSluzbaForm({ ...sluzbaForm, data: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Godzina *</Label>
-                <Input
-                  type="time"
-                  value={sluzbaForm.godzina}
-                  onChange={(e) => {
-                    const newGodzina = e.target.value;
-                    // For single-hour manual creation: auto-update key
-                    const oldHours = parseGodziny(sluzbaForm.godzina);
-                    if (oldHours.length === 1) {
-                      const oldFunkcje = sluzbaForm.funkcjePerHour[oldHours[0]] || {};
-                      setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: { [newGodzina]: oldFunkcje } });
-                    } else {
-                      setSluzbaForm({ ...sluzbaForm, godzina: newGodzina });
-                    }
-                  }}
-                />
-              </div>
+            <div>
+              <Label>Data *</Label>
+              <Input
+                type="date"
+                value={sluzbaForm.data}
+                onChange={(e) => setSluzbaForm({ ...sluzbaForm, data: e.target.value })}
+              />
             </div>
+
+            {(() => {
+              // Parse godzina for UI: split by comma, keep empty slots for new inputs
+              const rawParts = sluzbaForm.godzina.split(',').map(g => g.trim());
+              const displayHours = rawParts.length > 0 && rawParts.some(p => p !== '') ? rawParts : [''];
+              return (
+                <div className="border rounded-lg p-3 space-y-3 bg-gray-50 dark:bg-gray-900">
+                  <Label className="font-semibold block">Godzina *</Label>
+                  <div className="space-y-2">
+                    {displayHours.map((godz, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Input
+                          type="time"
+                          value={godz}
+                          className="flex-1"
+                          onChange={(e) => {
+                            const newHours = [...displayHours];
+                            const oldHour = newHours[i];
+                            newHours[i] = e.target.value;
+                            const newGodzina = newHours.join(', ');
+                            const newFunkcjePerHour = { ...sluzbaForm.funkcjePerHour };
+                            if (oldHour && oldHour !== e.target.value) {
+                              newFunkcjePerHour[e.target.value] = newFunkcjePerHour[oldHour] || {};
+                              delete newFunkcjePerHour[oldHour];
+                            }
+                            setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: newFunkcjePerHour });
+                          }}
+                        />
+                        {displayHours.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 h-8 px-2"
+                            onClick={() => {
+                              const newHours = displayHours.filter((_, j) => j !== i);
+                              const newGodzina = newHours.filter(Boolean).join(', ');
+                              const newFunkcjePerHour = { ...sluzbaForm.funkcjePerHour };
+                              if (godz) delete newFunkcjePerHour[godz];
+                              setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: newFunkcjePerHour });
+                            }}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-dashed"
+                    onClick={() => {
+                      const current = sluzbaForm.godzina.trim();
+                      const newGodzina = current ? current + ', ' : '';
+                      setSluzbaForm({ ...sluzbaForm, godzina: newGodzina });
+                    }}
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Dodaj kolejną godzinę
+                  </Button>
+                </div>
+              );
+            })()}
 
             <div className="rounded-lg border border-amber-200 dark:border-amber-700 p-3 bg-amber-50/50 dark:bg-amber-900/10">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -7439,7 +7285,7 @@ export default function MinistranciApp() {
                         <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                           <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
                           <Select
-                            value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'UNASSIGNED'}
+                            value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'BEZ'}
                             onValueChange={(v) => setSluzbaForm({
                               ...sluzbaForm,
                               funkcjePerHour: {
@@ -7449,11 +7295,11 @@ export default function MinistranciApp() {
                             })}
                           >
                             <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="-- Nie przypisano --" />
+                              <SelectValue placeholder="Wyłączona" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
                               <SelectItem value="BEZ">Wyłączona</SelectItem>
+                              <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
                               {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
                                 <SelectItem key={m.profile_id} value={m.profile_id}>
                                   {m.imie} {m.nazwisko || ''}
@@ -7479,7 +7325,7 @@ export default function MinistranciApp() {
                           <div key={funkcja} className="flex items-center gap-2">
                             <span className="w-28 text-xs font-medium truncate">{funkcja}:</span>
                             <Select
-                              value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'UNASSIGNED'}
+                              value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'BEZ'}
                               onValueChange={(v) => setSluzbaForm({
                                 ...sluzbaForm,
                                 funkcjePerHour: {
@@ -7492,8 +7338,8 @@ export default function MinistranciApp() {
                                 <SelectValue placeholder="--" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
                                 <SelectItem value="BEZ">Wyłączona</SelectItem>
+                                <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
                                 {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
                                   <SelectItem key={m.profile_id} value={m.profile_id}>
                                     {m.imie} {m.nazwisko || ''}
@@ -7809,278 +7655,6 @@ export default function MinistranciApp() {
               </Button>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal tworzenia/edycji szablonu */}
-      <Dialog open={showSzablonModal} onOpenChange={(open) => {
-        setShowSzablonModal(open);
-        if (!open) {
-          setSelectedSzablon(null);
-          setSzablonForm({ nazwa: '', godziny: [''], funkcje: {} as Record<FunkcjaType, string> });
-        }
-      }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selectedSzablon ? 'Edytuj szablon' : 'Nowy szablon'}</DialogTitle>
-            <DialogDescription>
-              Wybierz funkcje i dodaj godziny — te same funkcje obowiązują na każdą godzinę
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Nazwa szablonu *</Label>
-              <Input
-                value={szablonForm.nazwa}
-                onChange={(e) => setSzablonForm({ ...szablonForm, nazwa: e.target.value })}
-                placeholder="np. Msza Święta niedzielna"
-              />
-            </div>
-
-            <div className="border rounded-lg p-3 space-y-3 bg-gray-50 dark:bg-gray-900">
-              <Label className="font-semibold block">Godziny *</Label>
-              <div className="space-y-2">
-                {szablonForm.godziny.map((godz, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Input
-                      type="time"
-                      value={godz}
-                      className="flex-1"
-                      onChange={(e) => {
-                        const newGodziny = [...szablonForm.godziny];
-                        newGodziny[i] = e.target.value;
-                        setSzablonForm({ ...szablonForm, godziny: newGodziny });
-                      }}
-                    />
-                    {szablonForm.godziny.length > 1 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:text-red-700 h-8 px-2"
-                        onClick={() => {
-                          setSzablonForm({ ...szablonForm, godziny: szablonForm.godziny.filter((_, j) => j !== i) });
-                        }}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full border-dashed"
-                onClick={() => setSzablonForm({ ...szablonForm, godziny: [...szablonForm.godziny, ''] })}
-              >
-                <Plus className="w-3 h-3 mr-1" />
-                Dodaj godzinę
-              </Button>
-            </div>
-
-            <div>
-              <Label className="mb-2 block">Funkcje w szablonie</Label>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Te same funkcje obowiązują na każdą godzinę. Ministrantów przypiszesz przy publikacji.</p>
-              <div className="space-y-1">
-                {FUNKCJE_TYPES.map(funkcja => (
-                  <div key={funkcja} className="flex items-center gap-2">
-                    <span className="w-32 text-xs font-medium truncate">{funkcja}:</span>
-                    <Select
-                      value={szablonForm.funkcje[funkcja] || 'UNASSIGNED'}
-                      onValueChange={(v) => setSzablonForm({
-                        ...szablonForm,
-                        funkcje: { ...szablonForm.funkcje, [funkcja]: v }
-                      })}
-                    >
-                      <SelectTrigger className="flex-1 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UNASSIGNED">Aktywna</SelectItem>
-                        <SelectItem value="BEZ">Wyłączona</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={handleCreateSzablon} className="flex-1">
-                {selectedSzablon ? 'Zapisz zmiany' : 'Utwórz szablon'}
-              </Button>
-              {selectedSzablon && (
-                <Button variant="destructive" onClick={handleDeleteSzablon}>
-                  <Trash2 className="w-4 h-4 mr-1" />
-                  Usuń
-                </Button>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal publikacji szablonu */}
-      <Dialog open={showPublishSzablonModal} onOpenChange={(open) => {
-        setShowPublishSzablonModal(open);
-        if (!open) {
-          setSelectedSzablon(null);
-          setPublishDate('');
-          setPublishFunkcje({} as Record<FunkcjaType, string>);
-        }
-      }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Publikuj wydarzenie</DialogTitle>
-            <DialogDescription>
-              {selectedSzablon?.nazwa} • {selectedSzablon ? getSzablonGodziny(selectedSzablon).join(', ') : ''}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Data wydarzenia *</Label>
-              <Input
-                type="date"
-                value={publishDate}
-                onChange={(e) => setPublishDate(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label className="mb-2 block">Przypisz ministrantów do funkcji</Label>
-              <div className="space-y-2">
-                {FUNKCJE_TYPES.filter(typ => selectedSzablon?.funkcje[typ] !== 'BEZ').map(funkcja => (
-                  <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                    <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
-                    <Select
-                      value={publishFunkcje[funkcja] || 'UNASSIGNED'}
-                      onValueChange={(v) => setPublishFunkcje({
-                        ...publishFunkcje,
-                        [funkcja]: v
-                      })}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="-- Nie przypisano --" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
-                        {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
-                          <SelectItem key={m.profile_id} value={m.profile_id}>
-                            {m.imie} {m.nazwisko || ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <Button onClick={handlePublishSzablon} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white">
-              <Send className="w-4 h-4 mr-2" />
-              Publikuj wydarzenie
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal publikacji cyklicznej */}
-      <Dialog open={showCyclicPublishModal} onOpenChange={(open) => {
-        setShowCyclicPublishModal(open);
-        if (!open) {
-          setSelectedSzablon(null);
-          setPublishFunkcje({} as Record<FunkcjaType, string>);
-        }
-      }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Publikuj cyklicznie</DialogTitle>
-            <DialogDescription>
-              {selectedSzablon?.nazwa} • {selectedSzablon ? getSzablonGodziny(selectedSzablon).join(', ') : ''}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Data pierwszego wydarzenia *</Label>
-              <Input
-                type="date"
-                value={cyclicForm.startDate}
-                onChange={(e) => setCyclicForm({ ...cyclicForm, startDate: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <Label>Powtarzaj co</Label>
-              <Select
-                value={cyclicForm.okres}
-                onValueChange={(v) => setCyclicForm({ ...cyclicForm, okres: v as typeof cyclicForm.okres })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="tydzien">Tydzień</SelectItem>
-                  <SelectItem value="2tygodnie">2 tygodnie</SelectItem>
-                  <SelectItem value="miesiac">Miesiąc</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Ile razy powtórzyć</Label>
-              <Input
-                type="number"
-                min={1}
-                max={52}
-                value={cyclicForm.iloscPowtorzen}
-                onChange={(e) => setCyclicForm({ ...cyclicForm, iloscPowtorzen: parseInt(e.target.value) || 1 })}
-              />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {cyclicForm.startDate && (() => {
-                  const start = new Date(cyclicForm.startDate);
-                  const daysToAdd = cyclicForm.okres === 'tydzien' ? 7 : cyclicForm.okres === '2tygodnie' ? 14 : 30;
-                  const end = new Date(start);
-                  end.setDate(end.getDate() + daysToAdd * (cyclicForm.iloscPowtorzen - 1));
-                  return `Od ${start.toLocaleDateString('pl-PL')} do ${end.toLocaleDateString('pl-PL')} (${cyclicForm.iloscPowtorzen} wydarzeń)`;
-                })()}
-              </p>
-            </div>
-
-            <div>
-              <Label className="mb-2 block">Przypisz ministrantów do funkcji</Label>
-              <div className="space-y-2">
-                {FUNKCJE_TYPES.filter(typ => selectedSzablon?.funkcje[typ] !== 'BEZ').map(funkcja => (
-                  <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                    <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
-                    <Select
-                      value={publishFunkcje[funkcja] || 'UNASSIGNED'}
-                      onValueChange={(v) => setPublishFunkcje({
-                        ...publishFunkcje,
-                        [funkcja]: v
-                      })}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="-- Nie przypisano --" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
-                        {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
-                          <SelectItem key={m.profile_id} value={m.profile_id}>
-                            {m.imie} {m.nazwisko || ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <Button onClick={handleCyclicPublish} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white">
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Publikuj {cyclicForm.iloscPowtorzen} wydarzeń
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
 
@@ -9462,6 +9036,8 @@ export default function MinistranciApp() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal usuwania parafii usunięty — logika przeniesiona do window.confirm/prompt */}
 
       {/* Modal potwierdzenia wyzerowania punktacji */}
       <Dialog open={showResetPunktacjaModal} onOpenChange={setShowResetPunktacjaModal}>

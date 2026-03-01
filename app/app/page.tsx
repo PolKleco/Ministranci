@@ -783,6 +783,7 @@ export default function MinistranciApp() {
   const [newWatekForm, setNewWatekForm] = useState({ tytul: '', tresc: '', kategoria: 'ogłoszenie' as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: 'wszyscy', archiwum_data: '' });
   const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''], archiwum_data: '' });
   const [showArchiwum, setShowArchiwum] = useState(false);
+  const [expandedArchSluzba, setExpandedArchSluzba] = useState<string | null>(null);
   const [newWiadomoscTresc, setNewWiadomoscTresc] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
   const [showInfoBanner, setShowInfoBanner] = useState(true);
@@ -4406,124 +4407,13 @@ export default function MinistranciApp() {
                         <Plus className="w-4 h-4 mr-1" />
                         Dyskusja
                       </Button>
-                      <Button size="sm" variant={showArchiwum ? 'default' : 'ghost'} onClick={() => setShowArchiwum(!showArchiwum)}>
+                      <Button size="sm" variant="ghost" onClick={() => setShowArchiwum(true)}>
                         <Book className="w-4 h-4 mr-1" />
                         Archiwum ({archiwalneWatki.length + sluzbyArchiwum.length})
                       </Button>
                     </div>
                   )}
                 </>
-              )}
-
-              {/* === ARCHIWUM === */}
-              {!selectedWatek && showArchiwum && currentUser.typ === 'ksiadz' && (
-                <div className="space-y-3">
-                  {archiwalneWatki.length === 0 && sluzbyArchiwum.length === 0 && (
-                    <Card>
-                      <CardContent className="py-8 text-center">
-                        <Book className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Archiwum jest puste</p>
-                      </CardContent>
-                    </Card>
-                  )}
-                  {archiwalneWatki.map(watek => {
-                    const autorWatku = members.find(m => m.profile_id === watek.autor_id);
-                    const dniDoUsuniecia = watek.archiwum_data ? Math.max(0, Math.ceil((new Date(new Date(watek.archiwum_data).getTime() + 30 * 24 * 60 * 60 * 1000).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))) : 0;
-
-                    return (
-                      <Card
-                        key={watek.id}
-                        className="cursor-pointer hover:shadow-md transition-shadow opacity-60 hover:opacity-80 border-gray-300 dark:border-gray-600"
-                        onClick={() => {
-                          if (watek.kategoria === 'ogłoszenie') { setPreviewOgloszenie(watek); return; }
-                          setSelectedWatek(watek);
-                          loadWatekWiadomosci(watek.id);
-                          const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
-                          watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
-                        }}
-                      >
-                        <CardHeader className="pb-2 pt-3 px-4">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-gray-100 dark:bg-gray-800 text-gray-500">
-                                  {watek.kategoria === 'ankieta' ? 'Ankieta' : watek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : 'Dyskusja'}
-                                </Badge>
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-50 dark:bg-orange-900/20 text-orange-500">
-                                  Usunięcie za {dniDoUsuniecia} dni
-                                </Badge>
-                              </div>
-                              <p className="font-semibold text-sm truncate">{watek.kategoria === 'ogłoszenie' ? (watek.tresc?.replace(/<[^>]+>/g, '').substring(0, 80) || watek.tytul) : watek.tytul}</p>
-                              <p className="text-[10px] text-gray-400 mt-1">
-                                {autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} · {new Date(watek.created_at).toLocaleDateString('pl')}
-                              </p>
-                              <div className="flex items-center gap-2 mt-2">
-                                <Button size="sm" variant="outline" className="h-7 text-xs text-green-600 dark:text-green-400 border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
-                                  onClick={(e) => { e.stopPropagation(); restoreWatek(watek.id); }}>
-                                  <RotateCcw className="w-3 h-3 mr-1" />
-                                  Przywróć
-                                </Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                  onClick={(e) => { e.stopPropagation(); permanentDeleteWatek(watek.id); }}>
-                                  <Trash2 className="w-3 h-3 mr-1" />
-                                  Usuń trwale
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </CardHeader>
-                      </Card>
-                    );
-                  })}
-
-                  {/* === ARCHIWUM WYDARZEŃ === */}
-                  {sluzbyArchiwum.map(sluzba => {
-                    const dniOdWydarzenia = Math.floor((new Date().getTime() - new Date(sluzba.data).getTime()) / (1000 * 60 * 60 * 24));
-                    const dniDoUsuniecia = Math.max(0, 30 - dniOdWydarzenia);
-                    return (
-                      <Card key={`sluzba-${sluzba.id}`} className="opacity-60 hover:opacity-80 border-gray-300 dark:border-gray-600">
-                        <CardHeader className="pb-2 pt-3 px-4">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500">
-                                  Wydarzenie
-                                </Badge>
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-50 dark:bg-orange-900/20 text-orange-500">
-                                  Usunięcie za {dniDoUsuniecia} dni
-                                </Badge>
-                              </div>
-                              <p className="font-semibold text-sm">{sluzba.nazwa}</p>
-                              <p className="text-[10px] text-gray-400 mt-1">
-                                {new Date(sluzba.data).toLocaleDateString('pl-PL')} • {sluzba.godzina}
-                              </p>
-                              {sluzba.funkcje.filter(f => f.aktywna && f.ministrant_id).length > 0 && (
-                                <div className="mt-1.5 space-y-0.5">
-                                  {sluzba.funkcje.filter(f => f.aktywna && f.ministrant_id).map(f => (
-                                    <p key={f.id} className="text-[10px] text-gray-400">
-                                      {f.typ}: {getMemberName(f.ministrant_id)}
-                                    </p>
-                                  ))}
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 mt-2">
-                                <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                  onClick={async () => {
-                                    if (!confirm('Czy na pewno chcesz trwale usunąć to wydarzenie?')) return;
-                                    await supabase.from('sluzby').delete().eq('id', sluzba.id);
-                                    await loadSluzby();
-                                  }}>
-                                  <Trash2 className="w-3 h-3 mr-1" />
-                                  Usuń trwale
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </CardHeader>
-                      </Card>
-                    );
-                  })}
-                </div>
               )}
 
               {/* Baner informacyjny */}
@@ -8559,9 +8449,12 @@ export default function MinistranciApp() {
           setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
         }
       }}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingWatek ? (newWatekForm.kategoria === 'ogłoszenie' ? 'Edytuj ogłoszenie' : 'Edytuj wątek') : newWatekForm.kategoria === 'ogłoszenie' ? 'Nowe ogłoszenie' : 'Nowa dyskusja'}</DialogTitle>
+            {(() => {
+              const lc: Record<string, string> = { zielony: 'text-emerald-700 dark:text-emerald-400', bialy: 'text-amber-600 dark:text-amber-400', czerwony: 'text-red-600 dark:text-red-400', fioletowy: 'text-purple-700 dark:text-purple-400', rozowy: 'text-pink-600 dark:text-pink-400' };
+              return <DialogTitle className={`text-lg font-bold ${lc[dzisLiturgiczny?.kolor || 'zielony'] || lc.zielony}`}>{editingWatek ? (newWatekForm.kategoria === 'ogłoszenie' ? 'Edytuj ogłoszenie' : 'Edytuj wątek') : newWatekForm.kategoria === 'ogłoszenie' ? 'Nowe ogłoszenie' : 'Nowa dyskusja'}</DialogTitle>;
+            })()}
             <DialogDescription>
               {editingWatek ? (newWatekForm.kategoria === 'ogłoszenie' ? 'Zmień treść ogłoszenia' : 'Zmień treść wątku') : newWatekForm.kategoria === 'ogłoszenie' ? 'Napisz ogłoszenie dla ministrantów' : 'Rozpocznij nową dyskusję'}
             </DialogDescription>
@@ -8706,10 +8599,15 @@ export default function MinistranciApp() {
                 onChange={(e) => setNewWatekForm({ ...newWatekForm, archiwum_data: e.target.value })}
               />
             </div>
-            <Button onClick={editingWatek ? updateWatek : createWatek} className="w-full" disabled={!newWatekForm.archiwum_data || (newWatekForm.kategoria === 'ogłoszenie' ? (tiptapEditor ? tiptapEditor.isEmpty : (!newWatekForm.tresc || newWatekForm.tresc === '<p></p>')) : !newWatekForm.tytul.trim())}>
-              <Send className="w-4 h-4 mr-2" />
-              {editingWatek ? 'Zapisz zmiany' : 'Opublikuj'}
-            </Button>
+            {(() => {
+              const lb: Record<string, string> = { zielony: 'bg-gradient-to-r from-teal-600 via-emerald-600 to-green-600 hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', bialy: 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', czerwony: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-500 hover:from-red-700 hover:via-rose-700 hover:to-red-600', fioletowy: 'bg-gradient-to-r from-purple-700 via-violet-600 to-purple-600 hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', rozowy: 'bg-gradient-to-r from-pink-500 via-rose-400 to-pink-400 hover:from-pink-600 hover:via-rose-500 hover:to-pink-500' };
+              return (
+                <Button onClick={editingWatek ? updateWatek : createWatek} className={`w-full text-white border-0 ${lb[dzisLiturgiczny?.kolor || 'zielony'] || lb.zielony}`} disabled={!newWatekForm.archiwum_data || (newWatekForm.kategoria === 'ogłoszenie' ? (tiptapEditor ? tiptapEditor.isEmpty : (!newWatekForm.tresc || newWatekForm.tresc === '<p></p>')) : !newWatekForm.tytul.trim())}>
+                  <Send className="w-4 h-4 mr-2" />
+                  {editingWatek ? 'Zapisz zmiany' : 'Opublikuj'}
+                </Button>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
@@ -8718,7 +8616,10 @@ export default function MinistranciApp() {
       <Dialog open={showNewAnkietaModal} onOpenChange={setShowNewAnkietaModal}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Nowa ankieta</DialogTitle>
+            {(() => {
+              const lc: Record<string, string> = { zielony: 'text-emerald-700 dark:text-emerald-400', bialy: 'text-amber-600 dark:text-amber-400', czerwony: 'text-red-600 dark:text-red-400', fioletowy: 'text-purple-700 dark:text-purple-400', rozowy: 'text-pink-600 dark:text-pink-400' };
+              return <DialogTitle className={`text-lg font-bold ${lc[dzisLiturgiczny?.kolor || 'zielony'] || lc.zielony}`}>Nowa ankieta</DialogTitle>;
+            })()}
             <DialogDescription>
               Utwórz ankietę — ministranci dostaną powiadomienie i będą musieli odpowiedzieć
             </DialogDescription>
@@ -8811,11 +8712,200 @@ export default function MinistranciApp() {
               />
               <Label htmlFor="wyniki_ukryte" className="font-normal">Ukryj wyniki (ministranci nie widzą kto jak głosował)</Label>
             </div>
-            <Button onClick={createAnkieta} className="w-full" disabled={!newAnkietaForm.pytanie.trim() || !newAnkietaForm.archiwum_data}>
-              <Vote className="w-4 h-4 mr-2" />
-              Utwórz ankietę
-            </Button>
+            {(() => {
+              const lb: Record<string, string> = { zielony: 'bg-gradient-to-r from-teal-600 via-emerald-600 to-green-600 hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', bialy: 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', czerwony: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-500 hover:from-red-700 hover:via-rose-700 hover:to-red-600', fioletowy: 'bg-gradient-to-r from-purple-700 via-violet-600 to-purple-600 hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', rozowy: 'bg-gradient-to-r from-pink-500 via-rose-400 to-pink-400 hover:from-pink-600 hover:via-rose-500 hover:to-pink-500' };
+              return (
+                <Button onClick={createAnkieta} className={`w-full text-white border-0 ${lb[dzisLiturgiczny?.kolor || 'zielony'] || lb.zielony}`} disabled={!newAnkietaForm.pytanie.trim() || !newAnkietaForm.archiwum_data}>
+                  <Vote className="w-4 h-4 mr-2" />
+                  Utwórz ankietę
+                </Button>
+              );
+            })()}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal archiwum */}
+      <Dialog open={showArchiwum} onOpenChange={setShowArchiwum}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Book className="w-5 h-5 text-gray-500" />
+              Archiwum ({archiwalneWatki.length + sluzbyArchiwum.length})
+            </DialogTitle>
+            <DialogDescription>
+              Zarchiwizowane ogłoszenia, dyskusje, ankiety i wydarzenia
+            </DialogDescription>
+          </DialogHeader>
+          {archiwalneWatki.length === 0 && sluzbyArchiwum.length === 0 ? (
+            <div className="text-center py-8">
+              <Book className="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+              <p className="text-gray-500 dark:text-gray-400 text-sm">Archiwum jest puste</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(() => {
+                // Połącz wątki i wydarzenia w jedną listę, sortuj od najnowszych
+                const items: { type: 'watek'; data: typeof archiwalneWatki[0]; date: Date }[] | { type: 'sluzba'; data: typeof sluzbyArchiwum[0]; date: Date }[] = [];
+                const allItems = [
+                  ...archiwalneWatki.map(w => ({ type: 'watek' as const, data: w, date: new Date(w.archiwum_data || w.created_at) })),
+                  ...sluzbyArchiwum.map(s => ({ type: 'sluzba' as const, data: s, date: new Date(s.data) })),
+                ];
+                allItems.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+                return allItems.map((item) => {
+                  if (item.type === 'watek') {
+                    const watek = item.data;
+                    const autorWatku = members.find(m => m.profile_id === watek.autor_id);
+                    const dniDoUsuniecia = watek.archiwum_data ? Math.max(0, Math.ceil((new Date(new Date(watek.archiwum_data).getTime() + 30 * 24 * 60 * 60 * 1000).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))) : 0;
+                    return (
+                      <div
+                        key={`watek-${watek.id}`}
+                        className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow cursor-pointer bg-white dark:bg-gray-900"
+                        onClick={() => {
+                          setShowArchiwum(false);
+                          if (watek.kategoria === 'ogłoszenie') { setPreviewOgloszenie(watek); return; }
+                          setSelectedWatek(watek);
+                          loadWatekWiadomosci(watek.id);
+                          const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
+                          watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-gray-100 dark:bg-gray-800 text-gray-500">
+                            {watek.kategoria === 'ankieta' ? 'Ankieta' : watek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : 'Dyskusja'}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-50 dark:bg-orange-900/20 text-orange-500">
+                            Usunięcie za {dniDoUsuniecia} dni
+                          </Badge>
+                        </div>
+                        <p className="font-semibold text-sm truncate">{watek.kategoria === 'ogłoszenie' ? (watek.tresc?.replace(/<[^>]+>/g, '').substring(0, 80) || watek.tytul) : watek.tytul}</p>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          {autorWatku ? `${autorWatku.imie} ${autorWatku.nazwisko || ''}`.trim() : 'Ksiądz'} · {new Date(watek.created_at).toLocaleDateString('pl')}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <Button size="sm" variant="outline" className="h-7 text-xs text-green-600 dark:text-green-400 border-green-300 dark:border-green-700 hover:bg-green-50 dark:hover:bg-green-900/20"
+                            onClick={(e) => { e.stopPropagation(); restoreWatek(watek.id); }}>
+                            <RotateCcw className="w-3 h-3 mr-1" />
+                            Przywróć
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                            onClick={(e) => { e.stopPropagation(); permanentDeleteWatek(watek.id); }}>
+                            <Trash2 className="w-3 h-3 mr-1" />
+                            Usuń trwale
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    const sluzba = item.data;
+                    const dniOdWydarzenia = Math.floor((new Date().getTime() - new Date(sluzba.data).getTime()) / (1000 * 60 * 60 * 24));
+                    const dniDoUsuniecia = Math.max(0, 30 - dniOdWydarzenia);
+                    const isExpanded = expandedArchSluzba === sluzba.id;
+                    const aktywneFunkcje = sluzba.funkcje.filter(f => f.aktywna);
+                    const hours = parseGodziny(sluzba.godzina);
+                    const isMultiHour = hours.length > 1;
+                    return (
+                      <div key={`sluzba-${sluzba.id}`} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
+                        <div className="p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                          onClick={() => setExpandedArchSluzba(isExpanded ? null : sluzba.id)}>
+                          <div className="flex items-center justify-between">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500">
+                                  Wydarzenie
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-orange-50 dark:bg-orange-900/20 text-orange-500">
+                                  Usunięcie za {dniDoUsuniecia} dni
+                                </Badge>
+                                {sluzba.ekstra_punkty && sluzba.ekstra_punkty > 0 && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-amber-50 dark:bg-amber-900/20 text-amber-600">
+                                    +{sluzba.ekstra_punkty} pkt
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="font-semibold text-sm">{sluzba.nazwa}</p>
+                              <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {new Date(sluzba.data).toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'long' })}
+                                <span className="text-gray-300 dark:text-gray-600 mx-0.5">|</span>
+                                <Clock className="w-3 h-3" />
+                                {sluzba.godzina}
+                              </p>
+                            </div>
+                            <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-gray-100 dark:border-gray-800">
+                            <div className="p-3 space-y-2">
+                              {aktywneFunkcje.length === 0 ? (
+                                <p className="text-xs text-gray-400 italic text-center py-2">Brak funkcji</p>
+                              ) : isMultiHour ? (
+                                <div className="space-y-2">
+                                  {hours.map(h => {
+                                    const hourFunkcje = aktywneFunkcje.filter(f => f.godzina === h);
+                                    if (hourFunkcje.length === 0) return null;
+                                    return (
+                                      <div key={h} className="rounded-lg bg-indigo-50/50 dark:bg-indigo-900/10 p-2.5 border border-indigo-100 dark:border-indigo-800/30">
+                                        <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" />{h}</p>
+                                        <div className="space-y-1">
+                                          {hourFunkcje.map(f => (
+                                            <div key={f.id} className="flex items-center justify-between gap-2 p-1.5 bg-white dark:bg-gray-800 rounded-md border border-gray-100 dark:border-gray-700 text-sm shadow-sm">
+                                              <span className="font-semibold text-gray-700 dark:text-gray-200 shrink-0">{f.typ}:</span>
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <span className={`truncate ${f.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
+                                                  {getMemberName(f.ministrant_id) || 'nie przypisano'}
+                                                </span>
+                                                {f.ministrant_id && (
+                                                  f.zaakceptowana ? <CheckCircle className="w-3.5 h-3.5 text-green-500 dark:text-green-400 shrink-0" /> : <Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {aktywneFunkcje.map(f => (
+                                    <div key={f.id} className="flex items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm">
+                                      <span className="font-semibold text-sm text-gray-700 dark:text-gray-200 shrink-0">{f.typ}:</span>
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className={`text-sm truncate ${f.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
+                                          {getMemberName(f.ministrant_id) || 'nie przypisano'}
+                                        </span>
+                                        {f.ministrant_id && (
+                                          f.zaakceptowana ? <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 shrink-0" /> : <Hourglass className="w-4 h-4 text-amber-500 shrink-0" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="px-3 pb-3 flex items-center gap-2">
+                              <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                onClick={async () => {
+                                  if (!confirm('Czy na pewno chcesz trwale usunąć to wydarzenie?')) return;
+                                  await supabase.from('sluzby').delete().eq('id', sluzba.id);
+                                  await loadSluzby();
+                                }}>
+                                <Trash2 className="w-3 h-3 mr-1" />
+                                Usuń trwale
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                });
+              })()}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -10,7 +10,7 @@ import {
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
   Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, FileText, GripVertical,
-  Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type, RefreshCw
+  Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type, RefreshCw, Ticket, Download
 } from 'lucide-react';
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -54,6 +54,9 @@ import {
   getLiturgicalMonth, KOLORY_LITURGICZNE, RANGI, MIESIACE, DNI_TYGODNIA, DNI_TYGODNIA_FULL,
   type DzienLiturgiczny,
 } from '@/lib/kalendarz-liturgiczny';
+
+// ==================== LIMITY ====================
+const DARMOWY_LIMIT_MINISTRANTOW = 5;
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -804,6 +807,11 @@ export default function MinistranciApp() {
   // QR Code
   const [showQrModal, setShowQrModal] = useState(false);
 
+  // Premium / Subskrypcja
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [premiumCode, setPremiumCode] = useState('');
+  const [subscription, setSubscription] = useState<any>(null);
+
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
 
@@ -913,6 +921,7 @@ export default function MinistranciApp() {
   const [parafiaNazwa, setParafiaNazwa] = useState('');
   const [parafiaMiasto, setParafiaMiasto] = useState('');
   const [parafiaAdres, setParafiaAdres] = useState('');
+  const [parafiaKodRabatowy, setParafiaKodRabatowy] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
 
@@ -1836,6 +1845,100 @@ export default function MinistranciApp() {
     }
   };
 
+  const loadSubscription = useCallback(async () => {
+    if (!currentParafia) return;
+    const { data, error } = await supabase
+      .from('parafie')
+      .select('tier, rabat_id')
+      .eq('id', currentParafia.id)
+      .single();
+
+    if (error) {
+      console.error('loadSubscription error:', error);
+      return;
+    }
+
+    if (data && data.tier === 'premium') {
+      // Pobierz dane rabatu osobno jeśli jest
+      if (data.rabat_id) {
+        const { data: rabat } = await supabase
+          .from('rabaty')
+          .select('kod, procent_znizki')
+          .eq('id', data.rabat_id)
+          .single();
+        setSubscription({ ...data, rabaty: rabat });
+      } else {
+        setSubscription(data);
+      }
+    } else {
+      setSubscription(null);
+    }
+  }, [currentParafia]);
+
+  useEffect(() => {
+    if (currentParafia) loadSubscription();
+  }, [currentParafia, loadSubscription]);
+
+  const handleRedeemCode = async (code?: string, parafiaId?: string) => {
+    const kodDoUzycia = (code || premiumCode).trim();
+    const parafiaDoUzycia = parafiaId || currentParafia?.id;
+    if (!kodDoUzycia || !parafiaDoUzycia) return;
+
+    try {
+      // Znajdź kod w tabeli rabaty (case-insensitive)
+      const { data: rabat, error: rabatError } = await supabase
+        .from('rabaty')
+        .select('*')
+        .ilike('kod', kodDoUzycia)
+        .single();
+
+      if (rabatError || !rabat) {
+        alert('Nieprawidłowy kod rabatowy.');
+        return;
+      }
+
+      // Sprawdź czy kod nie wygasł
+      if (rabat.wazny_do && new Date(rabat.wazny_do) < new Date()) {
+        alert('Ten kod rabatowy już wygasł.');
+        return;
+      }
+
+      // Sprawdź limit użyć
+      if (rabat.max_uzyc && rabat.uzycia >= rabat.max_uzyc) {
+        alert('Ten kod został już wykorzystany maksymalną liczbę razy.');
+        return;
+      }
+
+      // Zwiększ licznik użyć
+      const { error: updateRabatyError } = await supabase
+        .from('rabaty')
+        .update({ uzycia: rabat.uzycia + 1 })
+        .eq('id', rabat.id);
+
+      if (updateRabatyError) {
+        console.error('Błąd aktualizacji rabatu:', updateRabatyError);
+      }
+
+      // Aktywuj premium na parafii
+      const { error: updateParafiaError } = await supabase
+        .from('parafie')
+        .update({ tier: 'premium', rabat_id: rabat.id })
+        .eq('id', parafiaDoUzycia);
+
+      if (updateParafiaError) {
+        alert('Błąd aktywacji Premium: ' + updateParafiaError.message);
+        return;
+      }
+
+      alert('Pakiet Premium został aktywowany!');
+      setShowPremiumModal(false);
+      setPremiumCode('');
+      loadSubscription();
+    } catch (err) {
+      alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   // ==================== USEEFFECT - INICJALIZACJA ====================
 
   useEffect(() => {
@@ -1864,6 +1967,26 @@ export default function MinistranciApp() {
 
     return () => subscription.unsubscribe();
   }, [loadProfile]);
+
+  // Auto-fill join code from URL param (QR code link)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const kod = params.get('kod');
+    if (kod) {
+      sessionStorage.setItem('join_kod', kod.toUpperCase());
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.parafia_id) return;
+    const savedKod = sessionStorage.getItem('join_kod');
+    if (savedKod) {
+      setJoinCode(savedKod);
+      setShowJoinModal(true);
+      sessionStorage.removeItem('join_kod');
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentUser?.parafia_id) {
@@ -2290,11 +2413,17 @@ export default function MinistranciApp() {
       .update({ parafia_id: newParafia.id })
       .eq('id', currentUser.id);
 
+    // Aktywuj kod rabatowy jeśli podano
+    if (parafiaKodRabatowy.trim()) {
+      await handleRedeemCode(parafiaKodRabatowy, newParafia.id);
+    }
+
     setCurrentUser({ ...currentUser, parafia_id: newParafia.id });
     setShowParafiaModal(false);
     setParafiaNazwa('');
     setParafiaMiasto('');
     setParafiaAdres('');
+    setParafiaKodRabatowy('');
   };
 
   const handleSendInvite = async () => {
@@ -4022,7 +4151,10 @@ export default function MinistranciApp() {
         <Dialog open={showParafiaModal} onOpenChange={setShowParafiaModal}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Utwórz nową parafię</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <Church className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                {parafiaNazwa || 'Nowa parafia'}
+              </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
@@ -4048,6 +4180,18 @@ export default function MinistranciApp() {
                   onChange={(e) => setParafiaAdres(e.target.value)}
                   placeholder="ul. Przykładowa 1"
                 />
+              </div>
+              <div className="pt-2 border-t">
+                <Label>Kod rabatowy (opcjonalnie)</Label>
+                <Input
+                  value={parafiaKodRabatowy}
+                  onChange={(e) => setParafiaKodRabatowy(e.target.value)}
+                  placeholder="np. WIOSNA25"
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Jeśli posiadasz kod rabatowy, wpisz go tutaj aby aktywować Premium
+                </p>
               </div>
               <Button onClick={handleCreateParafia} className="w-full">
                 Utwórz parafię
@@ -4124,63 +4268,110 @@ export default function MinistranciApp() {
       {/* Header */}
       <div className="bg-white dark:bg-gray-900 border-b shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-2.5 py-2 sm:px-4 sm:py-3">
-          {/* Linia 1: nazwa parafii + tryb nocny + wyloguj */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); } }}>
-              <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              <div>
-                {editingParafiaNazwa ? (
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <Input
-                      value={parafiaNazwaInput}
-                      onChange={(e) => setParafiaNazwaInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveParafiaNazwa(); if (e.key === 'Escape') setEditingParafiaNazwa(false); }}
-                      className="h-8 text-sm sm:text-lg font-bold w-36 sm:w-60"
-                      autoFocus
-                    />
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600 dark:text-green-400" onClick={saveParafiaNazwa}>
-                      <Check className="w-4 h-4" />
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400" onClick={() => setEditingParafiaNazwa(false)}>
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-sm sm:text-xl font-bold">{currentParafia?.nazwa}</h1>
-                    {currentUser.typ === 'ksiadz' && (
-                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={(e) => { e.stopPropagation(); setParafiaNazwaInput(currentParafia?.nazwa || ''); setEditingParafiaNazwa(true); }}>
-                        <Pencil className="w-3 h-3" />
-                      </Button>
-                    )}
-                  </div>
-                )}
-                <div className="flex items-center gap-1">
-                  <p className="text-[11px] sm:text-sm text-gray-600 dark:text-gray-300">{currentUser.imie} {currentUser.nazwisko || ''}</p>
-                  <button
-                    onClick={() => {
-                      setEditProfilForm({ imie: currentUser.imie, nazwisko: currentUser.nazwisko || '', email: currentUser.email || '' });
-                      setShowEditProfilModal(true);
-                    }}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors shrink-0"
-                    title="Edytuj profil"
-                  >
-                    <Pencil className="w-3 h-3" />
-                  </button>
-                </div>
+          {/* Linia 1: nazwa parafii na całą szerokość */}
+          <div className="flex items-center justify-center gap-2 sm:gap-3 cursor-pointer" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); } }}>
+            <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            {editingParafiaNazwa ? (
+              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <Input
+                  value={parafiaNazwaInput}
+                  onChange={(e) => setParafiaNazwaInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveParafiaNazwa(); if (e.key === 'Escape') setEditingParafiaNazwa(false); }}
+                  className="h-8 text-sm sm:text-lg font-bold w-36 sm:w-60"
+                  autoFocus
+                />
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600 dark:text-green-400 shrink-0" onClick={saveParafiaNazwa}>
+                  <Check className="w-4 h-4" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-gray-400 shrink-0" onClick={() => setEditingParafiaNazwa(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
               </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <h1 className="text-sm sm:text-xl font-bold">{currentParafia?.nazwa}</h1>
+                {currentUser.typ === 'ksiadz' && (
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={(e) => { e.stopPropagation(); setParafiaNazwaInput(currentParafia?.nazwa || ''); setEditingParafiaNazwa(true); }}>
+                    <Pencil className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+          {/* Linia 2: imię/nazwisko + ikonki */}
+          <div className="flex items-center justify-between mt-1">
+            <div className="flex items-center gap-1">
+              <p className="text-[11px] sm:text-sm text-gray-600 dark:text-gray-300">{currentUser.imie} {currentUser.nazwisko || ''}</p>
+              <button
+                onClick={() => {
+                  setEditProfilForm({ imie: currentUser.imie, nazwisko: currentUser.nazwisko || '', email: currentUser.email || '' });
+                  setShowEditProfilModal(true);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors shrink-0"
+                title="Edytuj profil"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
             </div>
-            <div className="flex items-center gap-1 sm:gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+              {currentUser.typ === 'ksiadz' && (() => {
+                const count = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length;
+                const isPremium = !!subscription;
+                return (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowPremiumModal(true); }}
+                    title={isPremium ? "Premium aktywne" : `${count}/${DARMOWY_LIMIT_MINISTRANTOW} ministrantów`}
+                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    {isPremium ? (
+                      <div className="flex items-center gap-1.5">
+                        <Star className="w-4 h-4 text-amber-500" />
+                        <span className="text-[10px] sm:text-xs font-semibold text-amber-500">Premium</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex gap-[3px]">
+                          {Array.from({ length: DARMOWY_LIMIT_MINISTRANTOW }).map((_, i) => (
+                            <div
+                              key={i}
+                              className={`w-2 sm:w-2.5 h-4 sm:h-5 rounded-sm transition-all ${
+                                i < count
+                                  ? count >= DARMOWY_LIMIT_MINISTRANTOW
+                                    ? 'bg-red-400 dark:bg-red-500'
+                                    : count >= DARMOWY_LIMIT_MINISTRANTOW - 1
+                                      ? 'bg-amber-400 dark:bg-amber-500'
+                                      : 'bg-indigo-400 dark:bg-indigo-500'
+                                  : 'bg-gray-200 dark:bg-gray-700'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <span className={`text-[10px] sm:text-xs font-medium ${
+                          count >= DARMOWY_LIMIT_MINISTRANTOW
+                            ? 'text-red-500'
+                            : 'text-gray-400 dark:text-gray-500'
+                        }`}>
+                          {count}/{DARMOWY_LIMIT_MINISTRANTOW}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })()}
               {currentUser.typ === 'ksiadz' && (
-                <button type="button" onClick={() => {
-                  const ok1 = window.confirm('Czy na pewno chcesz usunąć parafię "' + (currentParafia?.nazwa || '') + '"?\n\nZostaną trwale usunięte:\n- Wszystkie dane parafii\n- Konta ministrantów\n- Twoje konto księdza\n\nTej operacji nie można cofnąć!');
-                  if (!ok1) return;
-                  const txt = window.prompt('Wpisz KASUJ aby ostatecznie potwierdzić usunięcie:');
-                  if (!txt || txt.trim().toUpperCase() !== 'KASUJ') { alert('Anulowano — nie wpisano KASUJ.'); return; }
-                  handleDeleteParafia();
-                }} className="h-8 w-8 sm:h-9 sm:w-9 p-0 flex items-center justify-center rounded-md text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20" title="Usuń parafię">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 sm:h-9 sm:w-9 p-0 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  title="Usuń parafię"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteParafiaModal(1);
+                  }}
+                >
                   <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                </button>
+                </Button>
               )}
               <Button variant="ghost" size="sm" onClick={toggleDarkMode} className="h-8 w-8 sm:h-9 sm:w-9 p-0">
                 {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
@@ -4235,7 +4426,7 @@ export default function MinistranciApp() {
               <div className="flex flex-col items-center gap-4 py-4">
                 <div className="bg-white p-4 rounded-xl">
                   <QRCodeSVG
-                    value={currentParafia?.kod_zaproszenia || ''}
+                    value={`https://ministranci.net/app?kod=${currentParafia?.kod_zaproszenia || ''}`}
                     size={200}
                     level="H"
                   />
@@ -5454,15 +5645,14 @@ export default function MinistranciApp() {
               {currentUser.typ === 'ksiadz' && (
                 <div className="space-y-6">
                   {/* Przycisk ustawień */}
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
                     <Button variant="outline" size="sm" className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300 dark:border-red-800 dark:hover:bg-red-900/20" onClick={() => setShowResetPunktacjaModal(true)}>
-                      <RotateCcw className="w-4 h-4 mr-2" />
                       Wyzeruj punktację
                     </Button>
-                    <Button variant="outline" onClick={() => setShowRankingSettings(!showRankingSettings)}>
+                    <Button variant="outline" size="sm" onClick={() => setShowRankingSettings(!showRankingSettings)}>
                       <Settings className="w-4 h-4 mr-2" />
                       Ustawienia punktacji
-                      {showRankingSettings ? <ChevronUp className="w-4 h-4 ml-2" /> : <ChevronDown className="w-4 h-4 ml-2" />}
+                      {showRankingSettings ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
                     </Button>
                   </div>
 
@@ -5515,26 +5705,28 @@ export default function MinistranciApp() {
                                 <div key={prefix}>
                                   <h4 className="font-medium text-sm text-gray-500 dark:text-gray-400 mb-2">{label}</h4>
                                   {items.map(p => (
-                                    <div key={p.klucz} className="flex items-center gap-2 mb-2">
+                                    <div key={p.klucz} className="flex flex-wrap items-center gap-2 mb-2">
                                       <Input
-                                        className="flex-1 text-sm"
+                                        className="flex-1 min-w-[120px] text-sm"
                                         value={p.opis}
                                         onChange={(e) => {
                                           setPunktacjaConfig(prev => prev.map(x => x.klucz === p.klucz ? { ...x, opis: e.target.value } : x));
                                         }}
                                         onBlur={() => updateConfigOpis(p.klucz, p.opis)}
                                       />
-                                      <Input
-                                        type="number"
-                                        step={step}
-                                        className="w-20"
-                                        value={p.wartosc}
-                                        onChange={(e) => updateConfigValue(p.klucz, Number(e.target.value))}
-                                      />
-                                      <span className="text-xs text-gray-400 w-8">{prefix.startsWith('mnoznik') ? 'x' : 'pkt'}</span>
-                                      <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deletePunktacja(p.id)}>
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </Button>
+                                      <div className="flex items-center gap-1">
+                                        <Input
+                                          type="number"
+                                          step={step}
+                                          className="w-20"
+                                          value={p.wartosc}
+                                          onChange={(e) => updateConfigValue(p.klucz, Number(e.target.value))}
+                                        />
+                                        <span className="text-xs text-gray-400 w-6">{prefix.startsWith('mnoznik') ? 'x' : 'pkt'}</span>
+                                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deletePunktacja(p.id)}>
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -5820,50 +6012,105 @@ export default function MinistranciApp() {
                     </CardContent>
                   </Card>
 
-                  {/* Ranking parafii */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Trophy className="w-4 h-4 text-amber-500" />
-                        Ranking parafii
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {rankingData.length === 0 ? (
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Brak danych w rankingu.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {rankingData.map((r, i) => {
-                            const member = members.find(m => m.profile_id === r.ministrant_id);
-                            const ranga = getRanga(Number(r.total_pkt));
-                            return (
-                              <div key={r.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
-                                <div className="flex items-center gap-3">
-                                  <span className="font-bold text-lg w-8">
-                                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
-                                  </span>
-                                  <div>
-                                    <span className="font-medium">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
-                                    {ranga && (
-                                      <Badge className={`ml-2 text-xs ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
-                                        {ranga.nazwa}
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <span className="font-bold">{Number(r.total_pkt)} pkt</span>
-                                  {Number(r.total_minusowe) < 0 && (
-                                    <span className="text-xs text-red-600 dark:text-red-400 ml-2">{r.total_minusowe} min.</span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
+                  {/* Ranking parafii — gaming style */}
+                  {(() => {
+                    const rankingRef = { current: null as HTMLDivElement | null };
+                    const maxPkt = rankingData.length > 0 ? Math.max(...rankingData.map(r => Number(r.total_pkt)), 1) : 1;
+
+                    const handleDownloadPdf = async () => {
+                      const el = rankingRef.current;
+                      if (!el) return;
+                      const html2canvas = (await import('html2canvas-pro')).default;
+                      const { jsPDF } = await import('jspdf');
+                      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+                      const imgData = canvas.toDataURL('image/png');
+                      const imgW = canvas.width;
+                      const imgH = canvas.height;
+                      const pdfW = 210; // A4 mm
+                      const pdfH = (imgH * pdfW) / imgW;
+                      const pdf = new jsPDF('p', 'mm', pdfH > 297 ? [pdfW, pdfH + 10] : 'a4');
+                      pdf.addImage(imgData, 'PNG', 0, 5, pdfW, pdfH);
+                      pdf.save(`ranking-${currentParafia?.nazwa || 'parafia'}-${new Date().toISOString().split('T')[0]}.pdf`);
+                    };
+
+                    return (
+                      <div ref={(el) => { rankingRef.current = el; }} className="rounded-2xl overflow-hidden border border-amber-200/50 dark:border-amber-700/30 shadow-lg shadow-amber-500/5">
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 px-4 py-3 flex items-center justify-between">
+                          <h3 className="font-extrabold text-white flex items-center gap-2 text-base tracking-tight">
+                            <Trophy className="w-5 h-5" />
+                            RANKING PARAFII
+                          </h3>
+                          {rankingData.length > 0 && (
+                            <button onClick={handleDownloadPdf} className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors" title="Pobierz PDF">
+                              <Download className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
+
+                        {/* Content */}
+                        <div className="bg-white dark:bg-gray-900">
+                          {rankingData.length === 0 ? (
+                            <p className="text-gray-500 dark:text-gray-400 text-sm p-4">Brak danych w rankingu.</p>
+                          ) : (
+                            <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                              {rankingData.map((r, i) => {
+                                const member = members.find(m => m.profile_id === r.ministrant_id);
+                                const ranga = getRanga(Number(r.total_pkt));
+                                const pct = Math.round((Number(r.total_pkt) / maxPkt) * 100);
+                                const positionBg = i === 0
+                                  ? 'bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20'
+                                  : i === 1
+                                  ? 'bg-gradient-to-r from-gray-100 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/30'
+                                  : i === 2
+                                  ? 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/10'
+                                  : '';
+                                const barColor = i === 0
+                                  ? 'from-amber-400 to-yellow-400'
+                                  : i === 1
+                                  ? 'from-gray-400 to-slate-400'
+                                  : i === 2
+                                  ? 'from-orange-400 to-amber-400'
+                                  : 'from-indigo-400 to-purple-400';
+
+                                return (
+                                  <div key={r.id} className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 ${positionBg}`}>
+                                    <div className="w-8 shrink-0 text-center">
+                                      {i === 0 ? <span className="text-xl sm:text-2xl">🥇</span>
+                                        : i === 1 ? <span className="text-xl sm:text-2xl">🥈</span>
+                                        : i === 2 ? <span className="text-xl sm:text-2xl">🥉</span>
+                                        : <span className="text-sm font-bold text-gray-400">{i + 1}</span>}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-semibold text-sm truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
+                                        {ranga && (
+                                          <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
+                                            {ranga.nazwa}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {/* XP bar */}
+                                      <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full mt-1 overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`}
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <div className="font-extrabold text-sm tabular-nums">{Number(r.total_pkt)}</div>
+                                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">XP</div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Statystyki */}
                   <Card>
@@ -9299,6 +9546,152 @@ export default function MinistranciApp() {
               {dyzurConfirm?.type === 'first' ? 'Tak, wybieram' : 'Wyślij prośbę'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal usuwania parafii */}
+      <Dialog open={showDeleteParafiaModal !== null} onOpenChange={(open) => { if (!open) { setShowDeleteParafiaModal(null); setDeleteParafiaConfirmText(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="w-5 h-5" />
+              Usuń parafię
+            </DialogTitle>
+            <DialogDescription>
+              {showDeleteParafiaModal === 1
+                ? `Czy na pewno chcesz usunąć parafię "${currentParafia?.nazwa || ''}"?`
+                : 'Wpisz KASUJ aby ostatecznie potwierdzić usunięcie.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {showDeleteParafiaModal === 1 && (
+            <div className="space-y-3">
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300">
+                <p className="font-semibold mb-1">Zostaną trwale usunięte:</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>Wszystkie dane parafii</li>
+                  <li>Konta ministrantów</li>
+                  <li>Twoje konto księdza</li>
+                </ul>
+                <p className="mt-2 font-semibold">Tej operacji nie można cofnąć!</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setShowDeleteParafiaModal(null); }}>
+                  Anuluj
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={() => setShowDeleteParafiaModal(2)}>
+                  Tak, chcę usunąć
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {showDeleteParafiaModal === 2 && (
+            <div className="space-y-3">
+              <div>
+                <Label>Wpisz KASUJ aby potwierdzić</Label>
+                <Input
+                  value={deleteParafiaConfirmText}
+                  onChange={(e) => setDeleteParafiaConfirmText(e.target.value)}
+                  placeholder="KASUJ"
+                  className="mt-1 uppercase font-mono"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setShowDeleteParafiaModal(null); setDeleteParafiaConfirmText(''); }}>
+                  Anuluj
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={deleteParafiaConfirmText.trim().toUpperCase() !== 'KASUJ' || deleteParafiaLoading}
+                  onClick={() => { handleDeleteParafia(); }}
+                >
+                  {deleteParafiaLoading ? 'Usuwanie...' : 'Potwierdź usunięcie'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Premium */}
+      <Dialog open={showPremiumModal} onOpenChange={setShowPremiumModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ticket className="w-5 h-5 text-amber-500" />
+              Subskrypcja Premium
+            </DialogTitle>
+            <DialogDescription>
+              Zarządzaj statusem konta parafii
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {subscription ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-center">
+                  <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/40 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Star className="w-6 h-6 text-amber-500" />
+                  </div>
+                  <h3 className="font-bold text-lg text-amber-700 dark:text-amber-400">Konto Premium Aktywne</h3>
+                  <p className="text-sm text-amber-600/80 dark:text-amber-500/80 mt-1">
+                    Nieograniczona liczba ministrantów
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Info o limicie */}
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium text-blue-700 dark:text-blue-400">Plan darmowy</p>
+                    <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full">
+                      {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length} / {DARMOWY_LIMIT_MINISTRANTOW} ministrantów
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-200 dark:bg-blue-900/40 rounded-full h-2 mb-2">
+                    <div
+                      className="bg-blue-500 h-2 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, (members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length / DARMOWY_LIMIT_MINISTRANTOW) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-blue-600/80 dark:text-blue-400/70">
+                    {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length >= DARMOWY_LIMIT_MINISTRANTOW
+                      ? 'Osiągnięto limit — aktywuj Premium, aby dodać więcej ministrantów.'
+                      : `Możesz dodać jeszcze ${DARMOWY_LIMIT_MINISTRANTOW - members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length} ministrantów za darmo.`}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-lg text-center">
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400 flex items-center justify-center gap-1">
+                    <Star className="w-4 h-4" /> Premium = nieograniczona liczba ministrantów
+                  </p>
+                  <p className="text-xs text-amber-600/70 dark:text-amber-500/60 mt-1">
+                    Wszystkie funkcje dostępne w obu planach. Jedyna różnica to limit ministrantów.
+                  </p>
+                </div>
+
+                {/* Input kodu */}
+                <div className="space-y-2">
+                  <Label>Kod rabatowy</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={premiumCode}
+                      onChange={(e) => setPremiumCode(e.target.value)}
+                      placeholder="Wpisz kod"
+                      className="font-mono"
+                    />
+                    <Button onClick={() => handleRedeemCode()} disabled={!premiumCode.trim()}>
+                      Aktywuj
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

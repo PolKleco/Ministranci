@@ -6,9 +6,9 @@ import { Cinzel } from 'next/font/google';
 import {
   Trophy, Calendar, BookOpen, Bell, Church,
   Flame, Star, ChevronRight, ArrowRight,
-  MessageSquare, Award, Hourglass,
+  Award,
   HandHelping, Shield,
-  ChevronDown, Sparkles, Target, BarChart3,
+  ChevronDown, Sparkles, Target,
 } from 'lucide-react';
 
 const cinzel = Cinzel({
@@ -52,9 +52,8 @@ function Reveal({
   return (
     <div
       ref={ref}
-      className={`transition-all duration-700 ease-out ${
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-      } ${className}`}
+      className={`transition-all duration-700 ease-out ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+        } ${className}`}
       style={{ transitionDelay: `${delay}ms` }}
     >
       {children}
@@ -74,65 +73,42 @@ function Ornament() {
 
 // ── Data ──────────────────────────────────────────────
 
-const PROBLEMS = [
-  {
-    icon: Hourglass,
-    title: 'Ręczne śledzenie obecności',
-    desc: 'Papierowe listy, ołówki, zapomniane notatki. Godziny poświęcone na coś, co powinno zajmować sekundy.',
-  },
-  {
-    icon: BarChart3,
-    title: 'Spadająca motywacja',
-    desc: 'Ministranci tracą zapał po kilku miesiącach. Bez systemu nagród i postępu, służba staje się rutyną.',
-  },
-  {
-    icon: MessageSquare,
-    title: 'Chaos komunikacyjny',
-    desc: 'Ogłoszenia giną, informacje nie docierają. Każda zmiana w grafiku wymaga dziesiątek telefonów.',
-  },
-  {
-    icon: Calendar,
-    title: 'Planowanie w ciemno',
-    desc: 'Kto służy w niedzielę? Kto niesie krzyż? Kto jest na wakacjach? Wieczne pytania bez odpowiedzi.',
-  },
-];
-
 const FEATURES = [
   {
-    icon: Trophy,
-    title: 'Ranking i gamifikacja',
-    desc: 'System punktów, 10 rang i 14 odznak. Ministranci rywalizują, zdobywają strzałki i śledzą postępy jak w grze.',
-    accent: '#f59e0b',
-  },
-  {
-    icon: Bell,
-    title: 'Tablica ogłoszeń',
-    desc: 'Wiadomości, ankiety i dyskusje w jednym miejscu. Z edytorem tekstu, obrazkami i filmami YouTube.',
-    accent: '#3b82f6',
+    icon: Shield,
+    title: 'Panel Duszpasterza (Dashboard)',
+    desc: 'Zamknięta i bezpieczna przestrzeń parafii. W jednym oknie widzisz statystyki, zatwierdzasz obecności i nadajesz odznaki za wzorową służbę.',
+    accent: '#06b6d4',
   },
   {
     icon: Calendar,
-    title: 'Planowanie służb',
-    desc: 'Przypisuj ministrantów do 7 ról liturgicznych. Krzyż, świece, kadzidło, ceremoniarz — wszystko zaplanowane.',
+    title: 'Przejrzyste grafiki służb',
+    desc: 'Wystarczy kilka kliknięć na smartfonie, by obsadzić funkcje: krucyferariusz, nawifer, ceremoniarz. Bez pomyłek i nieobecności.',
     accent: '#10b981',
   },
   {
+    icon: Bell,
+    title: 'Powiadomienia i ogłoszenia',
+    desc: 'Publikuj ważne informacje i ankiety na czystej tablicy. Bez przekrzykiwania się w dziesiątkach wątków na czatach grupowych.',
+    accent: '#3b82f6',
+  },
+  {
+    icon: Trophy,
+    title: 'Rywalizacja budująca nawyki',
+    desc: 'Ty tylko akceptujesz obecności po Mszy, a aplikacja sama nalicza punkty i nagradza ministrantów, budując stałą motywację.',
+    accent: '#f59e0b',
+  },
+  {
     icon: BookOpen,
-    title: 'Kalendarz liturgiczny',
-    desc: 'Ponad 250 świąt i uroczystości z kolorami liturgicznymi. Automatyczne obliczanie dat ruchomych.',
+    title: 'Wbudowany kalendarz liturgiczny',
+    desc: 'Automatycznie podpowiada ponad 250 świąt i kolor szat liturgicznych. Aplikacja ułatwi przygotowanie asysty w każdym okresie.',
     accent: '#a855f7',
   },
   {
     icon: HandHelping,
-    title: 'Encyklopedia posług',
-    desc: '12 ról liturgicznych z opisami, zdjęciami i filmami instruktażowymi. Idealny podręcznik ministranta.',
+    title: 'Baza wiedzy liturgicznej',
+    desc: '12 szczegółowo opisanych funkcji. Skróć czas ciągłego tłumaczenia - nowicjusz ma interaktywny "podręcznik" w swoim telefonie.',
     accent: '#f43f5e',
-  },
-  {
-    icon: Shield,
-    title: 'Zarządzanie parafią',
-    desc: 'Grupy ministrantów, kody zaproszeń, zarządzanie członkami. Całość pod kontrolą jednego dashboardu.',
-    accent: '#06b6d4',
   },
 ];
 
@@ -179,11 +155,10 @@ export default function LandingPage() {
 
       {/* ─── Navigation ─── */}
       <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled
-            ? 'bg-[#050510]/85 backdrop-blur-xl border-b border-white/[0.04]'
-            : ''
-        }`}
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled
+          ? 'bg-[#050510]/85 backdrop-blur-xl border-b border-white/[0.04]'
+          : ''
+          }`}
       >
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -264,8 +239,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="hero-animate-d2 text-slate-400 text-lg sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-            Aplikacja, która łączy tradycję z technologią. Motywuj ministrantów,
-            planuj służby i buduj zaangażowaną wspólnotę parafialną.
+            Aplikacja stworzona z myślą o duszpasterzach. Automatyzuj grafiki służb, motywuj młodzież do dyżurów i zyskaj przestrzeń na to co najważniejsze: formację.
           </p>
 
           <div className="hero-animate-d2 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -273,7 +247,7 @@ export default function LandingPage() {
               href="/app"
               className="group relative inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-semibold px-8 py-3.5 rounded-full overflow-hidden transition-all hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
             >
-              <span className="relative z-10">Rozpocznij teraz</span>
+              <span className="relative z-10">Załóż konto parafii (Darmowe)</span>
               <ArrowRight className="w-4 h-4 relative z-10 transition-transform group-hover:translate-x-1" />
               <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
             </Link>
@@ -311,40 +285,6 @@ export default function LandingPage() {
               <div className="text-slate-500 text-sm">{stat.label}</div>
             </Reveal>
           ))}
-        </div>
-      </section>
-
-      <Ornament />
-
-      {/* ─── Problems ─── */}
-      <section className="relative py-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <Reveal className="text-center mb-14">
-            <span className="text-amber-400/50 text-xs tracking-[0.25em] uppercase font-medium">
-              Znany problem?
-            </span>
-            <h2 className={`${cinzel.className} text-3xl sm:text-4xl font-bold text-slate-100 mt-3`}>
-              Czy to brzmi znajomo?
-            </h2>
-            <p className="text-slate-500 mt-4 max-w-xl mx-auto">
-              Prowadzenie grupy ministrantów to piękna misja, ale codzienne
-              zarządzanie bywa wyzwaniem.
-            </p>
-          </Reveal>
-
-          <div className="grid sm:grid-cols-2 gap-5">
-            {PROBLEMS.map((p, i) => (
-              <Reveal key={i} delay={i * 100}>
-                <div className="group p-6 rounded-2xl bg-white/[0.02] border border-white/[0.05] hover:border-red-500/15 transition-all duration-300 h-full">
-                  <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center mb-4">
-                    <p.icon className="w-5 h-5 text-red-400/70" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-200 mb-2">{p.title}</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed">{p.desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -408,8 +348,8 @@ export default function LandingPage() {
                 {[
                   {
                     step: '01',
-                    title: 'Załóż parafię',
-                    desc: 'Stwórz parafię, skonfiguruj system punktów, rang i odznak pod swoje potrzeby.',
+                    title: 'Załóż parafię w 3 minuty',
+                    desc: 'Darmowa rejestracja, zero skomplikowanych formularzy. Tworzysz profil parafii i masz pełnię kontroli nad grupą.',
                   },
                   {
                     step: '02',
@@ -502,8 +442,7 @@ export default function LandingPage() {
               Służba, która wciąga
             </h2>
             <p className="text-slate-500 mt-4 max-w-xl mx-auto">
-              System rang, odznak i strzałek sprawia, że ministranci sami chcą
-              służyć. Zdrowa rywalizacja buduje zaangażowanie.
+              System rang, odznak i strzałek sprawia, że ministranci sami chcą służyć. Zdrowa rywalizacja buduje zaangażowanie.
             </p>
           </Reveal>
 
@@ -597,22 +536,21 @@ export default function LandingPage() {
         <Reveal className="relative z-10 max-w-3xl mx-auto text-center">
           <Sparkles className="w-7 h-7 text-amber-400/35 mx-auto mb-6" />
           <h2 className={`${cinzel.className} text-3xl sm:text-4xl md:text-5xl font-bold text-slate-100 mb-6`}>
-            Gotowy na zmianę?
+            Wprowadź porządek już teraz
           </h2>
           <p className="text-slate-400 text-lg mb-10 max-w-xl mx-auto leading-relaxed">
-            Dołącz do parafii, które korzystają z nowoczesnego zarządzania
-            ministrantami. Rejestracja jest darmowa.
+            Załóż konto i przekonaj się, ile czasu zaoszczędzisz, gdy wszystko — ogłoszenia, dyżury i punkty — znajdzie się w jednej aplikacji.
           </p>
           <Link
             href="/app"
             className="group relative inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-semibold px-10 py-4 rounded-full overflow-hidden transition-all hover:shadow-[0_0_40px_rgba(245,158,11,0.3)] text-lg"
           >
-            <span className="relative z-10">Rozpocznij teraz</span>
+            <span className="relative z-10">Załóż darmowe konto parafii</span>
             <ArrowRight className="w-5 h-5 relative z-10 transition-transform group-hover:translate-x-1" />
             <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
           </Link>
           <p className="text-slate-600 text-sm mt-6">
-            Bez karty kredytowej &middot; Bez limitu czasu &middot; Bez ograniczeń
+            Bez karty kredytowej &middot; Bez limitu czasu &middot; Darmowy plan z limitem ministrantów
           </p>
         </Reveal>
       </section>

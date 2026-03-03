@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -41,6 +42,8 @@ import {
 } from '@/components/ui/select';
 import Picker from '@emoji-mart/react';
 import emojiData from '@emoji-mart/data';
+
+import Link from 'next/link';
 
 // ==================== TYPY ====================
 
@@ -118,6 +121,17 @@ interface OdznakaConfig {
   aktywna: boolean;
 }
 
+interface Rabat {
+  id: string;
+  kod: string;
+  procent_znizki: number;
+  jednorazowy: boolean;
+  wazny_do: string | null;
+  uzycia: number;
+  max_uzyc: number;
+  created_at: string;
+}
+
 interface Stats {
   parafie: number;
   profiles: number;
@@ -126,6 +140,7 @@ interface Stats {
   obecnosci30: number;
   watki: number;
 }
+
 
 // ==================== SUPABASE ====================
 
@@ -276,6 +291,14 @@ export default function AdminPanel() {
   const [rangi, setRangi] = useState<RangaConfig[]>([]);
   const [odznaki, setOdznaki] = useState<OdznakaConfig[]>([]);
   const [recentParafie, setRecentParafie] = useState<Parafia[]>([]);
+  const [rabaty, setRabaty] = useState<Rabat[]>([]);
+  const [nowyRabat, setNowyRabat] = useState({
+    kod: '',
+    procent_znizki: 10,
+    max_uzyc: 1,
+    wazny_do: '',
+  });
+  const [loadingRabaty, setLoadingRabaty] = useState(true);
 
   // Banery powitalne
   const [banerMinistrant, setBanerMinistrant] = useState({ tytul: '', opis: '' });
@@ -919,6 +942,83 @@ export default function AdminPanel() {
     loadOdznaki(scope === 'parafia' ? selectedParafia?.id : undefined);
   };
 
+  // ==================== AKCJE: KODY RABATOWE ====================
+
+  const fetchRabaty = useCallback(async () => {
+    if (!sb) return;
+    setLoadingRabaty(true);
+    const { data, error } = await sb.from('rabaty').select('*');
+    if (error) {
+      console.error('Błąd pobierania kodów rabatowych:', error);
+      alert('Nie udało się pobrać kodów rabatowych.');
+    } else {
+      setRabaty((data as Rabat[]) || []);
+    }
+    setLoadingRabaty(false);
+  }, [sb]);
+
+  async function handleCreateRabat(e: React.FormEvent) {
+    e.preventDefault();
+    if (!sb) return;
+    const { kod, procent_znizki, max_uzyc, wazny_do } = nowyRabat;
+
+    if (!kod || !procent_znizki || !max_uzyc) {
+      alert('Wypełnij wszystkie wymagane pola.');
+      return;
+    }
+
+    const { error } = await sb.from('rabaty').insert({
+      kod,
+      procent_znizki,
+      max_uzyc,
+      wazny_do: wazny_do || null,
+      jednorazowy: max_uzyc === 1,
+    });
+
+    if (error) {
+      console.error('Błąd tworzenia kodu rabatowego:', error);
+      alert('Nie udało się utworzyć kodu rabatowego.');
+    } else {
+      alert('Kod rabatowy został utworzony!');
+      setNowyRabat({
+        kod: '',
+        procent_znizki: 10,
+        max_uzyc: 1,
+        wazny_do: '',
+      });
+      fetchRabaty();
+    }
+  }
+
+  async function handleDeleteRabat(id: string) {
+    if (!sb) return;
+    if (window.confirm('Czy na pewno chcesz usunąć ten kod rabatowy?')) {
+      const { error } = await sb.from('rabaty').delete().eq('id', id);
+
+      if (error) {
+        console.error('Błąd usuwania kodu rabatowego:', error);
+        alert('Nie udało się usunąć kodu rabatowego.');
+      } else {
+        alert('Kod rabatowy został usunięty.');
+        fetchRabaty();
+      }
+    }
+  }
+
+  const handleInputChangeRabat = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setNowyRabat((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
+  };
+
+  useEffect(() => {
+    if (activeTab === 'kody-rabatowe') {
+      fetchRabaty();
+    }
+  }, [activeTab, fetchRabaty]);
+
   // ==================== HELPERS ====================
 
   const getMemberCount = (parafiaId: string) => {
@@ -1191,7 +1291,7 @@ export default function AdminPanel() {
 
         {/* Header */}
         <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md">
                 <Shield className="w-5 h-5 text-white" />
@@ -1202,30 +1302,32 @@ export default function AdminPanel() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Scope switcher */}
-              <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                 <button
                   onClick={() => { setScope('global'); setSelectedParafia(null); }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                     scope === 'global'
                       ? 'bg-amber-500 text-white shadow-sm'
                       : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
                   <Globe className="w-4 h-4" />
-                  Cala aplikacja
+                  <span className="hidden sm:inline">Cala aplikacja</span>
+                  <span className="sm:hidden">Wszystko</span>
                 </button>
                 <button
                   onClick={() => setScope('parafia')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-all ${
                     scope === 'parafia'
                       ? 'bg-amber-500 text-white shadow-sm'
                       : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
                   <MapPin className="w-4 h-4" />
-                  Konkretna parafia
+                  <span className="hidden sm:inline">Konkretna parafia</span>
+                  <span className="sm:hidden">Parafia</span>
                 </button>
               </div>
 
@@ -1234,7 +1336,7 @@ export default function AdminPanel() {
               </button>
               <Button variant="ghost" size="sm" onClick={handleLogout} className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20">
                 <LogOut className="w-4 h-4 mr-1" />
-                Wyloguj
+                <span className="hidden sm:inline">Wyloguj</span>
               </Button>
             </div>
           </div>
@@ -1290,6 +1392,10 @@ export default function AdminPanel() {
               <TabsTrigger value="konfiguracja" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
                 <Settings className="w-4 h-4 mr-1.5" />
                 Konfiguracja
+              </TabsTrigger>
+              <TabsTrigger value="kody-rabatowe" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
+                <KeyRound className="w-4 h-4 mr-1.5" />
+                Kody Rabatowe
               </TabsTrigger>
             </TabsList>
 
@@ -2198,9 +2304,122 @@ export default function AdminPanel() {
                   </Card>
                 </div>
               )}
-            </TabsContent>
-          </Tabs>
-        </main>
+                          </TabsContent>
+                        <TabsContent value="kody-rabatowe">
+                          <div className="space-y-4">
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Utwórz nowy kod rabatowy</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <form onSubmit={handleCreateRabat} className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                      <Label htmlFor="kod">Kod</Label>
+                                      <Input
+                                        id="kod"
+                                        name="kod"
+                                        value={nowyRabat.kod}
+                                        onChange={handleInputChangeRabat}
+                                        placeholder="np. WIOSNA25"
+                                        required
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label htmlFor="procent_znizki">Procent zniżki (%)</Label>
+                                      <Input
+                                        id="procent_znizki"
+                                        name="procent_znizki"
+                                        type="number"
+                                        value={nowyRabat.procent_znizki}
+                                        onChange={handleInputChangeRabat}
+                                        min="1"
+                                        max="100"
+                                        required
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label htmlFor="max_uzyc">Maksymalna liczba użyć</Label>
+                                      <Input
+                                        id="max_uzyc"
+                                        name="max_uzyc"
+                                        type="number"
+                                        value={nowyRabat.max_uzyc}
+                                        onChange={handleInputChangeRabat}
+                                        min="1"
+                                        required
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label htmlFor="wazny_do">Ważny do (opcjonalnie)</Label>
+                                      <Input
+                                        id="wazny_do"
+                                        name="wazny_do"
+                                        type="date"
+                                        value={nowyRabat.wazny_do}
+                                        onChange={handleInputChangeRabat}
+                                      />
+                                    </div>
+                                  </div>
+                                  <Button type="submit">Utwórz kod</Button>
+                                </form>
+                              </CardContent>
+                            </Card>
+            
+                            <Card>
+                              <CardHeader>
+                                <CardTitle>Istniejące kody rabatowe</CardTitle>
+                              </CardHeader>
+                                                <CardContent>
+                                                  {loadingRabaty ? (
+                                                    <p>Ładowanie...</p>
+                                                  ) : rabaty && rabaty.length > 0 ? (
+                                                    <Table>
+                                                      <TableHeader>
+                                                        <TableRow>
+                                                          <TableHead>Kod</TableHead>
+                                                          <TableHead>Zniżka (%)</TableHead>
+                                                          <TableHead>Max użyć</TableHead>
+                                                          <TableHead>Użycia</TableHead>
+                                                          <TableHead>Ważny do</TableHead>
+                                                          <TableHead>Akcje</TableHead>
+                                                        </TableRow>
+                                                      </TableHeader>
+                                                      <TableBody>
+                                                        {rabaty.map((rabat) => (
+                                                          <TableRow key={rabat.id}>
+                                                            <TableCell className="font-medium">{rabat.kod}</TableCell>
+                                                            <TableCell>{rabat.procent_znizki}%</TableCell>
+                                                            <TableCell>{rabat.max_uzyc}</TableCell>
+                                                            <TableCell>{rabat.uzycia}</TableCell>
+                                                            <TableCell>
+                                                              {rabat.wazny_do
+                                                                ? new Date(rabat.wazny_do).toLocaleDateString()
+                                                                : 'Bezterminowo'}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                              <Button
+                                                                variant="destructive"
+                                                                size="sm"
+                                                                onClick={() => handleDeleteRabat(rabat.id)}
+                                                              >
+                                                                Usuń
+                                                              </Button>
+                                                            </TableCell>
+                                                          </TableRow>
+                                                        ))}
+                                                      </TableBody>
+                                                    </Table>
+                                                  ) : (
+                                                    <p>Brak kodów rabatowych.</p>
+                                                  )}
+                                                </CardContent>                            </Card>
+                          </div>
+                        </TabsContent>
+            
+                      </Tabs>
+                    </main>
+            
 
         {/* ==================== MODALE ==================== */}
 

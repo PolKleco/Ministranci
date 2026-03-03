@@ -7,7 +7,7 @@ import {
   LogOut, Search, Trash2, Pencil, Check, X, Plus,
   Moon, Sun, BarChart3, Eye, ChevronDown, ChevronUp,
   Copy, RefreshCw, Globe, MapPin, Loader2, AlertTriangle,
-  Lock, ArrowLeft, Send, Smile, Paperclip, Megaphone,
+  Lock, ArrowLeft, Send, Smile, Paperclip, Megaphone, Mail, EyeOff, KeyRound,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight,
   Heading1, Heading2, Heading3, Youtube, ImageIcon, Pin,
 } from 'lucide-react';
@@ -127,7 +127,12 @@ interface Stats {
   watki: number;
 }
 
-// ==================== SUPABASE ADMIN ====================
+// ==================== SUPABASE ====================
+
+const supabaseAuth = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -235,8 +240,16 @@ const GRUPY_DOCELOWE = [
 export default function AdminPanel() {
   // Auth
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
   const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'forgot' | 'reset-sent' | 'new-password'>('login');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [authChecking, setAuthChecking] = useState(true);
   const [loading, setLoading] = useState(false);
 
   // Dark mode
@@ -395,16 +408,37 @@ export default function AdminPanel() {
   // ==================== INIT ====================
 
   useEffect(() => {
-    const saved = sessionStorage.getItem('admin_auth');
-    if (saved === 'true') {
-      setIsAuthenticated(true);
-      setSb(createAdminClient());
-    }
     const dm = localStorage.getItem('darkMode');
     if (dm === 'true') {
       setDarkMode(true);
       document.documentElement.classList.add('dark');
     }
+
+    // Check existing Supabase session
+    const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const checkAdmin = (email?: string) => !!email && adminEmails.includes(email.toLowerCase());
+
+    supabaseAuth.auth.getSession().then(({ data: { session } }) => {
+      if (session && checkAdmin(session.user.email)) {
+        setIsAuthenticated(true);
+        setSb(createAdminClient());
+      }
+      setAuthChecking(false);
+    });
+
+    const { data: { subscription } } = supabaseAuth.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthMode('new-password');
+        setAuthChecking(false);
+        return;
+      }
+      if (session && event === 'SIGNED_IN' && checkAdmin(session.user.email)) {
+        setIsAuthenticated(true);
+        setSb(createAdminClient());
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -416,22 +450,105 @@ export default function AdminPanel() {
 
   // ==================== AUTH ====================
 
-  const handleLogin = () => {
-    const adminPass = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
-    if (password === adminPass) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('admin_auth', 'true');
-      setAuthError('');
-      setSb(createAdminClient());
-    } else {
-      setAuthError('Nieprawidlowe haslo');
+  const allowedEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+    .split(',')
+    .map(e => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  const isAllowedAdmin = (email: string) =>
+    allowedEmails.includes(email.trim().toLowerCase());
+
+  const handleLogin = async () => {
+    if (!authEmail.trim() || !authPassword) {
+      setAuthError('Wypełnij wszystkie pola');
+      return;
     }
+    setAuthLoading(true);
+    setAuthError('');
+
+    if (!isAllowedAdmin(authEmail)) {
+      setAuthError('Brak uprawnień administratora dla tego konta');
+      setAuthLoading(false);
+      return;
+    }
+
+    const { error } = await supabaseAuth.auth.signInWithPassword({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+
+    if (error) {
+      setAuthError('Nieprawidłowy email lub hasło');
+      setAuthLoading(false);
+      return;
+    }
+
+    setIsAuthenticated(true);
+    setSb(createAdminClient());
+    setAuthLoading(false);
+    setAuthEmail('');
+    setAuthPassword('');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabaseAuth.auth.signOut();
     setIsAuthenticated(false);
-    sessionStorage.removeItem('admin_auth');
     setSb(null);
+  };
+
+  const handleForgotPassword = async () => {
+    if (!authEmail.trim()) {
+      setAuthError('Podaj adres e-mail');
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError('');
+
+    const { error } = await supabaseAuth.auth.resetPasswordForEmail(authEmail.trim(), {
+      redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/admin`,
+    });
+
+    if (error) {
+      setAuthError('Nie udało się wysłać wiadomości. Spróbuj ponownie.');
+      setAuthLoading(false);
+      return;
+    }
+
+    setAuthMode('reset-sent');
+    setAuthLoading(false);
+  };
+
+  const handleSetNewPassword = async () => {
+    if (!newPassword) {
+      setAuthError('Podaj nowe hasło');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setAuthError('Hasło musi mieć co najmniej 6 znaków');
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      setAuthError('Hasła nie są identyczne');
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError('');
+
+    const { error } = await supabaseAuth.auth.updateUser({ password: newPassword });
+
+    if (error) {
+      setAuthError('Nie udało się zmienić hasła. Spróbuj ponownie.');
+      setAuthLoading(false);
+      return;
+    }
+
+    setNewPassword('');
+    setNewPasswordConfirm('');
+    setAuthLoading(false);
+    setIsAuthenticated(true);
+    setSb(createAdminClient());
+    setAuthMode('login');
   };
 
   // ==================== DARK MODE ====================
@@ -849,53 +966,208 @@ export default function AdminPanel() {
       }, {} as Record<string, OdznakaConfig>))
     : odznaki;
 
+  // ==================== RENDER: LOADING ====================
+
+  if (authChecking) {
+    return (
+      <div className={darkMode ? 'dark' : ''}>
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
+          <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
   // ==================== RENDER: LOGIN ====================
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || authMode === 'new-password') {
     return (
       <div className={darkMode ? 'dark' : ''}>
         <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-4">
           <Card className="w-full max-w-md bg-gray-800/80 border-gray-700 backdrop-blur-sm">
             <CardHeader className="text-center">
               <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20">
-                <Shield className="w-8 h-8 text-white" />
+                {authMode === 'new-password' ? (
+                  <KeyRound className="w-8 h-8 text-white" />
+                ) : authMode === 'forgot' || authMode === 'reset-sent' ? (
+                  <Mail className="w-8 h-8 text-white" />
+                ) : (
+                  <Shield className="w-8 h-8 text-white" />
+                )}
               </div>
-              <CardTitle className="text-2xl text-white">Panel Administratora</CardTitle>
+              <CardTitle className="text-2xl text-white">
+                {authMode === 'login' && 'Panel Administratora'}
+                {authMode === 'forgot' && 'Resetowanie hasła'}
+                {authMode === 'reset-sent' && 'Sprawdź skrzynkę'}
+                {authMode === 'new-password' && 'Nowe hasło'}
+              </CardTitle>
               <CardDescription className="text-gray-400">
-                Wprowadz haslo, aby uzyskac dostep
+                {authMode === 'login' && 'Zaloguj się, aby uzyskać dostęp'}
+                {authMode === 'forgot' && 'Wyślemy link do zresetowania hasła'}
+                {authMode === 'reset-sent' && 'Link do resetowania hasła został wysłany'}
+                {authMode === 'new-password' && 'Ustaw nowe hasło do swojego konta'}
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-gray-300">Haslo administratora</Label>
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => { setPassword(e.target.value); setAuthError(''); }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                    placeholder="Wprowadz haslo..."
-                    className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
-                  />
+              {authError && (
+                <div className="flex items-center gap-2 text-red-400 text-sm mb-4">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  {authError}
                 </div>
-                {authError && (
-                  <div className="flex items-center gap-2 text-red-400 text-sm">
-                    <AlertTriangle className="w-4 h-4" />
-                    {authError}
+              )}
+
+              {authMode === 'reset-sent' ? (
+                <div className="space-y-4 text-center">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+                    <Mail className="w-6 h-6 text-green-400" />
                   </div>
-                )}
-                <Button
-                  onClick={handleLogin}
-                  className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
-                >
-                  <Lock className="w-4 h-4 mr-2" />
-                  Zaloguj sie
-                </Button>
-                <a href="/" className="flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 text-sm transition-colors">
-                  <ArrowLeft className="w-4 h-4" />
-                  Powrot do strony glownej
-                </a>
-              </div>
+                  <p className="text-gray-300 text-sm">
+                    Wiadomość została wysłana na adres:
+                  </p>
+                  <p className="text-amber-400 font-medium">{authEmail}</p>
+                  <p className="text-gray-500 text-xs">
+                    Kliknij link w wiadomości e-mail, aby ustawić nowe hasło. Jeśli nie widzisz wiadomości, sprawdź folder spam.
+                  </p>
+                  <button
+                    onClick={() => { setAuthMode('login'); setAuthError(''); }}
+                    className="text-sm text-amber-400 hover:text-amber-300 transition-colors font-medium"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
+                    Wróć do logowania
+                  </button>
+                </div>
+
+              ) : authMode === 'forgot' ? (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-gray-300">Adres e-mail</Label>
+                    <Input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => { setAuthEmail(e.target.value); setAuthError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()}
+                      placeholder="twoj@email.pl"
+                      className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleForgotPassword}
+                    disabled={authLoading}
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+                  >
+                    {authLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    <Mail className="w-4 h-4 mr-2" />
+                    Wyślij link resetujący
+                  </Button>
+                  <button
+                    onClick={() => { setAuthMode('login'); setAuthError(''); }}
+                    className="flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 text-sm transition-colors w-full"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Wróć do logowania
+                  </button>
+                </div>
+
+              ) : authMode === 'new-password' ? (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-gray-300">Nowe hasło</Label>
+                    <div className="relative">
+                      <Input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={newPassword}
+                        onChange={(e) => { setNewPassword(e.target.value); setAuthError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSetNewPassword()}
+                        placeholder="Minimum 6 znaków"
+                        className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-500 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-gray-300">Potwierdź nowe hasło</Label>
+                    <Input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPasswordConfirm}
+                      onChange={(e) => { setNewPasswordConfirm(e.target.value); setAuthError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSetNewPassword()}
+                      placeholder="Powtórz hasło"
+                      className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleSetNewPassword}
+                    disabled={authLoading}
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+                  >
+                    {authLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    <KeyRound className="w-4 h-4 mr-2" />
+                    Ustaw nowe hasło
+                  </Button>
+                </div>
+
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-gray-300">Adres e-mail</Label>
+                    <Input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => { setAuthEmail(e.target.value); setAuthError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                      placeholder="twoj@email.pl"
+                      className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-gray-300">Hasło</Label>
+                    <div className="relative">
+                      <Input
+                        type={showAuthPassword ? 'text' : 'password'}
+                        value={authPassword}
+                        onChange={(e) => { setAuthPassword(e.target.value); setAuthError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                        placeholder="Wprowadź hasło..."
+                        className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-500 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAuthPassword(!showAuthPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                      >
+                        {showAuthPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-right -mt-2">
+                    <button
+                      onClick={() => { setAuthMode('forgot'); setAuthError(''); }}
+                      className="text-xs text-amber-400/70 hover:text-amber-400 transition-colors"
+                    >
+                      Nie pamiętasz hasła?
+                    </button>
+                  </div>
+                  <Button
+                    onClick={handleLogin}
+                    disabled={authLoading}
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+                  >
+                    {authLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    <Lock className="w-4 h-4 mr-2" />
+                    Zaloguj się
+                  </Button>
+                  <a href="/" className="flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 text-sm transition-colors">
+                    <ArrowLeft className="w-4 h-4" />
+                    Powrót do strony głównej
+                  </a>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

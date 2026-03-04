@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -8,11 +9,11 @@ import {
   Copy, X, Plus, Check, CheckCircle, Hourglass,
   UserPlus, UserCheck, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
-  MessageSquare, Pin, PinOff, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
-  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, FileText, GripVertical,
-  Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Palette, Type, RefreshCw, Ticket, Download
+  MessageSquare, Pin, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
+  Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, GripVertical,
+  Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Ticket, Download
 } from 'lucide-react';
-import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TiptapImage from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
@@ -54,6 +55,7 @@ import {
   getLiturgicalMonth, KOLORY_LITURGICZNE, RANGI, MIESIACE, DNI_TYGODNIA, DNI_TYGODNIA_FULL,
   type DzienLiturgiczny,
 } from '@/lib/kalendarz-liturgiczny';
+import { sanitizeRichHtml } from '@/lib/sanitize-rich-html';
 
 // ==================== LIMITY ====================
 const DARMOWY_LIMIT_MINISTRANTOW = 5;
@@ -109,6 +111,7 @@ const DIECEZJE_POLSKIE = [
 
 type UserType = 'ksiadz' | 'ministrant';
 type GrupaType = string;
+type RankingSettingsTab = 'punkty' | 'rangi' | 'odznaki' | 'ogolne';
 
 interface GrupaConfig {
   id: string;
@@ -362,6 +365,754 @@ interface Powiadomienie {
   created_at: string;
 }
 
+interface AppConfigEntry {
+  klucz: string;
+  wartosc: string | null;
+}
+
+interface PremiumSubscription {
+  tier: string;
+  rabat_id: string | null;
+  rabaty?: {
+    kod: string;
+    procent_znizki: number | null;
+  } | null;
+}
+
+interface PendingObecnosciCardProps {
+  pendingObecnosci: Obecnosc[];
+  memberByProfileId: Map<string, Member>;
+  approvedDyzuryKeySet: Set<string>;
+  approvingObecnosciIds: Set<string>;
+  rejectingObecnosciIds: Set<string>;
+  bulkApprovingObecnosci: boolean;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  onApproveAll: () => void;
+}
+
+function PendingObecnosciCard({
+  pendingObecnosci,
+  memberByProfileId,
+  approvedDyzuryKeySet,
+  approvingObecnosciIds,
+  rejectingObecnosciIds,
+  bulkApprovingObecnosci,
+  onApprove,
+  onReject,
+  onApproveAll,
+}: PendingObecnosciCardProps) {
+  return (
+    <Card className={pendingObecnosci.length > 0 ? 'border-yellow-300 dark:border-yellow-600 shadow-md shadow-yellow-100 dark:shadow-yellow-900/20' : ''}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Hourglass className="w-4 h-4 text-yellow-500" />
+            Oczekujące zgłoszenia ({pendingObecnosci.length})
+          </CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {pendingObecnosci.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400 text-sm">Brak oczekujących zgłoszeń.</p>
+        ) : (
+          <div className="space-y-2">
+            {pendingObecnosci.map((o) => {
+              const member = memberByProfileId.get(o.ministrant_id);
+              const d = new Date(o.data);
+              const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+              const isDyzur = approvedDyzuryKeySet.has(`${o.ministrant_id}:${d.getDay()}`);
+              const isApproving = approvingObecnosciIds.has(o.id);
+              const isRejecting = rejectingObecnosciIds.has(o.id);
+              return (
+                <div key={o.id} className="flex items-center justify-between gap-2 p-2 sm:p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm sm:text-base truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</div>
+                    <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                      {dayName} {d.toLocaleDateString('pl-PL')} {o.godzina && `• ${o.godzina}`}
+                      {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
+                    </div>
+                    <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                      {o.typ === 'wydarzenie' ? `⭐ ${o.nazwa_nabożeństwa}` : o.typ === 'nabożeństwo' ? o.nazwa_nabożeństwa : 'Msza'}
+                      {' • '}{o.punkty_finalne} pkt {o.mnoznik > 1 ? `(${o.punkty_bazowe} × ${o.mnoznik})` : ''}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 sm:gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => onApprove(o.id)}
+                      disabled={bulkApprovingObecnosci || isApproving || isRejecting}
+                    >
+                      <Check className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => onReject(o.id)}
+                      disabled={bulkApprovingObecnosci || isApproving || isRejecting}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+            {pendingObecnosci.length > 1 && (
+              <button
+                onClick={onApproveAll}
+                disabled={bulkApprovingObecnosci}
+                className="w-full mt-3 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 active:scale-[0.98] text-white font-bold text-base shadow-lg shadow-green-500/25 transition-all flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-5 h-5" />
+                {bulkApprovingObecnosci ? 'Zatwierdzanie...' : `Zatwierdź wszystkie (${pendingObecnosci.length})`}
+              </button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface RankingParafiiCardProps {
+  rankingData: RankingEntry[];
+  members: Member[];
+  getRanga: (pkt: number) => RangaConfig | null | undefined;
+  currentParafiaNazwa?: string;
+}
+
+function RankingParafiiCard({
+  rankingData,
+  members,
+  getRanga,
+  currentParafiaNazwa,
+}: RankingParafiiCardProps) {
+  const rankingRef = useRef<HTMLDivElement | null>(null);
+  const maxPkt = rankingData.length > 0 ? Math.max(...rankingData.map((r) => Number(r.total_pkt)), 1) : 1;
+
+  const handleDownloadPdf = async () => {
+    const el = rankingRef.current;
+    if (!el) return;
+    const html2canvas = (await import('html2canvas-pro')).default;
+    const { jsPDF } = await import('jspdf');
+    const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    const imgData = canvas.toDataURL('image/png');
+    const imgW = canvas.width;
+    const imgH = canvas.height;
+    const pdfW = 210;
+    const pdfH = (imgH * pdfW) / imgW;
+    const pdf = new jsPDF('p', 'mm', pdfH > 297 ? [pdfW, pdfH + 10] : 'a4');
+    pdf.addImage(imgData, 'PNG', 0, 5, pdfW, pdfH);
+    pdf.save(`ranking-${currentParafiaNazwa || 'parafia'}-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  return (
+    <div ref={rankingRef} className="rounded-2xl overflow-hidden border border-amber-200/50 dark:border-amber-700/30 shadow-lg shadow-amber-500/5">
+      <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 px-4 py-3 flex items-center justify-between">
+        <h3 className="font-extrabold text-white flex items-center gap-2 text-base tracking-tight">
+          <Trophy className="w-5 h-5" />
+          RANKING PARAFII
+        </h3>
+        {rankingData.length > 0 && (
+          <button onClick={handleDownloadPdf} className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors" title="Pobierz PDF">
+            <Download className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-gray-900">
+        {rankingData.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400 text-sm p-4">Brak danych w rankingu.</p>
+        ) : (
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            {rankingData.map((r, i) => {
+              const member = members.find((m) => m.profile_id === r.ministrant_id);
+              const ranga = getRanga(Number(r.total_pkt));
+              const pct = Math.round((Number(r.total_pkt) / maxPkt) * 100);
+              const positionBg = i === 0
+                ? 'bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20'
+                : i === 1
+                ? 'bg-gradient-to-r from-gray-100 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/30'
+                : i === 2
+                ? 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/10'
+                : '';
+              const barColor = i === 0
+                ? 'from-amber-400 to-yellow-400'
+                : i === 1
+                ? 'from-gray-400 to-slate-400'
+                : i === 2
+                ? 'from-orange-400 to-amber-400'
+                : 'from-indigo-400 to-purple-400';
+
+              return (
+                <div key={r.id} className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 ${positionBg}`}>
+                  <div className="w-8 shrink-0 text-center">
+                    {i === 0 ? <span className="text-xl sm:text-2xl">🥇</span>
+                      : i === 1 ? <span className="text-xl sm:text-2xl">🥈</span>
+                      : i === 2 ? <span className="text-xl sm:text-2xl">🥉</span>
+                      : <span className="text-sm font-bold text-gray-400">{i + 1}</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-sm truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
+                      {ranga && (
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
+                          {ranga.nazwa}
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full mt-1 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-extrabold text-sm tabular-nums">{Number(r.total_pkt)}</div>
+                    <div className="text-[10px] text-gray-400 uppercase tracking-wider">XP</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface StatystykiMiesiacaCardProps {
+  obecnosci: Obecnosc[];
+  minusowePunkty: MinusowePunkty[];
+}
+
+function StatystykiMiesiacaCard({ obecnosci, minusowePunkty }: StatystykiMiesiacaCardProps) {
+  const zatwierdzoneCount = obecnosci.filter((o) => o.status === 'zatwierdzona').length;
+  const odrzuconeCount = obecnosci.filter((o) => o.status === 'odrzucona').length;
+  const minusoweCount = minusowePunkty.length;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Statystyki miesiąca</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
+          <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+            <div className="font-bold text-lg">{zatwierdzoneCount}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Zatwierdzone</div>
+          </div>
+          <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
+            <div className="font-bold text-lg">{odrzuconeCount}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Odrzucone</div>
+          </div>
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
+            <div className="font-bold text-lg">{minusoweCount}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">Minusowe</div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface KsiadzWydarzeniaHeaderProps {
+  kolorLiturgiczny?: string | null;
+  nazwaLiturgiczna?: string | null;
+  onOpenFunkcjeConfig: () => void;
+  onOpenAddWydarzenie: () => void;
+}
+
+function KsiadzWydarzeniaHeader({
+  kolorLiturgiczny,
+  nazwaLiturgiczna,
+  onOpenFunkcjeConfig,
+  onOpenAddWydarzenie,
+}: KsiadzWydarzeniaHeaderProps) {
+  const litBtn: Record<string, { gradient: string; hoverGradient: string; shadow: string }> = {
+    zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', hoverGradient: 'hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', shadow: 'shadow-emerald-500/25' },
+    bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', hoverGradient: 'hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', shadow: 'shadow-amber-500/25' },
+    czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', hoverGradient: 'hover:from-red-700 hover:via-rose-700 hover:to-red-600', shadow: 'shadow-red-500/25' },
+    fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', hoverGradient: 'hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', shadow: 'shadow-purple-500/25' },
+    rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', hoverGradient: 'hover:from-pink-600 hover:via-rose-500 hover:to-pink-500', shadow: 'shadow-pink-500/25' },
+  };
+  const lb = litBtn[kolorLiturgiczny || 'zielony'] || litBtn.zielony;
+
+  return (
+    <>
+      <div className={`relative overflow-hidden rounded-xl bg-gradient-to-r ${lb.gradient} px-3 py-2 shadow ${lb.shadow}`}>
+        <div className="relative flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📅</span>
+            <h2 className="text-sm font-bold text-white">Wydarzenia</h2>
+            <span className="text-white/50 text-[10px] hidden sm:inline truncate max-w-[180px]">{nazwaLiturgiczna || ''}</span>
+          </div>
+          <span className="text-lg opacity-15 select-none">✝</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-700 hover:via-sky-700 hover:to-blue-700 text-white shadow shadow-sky-500/20 transition-all duration-200"
+          onClick={onOpenFunkcjeConfig}>
+          <Settings className="w-4 h-4 mr-2" />
+          Funkcje ministrantów
+        </button>
+        <button className={`inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r ${lb.gradient} ${lb.hoverGradient} text-white shadow-lg ${lb.shadow} transition-all duration-200`}
+          onClick={onOpenAddWydarzenie}>
+          <Plus className="w-4 h-4 mr-2" />
+          Dodaj wydarzenie
+        </button>
+      </div>
+    </>
+  );
+}
+
+interface MinistrantWydarzeniaHeaderProps {
+  kolorLiturgiczny?: string | null;
+  onOpenZglosModal: () => void;
+}
+
+function MinistrantWydarzeniaHeader({
+  kolorLiturgiczny,
+  onOpenZglosModal,
+}: MinistrantWydarzeniaHeaderProps) {
+  const litG: Record<string, { gradient: string; shadow: string }> = {
+    zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
+    bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+    czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
+    fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
+    rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+  };
+  const lg = litG[kolorLiturgiczny || 'zielony'] || litG.zielony;
+
+  return (
+    <>
+      <Button onClick={onOpenZglosModal} className="w-full h-14 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-xl shadow-blue-500/25 font-extrabold text-lg rounded-xl">
+        <Plus className="w-5 h-5 mr-2" />
+        Zgłoś obecność
+      </Button>
+      <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lg.gradient} p-4 sm:p-5 shadow-lg ${lg.shadow}`}>
+        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
+        <div className="relative flex items-center gap-3">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📅</div>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Wydarzenia</h2>
+            <p className="text-white/70 text-xs sm:text-sm">Msze, nabożeństwa i celebracje</p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+interface NewPunktacjaFormState {
+  klucz: string;
+  wartosc: number;
+  opis: string;
+}
+
+interface RankingSettingsPanelProps {
+  showRankingSettings: boolean;
+  onToggleShowRankingSettings: () => void;
+  onOpenResetPunktacja: () => void;
+  punktacjaConfig: PunktacjaConfig[];
+  rangiConfig: RangaConfig[];
+  odznakiConfig: OdznakaConfig[];
+  rankingSettingsTab: RankingSettingsTab;
+  onChangeRankingSettingsTab: (tab: RankingSettingsTab) => void;
+  onInitRankingConfig: () => void;
+  punktacjaDraftDirty: boolean;
+  punktacjaSaving: boolean;
+  onSavePunktacjaDraft: () => void;
+  onMutatePunktacjaConfig: (updater: (prev: PunktacjaConfig[]) => PunktacjaConfig[]) => void;
+  onUpdateConfigOpis: (klucz: string, nowyOpis: string) => void;
+  getPunktacjaValue: (entry: PunktacjaConfig) => number;
+  onSetPunktacjaDraftValue: (id: string, value: number) => void;
+  onDeletePunktacja: (id: string) => void;
+  showNewPunktacjaForm: boolean;
+  onShowNewPunktacjaForm: (show: boolean) => void;
+  newPunktacjaForm: NewPunktacjaFormState;
+  onMutateNewPunktacjaForm: (updater: (prev: NewPunktacjaFormState) => NewPunktacjaFormState) => void;
+  onAddPunktacja: (klucz: string, wartosc: number, opis: string) => Promise<void>;
+  onMutateRangiConfig: (updater: (prev: RangaConfig[]) => RangaConfig[]) => void;
+  onUpdateRangaKolor: (id: string, kolor: string) => void;
+  onUpdateRanga: (id: string, nazwa: string, min_pkt: number) => void;
+  onDeleteRanga: (id: string) => void;
+  onAddRanga: () => void;
+  editingOdznakaId: string | null;
+  onSetEditingOdznakaId: (id: string | null) => void;
+  onMutateOdznakiConfig: (updater: (prev: OdznakaConfig[]) => OdznakaConfig[]) => void;
+  onUpdateOdznaka: (id: string, updates: Partial<OdznakaConfig>) => Promise<void>;
+  onReloadRankingData: () => void;
+  onDeleteOdznaka: (id: string) => void;
+  onAddOdznaka: () => void;
+  limitDniConfig: PunktacjaConfig | null;
+  getConfigValue: (klucz: string, fallback: number) => number;
+}
+
+function RankingSettingsPanel({
+  showRankingSettings,
+  onToggleShowRankingSettings,
+  onOpenResetPunktacja,
+  punktacjaConfig,
+  rangiConfig,
+  odznakiConfig,
+  rankingSettingsTab,
+  onChangeRankingSettingsTab,
+  onInitRankingConfig,
+  punktacjaDraftDirty,
+  punktacjaSaving,
+  onSavePunktacjaDraft,
+  onMutatePunktacjaConfig,
+  onUpdateConfigOpis,
+  getPunktacjaValue,
+  onSetPunktacjaDraftValue,
+  onDeletePunktacja,
+  showNewPunktacjaForm,
+  onShowNewPunktacjaForm,
+  newPunktacjaForm,
+  onMutateNewPunktacjaForm,
+  onAddPunktacja,
+  onMutateRangiConfig,
+  onUpdateRangaKolor,
+  onUpdateRanga,
+  onDeleteRanga,
+  onAddRanga,
+  editingOdznakaId,
+  onSetEditingOdznakaId,
+  onMutateOdznakiConfig,
+  onUpdateOdznaka,
+  onReloadRankingData,
+  onDeleteOdznaka,
+  onAddOdznaka,
+  limitDniConfig,
+  getConfigValue,
+}: RankingSettingsPanelProps) {
+  return (
+    <>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" size="sm" className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300 dark:border-red-800 dark:hover:bg-red-900/20" onClick={onOpenResetPunktacja}>
+          Wyzeruj punktację
+        </Button>
+        <Button variant="outline" size="sm" onClick={onToggleShowRankingSettings}>
+          <Settings className="w-4 h-4 mr-2" />
+          Ustawienia punktacji
+          {showRankingSettings ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
+        </Button>
+      </div>
+
+      {showRankingSettings && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5" />
+              Ustawienia punktacji
+            </CardTitle>
+            <CardDescription>Edytuj wartości punktowe, rangi i odznaki</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {punktacjaConfig.length === 0 && rangiConfig.length === 0 && odznakiConfig.length === 0 && (
+              <div className="text-center py-6 space-y-3">
+                <p className="text-gray-500 dark:text-gray-400">Brak konfiguracji punktacji. Kliknij poniżej, aby zainicjalizować domyślne punkty, rangi i odznaki.</p>
+                <Button onClick={onInitRankingConfig}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Zainicjalizuj konfigurację
+                </Button>
+              </div>
+            )}
+
+            {(punktacjaConfig.length > 0 || rangiConfig.length > 0 || odznakiConfig.length > 0) && (
+              <>
+                <div className="flex gap-2 mb-4 flex-wrap">
+                  {(['punkty', 'rangi', 'odznaki', 'ogolne'] as const).map((tab) => (
+                    <Button key={tab} variant={rankingSettingsTab === tab ? 'default' : 'outline'} size="sm" onClick={() => onChangeRankingSettingsTab(tab)}>
+                      {tab === 'punkty' ? 'Punkty' : tab === 'rangi' ? 'Rangi' : tab === 'odznaki' ? 'Odznaki' : 'Ogólne'}
+                    </Button>
+                  ))}
+                </div>
+
+                {rankingSettingsTab === 'punkty' && (
+                  <div className="space-y-4">
+                    <div className="flex justify-end">
+                      <Button size="sm" onClick={onSavePunktacjaDraft} disabled={!punktacjaDraftDirty || punktacjaSaving}>
+                        {punktacjaSaving ? 'Zapisywanie...' : 'Zapisz zmiany punktacji'}
+                      </Button>
+                    </div>
+                    {[
+                      { label: 'Punkty za msze', prefix: 'msza_', step: 1 },
+                      { label: 'Nabożeństwa', prefix: 'nabożeństwo_', step: 1 },
+                      { label: 'Mnożniki sezonowe', prefix: 'mnoznik_', step: 0.1 },
+                      { label: 'Bonusy za serie', prefix: 'bonus_seria_', step: 1 },
+                      { label: 'Ranking miesięczny', prefix: 'ranking_', step: 1 },
+                      { label: 'Minusowe punkty', prefix: 'minus_', step: 1 },
+                    ].map(({ label, prefix, step }) => {
+                      const items = punktacjaConfig.filter((p) => p.klucz.startsWith(prefix));
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={prefix}>
+                          <h4 className="font-medium text-sm text-gray-500 dark:text-gray-400 mb-2">{label}</h4>
+                          {items.map((p) => (
+                            <div key={p.klucz} className="flex flex-wrap items-center gap-2 mb-2">
+                              <Input
+                                className="flex-1 min-w-[120px] text-sm"
+                                value={p.opis}
+                                onChange={(e) => {
+                                  onMutatePunktacjaConfig((prev) => prev.map((x) => x.klucz === p.klucz ? { ...x, opis: e.target.value } : x));
+                                }}
+                                onBlur={() => onUpdateConfigOpis(p.klucz, p.opis)}
+                              />
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  step={step}
+                                  className="w-20"
+                                  value={getPunktacjaValue(p)}
+                                  onChange={(e) => {
+                                    const nextValue = Number(e.target.value);
+                                    onSetPunktacjaDraftValue(p.id, Number.isFinite(nextValue) ? nextValue : 0);
+                                  }}
+                                />
+                                <span className="text-xs text-gray-400 w-6">{prefix.startsWith('mnoznik') ? 'x' : 'pkt'}</span>
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => onDeletePunktacja(p.id)}>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+
+                    <div className="border-t pt-4">
+                      {!showNewPunktacjaForm ? (
+                        <Button variant="outline" size="sm" onClick={() => onShowNewPunktacjaForm(true)}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Dodaj nowy wpis punktacji
+                        </Button>
+                      ) : (
+                        <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Klucz (np. msza_custom)"
+                              className="flex-1"
+                              value={newPunktacjaForm.klucz}
+                              onChange={(e) => onMutateNewPunktacjaForm((prev) => ({ ...prev, klucz: e.target.value }))}
+                            />
+                            <Input
+                              type="number"
+                              placeholder="Wartość"
+                              className="w-24"
+                              value={newPunktacjaForm.wartosc || ''}
+                              onChange={(e) => onMutateNewPunktacjaForm((prev) => ({ ...prev, wartosc: Number(e.target.value) }))}
+                            />
+                          </div>
+                          <Input
+                            placeholder="Opis (np. Msza — specjalna)"
+                            value={newPunktacjaForm.opis}
+                            onChange={(e) => onMutateNewPunktacjaForm((prev) => ({ ...prev, opis: e.target.value }))}
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={async () => {
+                              if (newPunktacjaForm.klucz && newPunktacjaForm.opis) {
+                                await onAddPunktacja(newPunktacjaForm.klucz, newPunktacjaForm.wartosc, newPunktacjaForm.opis);
+                                onMutateNewPunktacjaForm(() => ({ klucz: '', wartosc: 0, opis: '' }));
+                                onShowNewPunktacjaForm(false);
+                              }
+                            }}>
+                              <Check className="w-4 h-4 mr-1" />
+                              Dodaj
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => onShowNewPunktacjaForm(false)}>
+                              Anuluj
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {rankingSettingsTab === 'rangi' && (
+                  <div className="space-y-3">
+                    {rangiConfig.map((r) => (
+                      <div key={r.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
+                        <Select value={r.kolor} onValueChange={(val) => {
+                          onMutateRangiConfig((prev) => prev.map((x) => x.id === r.id ? { ...x, kolor: val } : x));
+                          onUpdateRangaKolor(r.id, val);
+                        }}>
+                          <SelectTrigger className={`w-10 h-8 p-0 ${KOLOR_KLASY[r.kolor]?.bg}`}>
+                            <span />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.keys(KOLOR_KLASY).map((k) => (
+                              <SelectItem key={k} value={k}>
+                                <span className={`inline-block w-4 h-4 rounded ${KOLOR_KLASY[k]?.bg} mr-2`} />
+                                {k}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          className="flex-1"
+                          value={r.nazwa}
+                          onChange={(e) => {
+                            onMutateRangiConfig((prev) => prev.map((x) => x.id === r.id ? { ...x, nazwa: e.target.value } : x));
+                          }}
+                          onBlur={() => onUpdateRanga(r.id, r.nazwa, r.min_pkt)}
+                        />
+                        <span className="text-xs text-gray-500 dark:text-gray-400">od</span>
+                        <Input
+                          type="number"
+                          className="w-24"
+                          value={r.min_pkt}
+                          onChange={(e) => {
+                            onMutateRangiConfig((prev) => prev.map((x) => x.id === r.id ? { ...x, min_pkt: Number(e.target.value) } : x));
+                          }}
+                          onBlur={() => onUpdateRanga(r.id, r.nazwa, r.min_pkt)}
+                        />
+                        <span className="text-xs text-gray-500 dark:text-gray-400">pkt</span>
+                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => onDeleteRanga(r.id)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button variant="outline" size="sm" onClick={onAddRanga}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Dodaj rangę
+                    </Button>
+                  </div>
+                )}
+
+                {rankingSettingsTab === 'odznaki' && (
+                  <div className="space-y-3">
+                    {odznakiConfig.map((o) => (
+                      <div key={o.id} className={`p-3 rounded-lg space-y-2 ${o.aktywna ? 'bg-gray-50 dark:bg-gray-800' : 'bg-gray-100 dark:bg-gray-700 opacity-60'}`}>
+                        {editingOdznakaId === o.id ? (
+                          <div className="space-y-2">
+                            <Input
+                              value={o.nazwa}
+                              placeholder="Nazwa odznaki"
+                              onChange={(e) => onMutateOdznakiConfig((prev) => prev.map((x) => x.id === o.id ? { ...x, nazwa: e.target.value } : x))}
+                            />
+                            <Input
+                              value={o.opis}
+                              placeholder="Opis odznaki"
+                              onChange={(e) => onMutateOdznakiConfig((prev) => prev.map((x) => x.id === o.id ? { ...x, opis: e.target.value } : x))}
+                            />
+                            <div className="flex gap-2">
+                              <div className="flex-1">
+                                <Label className="text-xs text-gray-500 dark:text-gray-400">Typ warunku</Label>
+                                <Select value={o.warunek_typ} onValueChange={(val) => onMutateOdznakiConfig((prev) => prev.map((x) => x.id === o.id ? { ...x, warunek_typ: val } : x))}>
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {['total_obecnosci', 'pelny_tydzien', 'ranking_miesieczny', 'sezon_adwent', 'sezon_wielki_post', 'triduum', 'nabożeństwo_droga_krzyzowa', 'nabożeństwo_rozaniec', 'nabożeństwo_majowe', 'rekord_parafii', 'zero_minusowych_tyg', 'streak_tyg'].map((t) => (
+                                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500 dark:text-gray-400">Wartość</Label>
+                                <Input
+                                  type="number"
+                                  className="w-20 h-8"
+                                  value={o.warunek_wartosc}
+                                  onChange={(e) => onMutateOdznakiConfig((prev) => prev.map((x) => x.id === o.id ? { ...x, warunek_wartosc: Number(e.target.value) } : x))}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-gray-500 dark:text-gray-400">Bonus pkt</Label>
+                                <Input
+                                  type="number"
+                                  className="w-20 h-8"
+                                  value={o.bonus_pkt}
+                                  onChange={(e) => onMutateOdznakiConfig((prev) => prev.map((x) => x.id === o.id ? { ...x, bonus_pkt: Number(e.target.value) } : x))}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={async () => {
+                                await onUpdateOdznaka(o.id, { nazwa: o.nazwa, opis: o.opis, warunek_typ: o.warunek_typ, warunek_wartosc: o.warunek_wartosc, bonus_pkt: o.bonus_pkt });
+                                onSetEditingOdznakaId(null);
+                              }}>
+                                <Check className="w-4 h-4 mr-1" />
+                                Zapisz
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => { onSetEditingOdznakaId(null); onReloadRankingData(); }}>
+                                Anuluj
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Award className="w-4 h-4 text-purple-500" />
+                                <span className="font-medium text-sm">{o.nazwa}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Badge variant="outline" className="text-xs">+{o.bonus_pkt} pkt</Badge>
+                                <Button variant="ghost" size="sm" className="px-2" onClick={() => { void onUpdateOdznaka(o.id, { aktywna: !o.aktywna }); }}>
+                                  {o.aktywna ? <Unlock className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <Lock className="w-3.5 h-3.5 text-gray-400" />}
+                                </Button>
+                                <Button variant="ghost" size="sm" className="px-2" onClick={() => onSetEditingOdznakaId(o.id)}>
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => onDeleteOdznaka(o.id)}>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{o.opis}</div>
+                            <div className="text-xs text-gray-400">Warunek: {o.warunek_typ} &ge; {o.warunek_wartosc}</div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                    <Button variant="outline" size="sm" onClick={onAddOdznaka}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Dodaj odznakę
+                    </Button>
+                  </div>
+                )}
+
+                {rankingSettingsTab === 'ogolne' && (
+                  <div className="space-y-4">
+                    <div className="flex justify-end">
+                      <Button size="sm" onClick={onSavePunktacjaDraft} disabled={!punktacjaDraftDirty || punktacjaSaving}>
+                        {punktacjaSaving ? 'Zapisywanie...' : 'Zapisz zmiany punktacji'}
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-sm font-medium">Limit dni na zgłoszenie</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Ile dni po służbie ministrant może zgłosić obecność</div>
+                      </div>
+                      <Input
+                        type="number"
+                        className="w-20"
+                        value={limitDniConfig ? getPunktacjaValue(limitDniConfig) : getConfigValue('limit_dni_zgloszenie', 2)}
+                        onChange={(e) => {
+                          if (!limitDniConfig) return;
+                          const nextValue = Number(e.target.value);
+                          onSetPunktacjaDraftValue(limitDniConfig.id, Number.isFinite(nextValue) ? nextValue : 0);
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </>
+  );
+}
+
 // ==================== GRUPY DOMYŚLNE ====================
 
 const DEFAULT_GRUPY: GrupaConfig[] = [
@@ -386,19 +1137,6 @@ const DEFAULT_FUNKCJE: FunkcjaConfig[] = [
 ];
 
 // ==================== POSŁUGI ====================
-
-// DEFAULT_POSLUGI — teraz seedowane przez Supabase (init_poslugi), ta stała służy jako fallback
-const DEFAULT_POSLUGI: Posluga[] = [
-  { id: 'ceremoniarz', slug: 'ceremoniarz', nazwa: 'Ceremoniarz', opis: 'Koordynuje służbę liturgiczną, ustawia procesje', emoji: '👑', kolor: 'amber', kolejnosc: 1 },
-  { id: 'krucyferariusz', slug: 'krucyferariusz', nazwa: 'Krucyferariusz', opis: 'Niesie krzyż procesyjny', emoji: '✝️', kolor: 'red', kolejnosc: 2 },
-  { id: 'turyferariusz', slug: 'turyferariusz', nazwa: 'Turyferariusz', opis: 'Obsługuje kadzidło (trybularz)', emoji: '💨', kolor: 'purple', kolejnosc: 3 },
-  { id: 'nawikulariusz', slug: 'nawikulariusz', nazwa: 'Nawikulariusz', opis: 'Podaje kadzidło do trybularza', emoji: '🚢', kolor: 'cyan', kolejnosc: 4 },
-  { id: 'ministrant_swiatla', slug: 'ministrant_swiatla', nazwa: 'Ministrant światła', opis: 'Niesie świece w procesjach', emoji: '🕯️', kolor: 'yellow', kolejnosc: 5 },
-  { id: 'ministrant_ksiegi', slug: 'ministrant_ksiegi', nazwa: 'Ministrant księgi', opis: 'Trzyma mszał i podaje księgi', emoji: '📖', kolor: 'emerald', kolejnosc: 6 },
-  { id: 'ministrant_oltarza', slug: 'ministrant_oltarza', nazwa: 'Ministrant ołtarza', opis: 'Przygotowuje ołtarz, podaje ampułki', emoji: '⛪', kolor: 'blue', kolejnosc: 7 },
-  { id: 'ministrant_dzwonkow', slug: 'ministrant_dzwonkow', nazwa: 'Ministrant gongu i dzwonków', opis: 'Dzwoni dzwonkami i gongiem', emoji: '🔔', kolor: 'green', kolejnosc: 8 },
-  { id: 'lektor', slug: 'lektor', nazwa: 'Lektor', opis: 'Proklamuje czytania biblijne', emoji: '📜', kolor: 'indigo', kolejnosc: 9 }
-];
 
 const KOLOR_KLASY: Record<string, { bg: string; text: string; hover: string; border: string; cardBg: string }> = {
   amber: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-900 dark:text-amber-200', hover: 'hover:bg-amber-200 dark:hover:bg-amber-800/40', border: 'border-amber-300 dark:border-amber-700', cardBg: 'bg-amber-50 dark:bg-amber-900/10' },
@@ -497,7 +1235,7 @@ const WSKAZOWKI = {
 
 // ==================== TIPTAP IMAGE NODE VIEW ====================
 
-function TiptapImageView({ node, updateAttributes, selected }: any) {
+function TiptapImageView({ node, updateAttributes, selected }: NodeViewProps) {
   const [showControls, setShowControls] = useState(false);
 
   const wrapperStyle: React.CSSProperties = { display: 'inline-block' };
@@ -552,7 +1290,7 @@ function TiptapImageView({ node, updateAttributes, selected }: any) {
   );
 }
 
-function TiptapYoutubeView({ node, updateAttributes, selected }: any) {
+function TiptapYoutubeView({ node, updateAttributes, selected }: NodeViewProps) {
   const [showControls, setShowControls] = useState(false);
 
   const wrapperStyle: React.CSSProperties = { display: 'inline-block' };
@@ -762,9 +1500,14 @@ export default function MinistranciApp() {
   const [showResetPunktacjaModal, setShowResetPunktacjaModal] = useState(false);
   const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo' | 'wydarzenie', nazwa_nabożeństwa: '', godzina: '', wydarzenie_id: '' });
   const [zglosSuccess, setZglosSuccess] = useState(false);
-  const [rankingSettingsTab, setRankingSettingsTab] = useState<'punkty' | 'rangi' | 'odznaki' | 'ogolne'>('punkty');
-  const [newPunktacjaForm, setNewPunktacjaForm] = useState({ klucz: '', wartosc: 0, opis: '' });
+  const [rankingSettingsTab, setRankingSettingsTab] = useState<RankingSettingsTab>('punkty');
+  const [newPunktacjaForm, setNewPunktacjaForm] = useState<NewPunktacjaFormState>({ klucz: '', wartosc: 0, opis: '' });
   const [showNewPunktacjaForm, setShowNewPunktacjaForm] = useState(false);
+  const [punktacjaDraft, setPunktacjaDraft] = useState<Record<string, number>>({});
+  const [punktacjaSaving, setPunktacjaSaving] = useState(false);
+  const [approvingObecnosciIds, setApprovingObecnosciIds] = useState<Set<string>>(new Set());
+  const [rejectingObecnosciIds, setRejectingObecnosciIds] = useState<Set<string>>(new Set());
+  const [bulkApprovingObecnosci, setBulkApprovingObecnosci] = useState(false);
   const [editingOdznakaId, setEditingOdznakaId] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ punkty: number; total: number } | null>(null);
   const prevObecnosciRef = useRef<Obecnosc[]>([]);
@@ -810,10 +1553,19 @@ export default function MinistranciApp() {
   // Premium / Subskrypcja
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [premiumCode, setPremiumCode] = useState('');
-  const [subscription, setSubscription] = useState<any>(null);
+  const [subscription, setSubscription] = useState<PremiumSubscription | null>(null);
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
+
+  const authFetch = useCallback(async (input: string, init: RequestInit = {}) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers = new Headers(init.headers || {});
+    if (session?.access_token) {
+      headers.set('Authorization', `Bearer ${session.access_token}`);
+    }
+    return fetch(input, { ...init, headers });
+  }, []);
 
   // Tiptap Image extension with float & width + hover controls
   const FloatImage = useMemo(() => TiptapImage.extend({
@@ -1480,76 +2232,92 @@ export default function MinistranciApp() {
     }
   };
 
-  const zatwierdzObecnosc = async (obecnoscId: string) => {
-    if (!currentUser) return;
+  const zatwierdzObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean }) => {
+    if (!currentUser) throw new Error('Brak danych użytkownika');
 
     const obecnosc = obecnosci.find(o => o.id === obecnoscId);
-    if (!obecnosc) return;
+    if (!obecnosc) throw new Error('Nie znaleziono zgłoszenia');
 
-    await supabase.from('obecnosci').update({
-      status: 'zatwierdzona',
-      zatwierdzona_przez: currentUser.id,
-    }).eq('id', obecnoscId);
+    let statusUpdated = false;
+    try {
+      const { error: statusError } = await supabase.from('obecnosci').update({
+        status: 'zatwierdzona',
+        zatwierdzona_przez: currentUser.id,
+      }).eq('id', obecnoscId);
+      if (statusError) throw new Error(statusError.message);
+      statusUpdated = true;
 
-    // Upsert ranking
-    const { data: existing } = await supabase.from('ranking')
-      .select('*')
-      .eq('ministrant_id', obecnosc.ministrant_id)
-      .eq('parafia_id', obecnosc.parafia_id)
-      .single();
+      // Upsert ranking
+      const { data: existing } = await supabase.from('ranking')
+        .select('*')
+        .eq('ministrant_id', obecnosc.ministrant_id)
+        .eq('parafia_id', obecnosc.parafia_id)
+        .maybeSingle();
 
-    let newTotalPkt: number;
-    let newTotalObecnosci: number;
-    let streakTyg: number;
+      let newTotalPkt: number;
+      let newTotalObecnosci: number;
+      let streakTyg: number;
 
-    if (existing) {
-      newTotalPkt = Number(existing.total_pkt) + obecnosc.punkty_finalne;
-      newTotalObecnosci = (existing.total_obecnosci || 0) + 1;
-      streakTyg = existing.streak_tyg || 0;
-      const ranga = getRanga(newTotalPkt);
-      await supabase.from('ranking').update({
-        total_pkt: newTotalPkt,
-        total_obecnosci: newTotalObecnosci,
-        ranga: ranga?.nazwa || 'Ready',
-        updated_at: new Date().toISOString(),
-      }).eq('id', existing.id);
-    } else {
-      newTotalPkt = obecnosc.punkty_finalne;
-      newTotalObecnosci = 1;
-      streakTyg = 0;
-      const ranga = getRanga(newTotalPkt);
-      await supabase.from('ranking').insert({
-        ministrant_id: obecnosc.ministrant_id,
-        parafia_id: obecnosc.parafia_id,
-        total_pkt: newTotalPkt,
-        total_obecnosci: newTotalObecnosci,
-        ranga: ranga?.nazwa || 'Ready',
-      });
+      if (existing) {
+        newTotalPkt = Number(existing.total_pkt) + obecnosc.punkty_finalne;
+        newTotalObecnosci = (existing.total_obecnosci || 0) + 1;
+        streakTyg = existing.streak_tyg || 0;
+        const ranga = getRanga(newTotalPkt);
+        const { error: rankingUpdateError } = await supabase.from('ranking').update({
+          total_pkt: newTotalPkt,
+          total_obecnosci: newTotalObecnosci,
+          ranga: ranga?.nazwa || 'Ready',
+          updated_at: new Date().toISOString(),
+        }).eq('id', existing.id);
+        if (rankingUpdateError) throw new Error(rankingUpdateError.message);
+      } else {
+        newTotalPkt = obecnosc.punkty_finalne;
+        newTotalObecnosci = 1;
+        streakTyg = 0;
+        const ranga = getRanga(newTotalPkt);
+        const { error: rankingInsertError } = await supabase.from('ranking').insert({
+          ministrant_id: obecnosc.ministrant_id,
+          parafia_id: obecnosc.parafia_id,
+          total_pkt: newTotalPkt,
+          total_obecnosci: newTotalObecnosci,
+          ranga: ranga?.nazwa || 'Ready',
+        });
+        if (rankingInsertError) throw new Error(rankingInsertError.message);
+      }
+
+      // Sprawdź odznaki
+      await sprawdzOdznaki(obecnosc.ministrant_id, obecnosc.parafia_id, newTotalObecnosci, newTotalPkt, streakTyg);
+
+      // Push notification do ministranta
+      if (currentParafia) {
+        const ministrant = members.find(m => m.profile_id === obecnosc.ministrant_id);
+        authFetch('/api/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parafia_id: currentParafia.id,
+            grupa_docelowa: 'wszyscy',
+            title: `Brawo! +${obecnosc.punkty_finalne} pkt`,
+            body: `Twoje zgłoszenie zostało zatwierdzone! Masz już ${newTotalPkt} pkt ${ministrant ? `${ministrant.imie} ${ministrant.nazwisko || ''}`.trim() : ''}`,
+            url: '/app',
+            kategoria: 'zatwierdzenie',
+            target_user_id: obecnosc.ministrant_id,
+          }),
+        }).catch(() => {});
+      }
+
+      if (!options?.skipReload) {
+        loadRankingData();
+      }
+    } catch (err) {
+      if (statusUpdated) {
+        await supabase.from('obecnosci').update({
+          status: 'oczekuje',
+          zatwierdzona_przez: null,
+        }).eq('id', obecnoscId);
+      }
+      throw err;
     }
-
-    // Sprawdź odznaki
-    await sprawdzOdznaki(obecnosc.ministrant_id, obecnosc.parafia_id, newTotalObecnosci, newTotalPkt, streakTyg);
-
-    // Push notification do ministranta
-    if (currentParafia) {
-      const ministrant = members.find(m => m.profile_id === obecnosc.ministrant_id);
-      fetch('/api/push/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parafia_id: currentParafia.id,
-          grupa_docelowa: 'wszyscy',
-          title: `Brawo! +${obecnosc.punkty_finalne} pkt`,
-          body: `Twoje zgłoszenie zostało zatwierdzone! Masz już ${newTotalPkt} pkt ${ministrant ? `${ministrant.imie} ${ministrant.nazwisko || ''}`.trim() : ''}`,
-          url: '/app',
-          kategoria: 'zatwierdzenie',
-          autor_id: currentUser.id,
-          target_user_id: obecnosc.ministrant_id,
-        }),
-      }).catch(() => {});
-    }
-
-    loadRankingData();
   };
 
   const dodajPunktyRecznie = async () => {
@@ -1588,17 +2356,74 @@ export default function MinistranciApp() {
   };
 
   const odrzucObecnosc = async (obecnoscId: string) => {
-    await supabase.from('obecnosci').update({
+    if (!currentUser) throw new Error('Brak danych użytkownika');
+    const { error } = await supabase.from('obecnosci').update({
       status: 'odrzucona',
-      zatwierdzona_przez: currentUser?.id,
+      zatwierdzona_przez: currentUser.id,
     }).eq('id', obecnoscId);
+    if (error) throw new Error(error.message);
     loadRankingData();
   };
 
+  const handleApproveObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean }) => {
+    if (bulkApprovingObecnosci || approvingObecnosciIds.has(obecnoscId)) return;
+    setApprovingObecnosciIds((prev) => {
+      const next = new Set(prev);
+      next.add(obecnoscId);
+      return next;
+    });
+    try {
+      await zatwierdzObecnosc(obecnoscId, options);
+    } catch (err) {
+      alert('Nie udało się zatwierdzić zgłoszenia: ' + (err instanceof Error ? err.message : String(err)));
+      throw err;
+    } finally {
+      setApprovingObecnosciIds((prev) => {
+        const next = new Set(prev);
+        next.delete(obecnoscId);
+        return next;
+      });
+    }
+  };
+
+  const handleRejectObecnosc = async (obecnoscId: string) => {
+    if (rejectingObecnosciIds.has(obecnoscId)) return;
+    setRejectingObecnosciIds((prev) => {
+      const next = new Set(prev);
+      next.add(obecnoscId);
+      return next;
+    });
+    try {
+      await odrzucObecnosc(obecnoscId);
+    } catch (err) {
+      alert('Nie udało się odrzucić zgłoszenia: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setRejectingObecnosciIds((prev) => {
+        const next = new Set(prev);
+        next.delete(obecnoscId);
+        return next;
+      });
+    }
+  };
+
   const zatwierdzWszystkie = async () => {
-    const oczekujace = obecnosci.filter(o => o.status === 'oczekuje');
-    for (const o of oczekujace) {
-      await zatwierdzObecnosc(o.id);
+    if (bulkApprovingObecnosci || pendingObecnosci.length === 0) return;
+    setBulkApprovingObecnosci(true);
+    try {
+      let failed = 0;
+      for (const o of pendingObecnosci) {
+        try {
+          await handleApproveObecnosc(o.id, { skipReload: true });
+        } catch {
+          failed += 1;
+        }
+      }
+      loadRankingData();
+      if (failed > 0) {
+        alert(`Nie udało się zatwierdzić ${failed} z ${pendingObecnosci.length} zgłoszeń.`);
+      }
+    } finally {
+      setBulkApprovingObecnosci(false);
     }
   };
 
@@ -1705,18 +2530,18 @@ export default function MinistranciApp() {
   const handleDeleteMember = async (member: Member) => {
     if (!currentUser?.parafia_id) return;
     try {
-      const res = await fetch('/api/admin/delete-user', {
+      const res = await authFetch('/api/admin/delete-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profileId: member.profile_id,
           parafiaId: currentUser.parafia_id,
-          requesterId: currentUser.id,
         }),
       });
       if (!res.ok) {
         const err = await res.json();
         console.error('Błąd usuwania konta:', err);
+        alert(err?.error ? `Nie udało się usunąć konta: ${err.error}` : 'Nie udało się usunąć konta.');
       }
       loadParafiaData();
       loadRankingData();
@@ -1727,11 +2552,76 @@ export default function MinistranciApp() {
     setMemberToDelete(null);
   };
 
-  const updateConfigValue = async (klucz: string, nowaWartosc: number) => {
-    const entry = punktacjaConfig.find(p => p.klucz === klucz);
-    if (entry) {
-      await supabase.from('punktacja_config').update({ wartosc: nowaWartosc }).eq('id', entry.id);
+  useEffect(() => {
+    const ids = new Set(punktacjaConfig.map((p) => p.id));
+    setPunktacjaDraft((prev) => {
+      const next: Record<string, number> = {};
+      for (const [id, value] of Object.entries(prev)) {
+        if (ids.has(id)) next[id] = value;
+      }
+      return next;
+    });
+  }, [punktacjaConfig]);
+
+  const getPunktacjaValue = useCallback((entry: PunktacjaConfig) => {
+    const draft = punktacjaDraft[entry.id];
+    return draft ?? entry.wartosc;
+  }, [punktacjaDraft]);
+
+  const punktacjaDraftDirty = useMemo(
+    () => punktacjaConfig.some((p) => punktacjaDraft[p.id] !== undefined && Number(punktacjaDraft[p.id]) !== Number(p.wartosc)),
+    [punktacjaConfig, punktacjaDraft]
+  );
+  const limitDniConfig = useMemo(
+    () => punktacjaConfig.find((p) => p.klucz === 'limit_dni_zgloszenie') ?? null,
+    [punktacjaConfig]
+  );
+  const pendingObecnosci = useMemo(
+    () => obecnosci.filter((o) => o.status === 'oczekuje'),
+    [obecnosci]
+  );
+  const memberByProfileId = useMemo(
+    () => new Map(members.map((m) => [m.profile_id, m])),
+    [members]
+  );
+  const approvedDyzuryKeySet = useMemo(
+    () => new Set(
+      dyzury
+        .filter((d) => d.status === 'zatwierdzona')
+        .map((d) => `${d.ministrant_id}:${d.dzien_tygodnia}`)
+    ),
+    [dyzury]
+  );
+
+  const savePunktacjaDraft = async () => {
+    const pending = punktacjaConfig
+      .filter((p) => punktacjaDraft[p.id] !== undefined && Number(punktacjaDraft[p.id]) !== Number(p.wartosc))
+      .map((p) => ({ id: p.id, wartosc: Number(punktacjaDraft[p.id]) }));
+
+    if (pending.length === 0) return;
+
+    setPunktacjaSaving(true);
+    try {
+      const results = await Promise.all(
+        pending.map((item) => supabase.from('punktacja_config').update({ wartosc: item.wartosc }).eq('id', item.id))
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) {
+        alert('Błąd zapisu punktacji: ' + failed.error.message);
+        return;
+      }
+      setPunktacjaConfig((prev) => prev.map((p) => {
+        const updated = pending.find((x) => x.id === p.id);
+        return updated ? { ...p, wartosc: updated.wartosc } : p;
+      }));
+      setPunktacjaDraft((prev) => {
+        const next = { ...prev };
+        for (const item of pending) delete next[item.id];
+        return next;
+      });
       loadRankingData();
+    } finally {
+      setPunktacjaSaving(false);
     }
   };
 
@@ -1739,17 +2629,18 @@ export default function MinistranciApp() {
     if (!currentUser?.parafia_id) return;
     const pid = currentUser.parafia_id;
     // Usuń obecności i kary
-    await supabase.from('obecnosci').delete().eq('parafia_id', pid);
-    await supabase.from('minusowe_punkty').delete().eq('parafia_id', pid);
-    // Wyzeruj tabele ranking (update zamiast delete — zachowaj rekordy)
-    const { data: rankingRows } = await supabase.from('ranking').select('id').eq('parafia_id', pid);
-    if (rankingRows) {
-      for (const row of rankingRows) {
-        await supabase.from('ranking').update({
-          total_pkt: 0, total_obecnosci: 0, total_minusowe: 0, streak_tyg: 0, max_streak_tyg: 0,
-        }).eq('id', row.id);
-      }
-    }
+    await Promise.all([
+      supabase.from('obecnosci').delete().eq('parafia_id', pid),
+      supabase.from('minusowe_punkty').delete().eq('parafia_id', pid),
+    ]);
+    // Wyzeruj ranking jednym zapytaniem (zachowaj rekordy)
+    await supabase.from('ranking').update({
+      total_pkt: 0,
+      total_obecnosci: 0,
+      total_minusowe: 0,
+      streak_tyg: 0,
+      max_streak_tyg: 0,
+    }).eq('parafia_id', pid);
     // Usuń zdobyte odznaki
     const ministrantIds = members.filter(m => m.parafia_id === pid).map(m => m.profile_id);
     if (ministrantIds.length > 0) {
@@ -1885,52 +2776,18 @@ export default function MinistranciApp() {
     if (!kodDoUzycia || !parafiaDoUzycia) return;
 
     try {
-      // Znajdź kod w tabeli rabaty (case-insensitive)
-      const { data: rabat, error: rabatError } = await supabase
-        .from('rabaty')
-        .select('*')
-        .ilike('kod', kodDoUzycia)
-        .single();
-
-      if (rabatError || !rabat) {
-        alert('Nieprawidłowy kod rabatowy.');
+      const res = await authFetch('/api/premium/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: kodDoUzycia, parafiaId: parafiaDoUzycia }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || 'Nie udało się aktywować kodu rabatowego.');
         return;
       }
 
-      // Sprawdź czy kod nie wygasł
-      if (rabat.wazny_do && new Date(rabat.wazny_do) < new Date()) {
-        alert('Ten kod rabatowy już wygasł.');
-        return;
-      }
-
-      // Sprawdź limit użyć
-      if (rabat.max_uzyc && rabat.uzycia >= rabat.max_uzyc) {
-        alert('Ten kod został już wykorzystany maksymalną liczbę razy.');
-        return;
-      }
-
-      // Zwiększ licznik użyć
-      const { error: updateRabatyError } = await supabase
-        .from('rabaty')
-        .update({ uzycia: rabat.uzycia + 1 })
-        .eq('id', rabat.id);
-
-      if (updateRabatyError) {
-        console.error('Błąd aktualizacji rabatu:', updateRabatyError);
-      }
-
-      // Aktywuj premium na parafii
-      const { error: updateParafiaError } = await supabase
-        .from('parafie')
-        .update({ tier: 'premium', rabat_id: rabat.id })
-        .eq('id', parafiaDoUzycia);
-
-      if (updateParafiaError) {
-        alert('Błąd aktywacji Premium: ' + updateParafiaError.message);
-        return;
-      }
-
-      alert('Pakiet Premium został aktywowany!');
+      alert(result.message || 'Pakiet Premium został aktywowany!');
       setShowPremiumModal(false);
       setPremiumCode('');
       loadSubscription();
@@ -2021,7 +2878,8 @@ export default function MinistranciApp() {
     supabase.from('app_config').select('klucz, wartosc').in('klucz', [`${prefix}_tytul`, `${prefix}_opis`])
       .then(({ data }) => {
         if (data && data.length > 0) {
-          const get = (k: string) => data.find((d: any) => d.klucz === k)?.wartosc || '';
+          const rows = data as AppConfigEntry[];
+          const get = (k: string) => rows.find((d) => d.klucz === k)?.wartosc || '';
           const tytul = get(`${prefix}_tytul`);
           const opis = get(`${prefix}_opis`);
           if (tytul || opis) {
@@ -2039,10 +2897,11 @@ export default function MinistranciApp() {
       .in('klucz', [`modlitwa_przed_${pid}`, `modlitwa_po_${pid}`, `modlitwa_lacina_${pid}`])
       .then(({ data }) => {
         if (data && data.length > 0) {
-          const przed = data.find((d: any) => d.klucz === `modlitwa_przed_${pid}`)?.wartosc || '';
-          const po = data.find((d: any) => d.klucz === `modlitwa_po_${pid}`)?.wartosc || '';
+          const rows = data as AppConfigEntry[];
+          const przed = rows.find((d) => d.klucz === `modlitwa_przed_${pid}`)?.wartosc || '';
+          const po = rows.find((d) => d.klucz === `modlitwa_po_${pid}`)?.wartosc || '';
           setModlitwyTresc({ przed, po });
-          const lacinaJson = data.find((d: any) => d.klucz === `modlitwa_lacina_${pid}`)?.wartosc;
+          const lacinaJson = rows.find((d) => d.klucz === `modlitwa_lacina_${pid}`)?.wartosc;
           if (lacinaJson) {
             try { setLacinaData(JSON.parse(lacinaJson)); } catch { /* ignore */ }
           }
@@ -2125,7 +2984,7 @@ export default function MinistranciApp() {
         tiptapEditor.commands.clearContent(false);
       }
     }
-  }, [showNewWatekModal, tiptapEditor]);
+  }, [showNewWatekModal, tiptapEditor, newWatekForm.tresc]);
 
   // ==================== AUTENTYKACJA ====================
 
@@ -2254,20 +3113,6 @@ export default function MinistranciApp() {
     setAuthLoading(false);
   };
 
-  const handleOAuthLogin = async (provider: 'google' | 'facebook' | 'apple') => {
-    setAuthLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/app`,
-      },
-    });
-    if (error) {
-      alert(`Błąd logowania: ${error.message}`);
-      setAuthLoading(false);
-    }
-  };
-
   const handleCompleteProfile = async () => {
     if (!currentUser) return;
     if (!profileCompletionForm.imie.trim()) {
@@ -2318,14 +3163,15 @@ export default function MinistranciApp() {
     }
     setDeleteParafiaLoading(true);
     try {
-      const res = await fetch('/api/admin/delete-parish', {
+      const res = await authFetch('/api/admin/delete-parish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parafiaId: currentUser.parafia_id, requesterId: currentUser.id })
+        body: JSON.stringify({ parafiaId: currentUser.parafia_id })
       });
       const result = await res.json();
       if (!res.ok) {
-        alert('Błąd usuwania: ' + (result.error || 'Nieznany błąd'));
+        const suffix = result?.partial ? ' (operacja częściowo wykonana, sprawdź logi serwera)' : '';
+        alert('Błąd usuwania: ' + (result.error || 'Nieznany błąd') + suffix);
         setDeleteParafiaLoading(false);
         return;
       }
@@ -2612,7 +3458,7 @@ export default function MinistranciApp() {
       await supabase.from('funkcje').insert(funkcjeToInsert);
 
       if (currentParafia) {
-        fetch('/api/push/send', {
+        authFetch('/api/push/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2622,7 +3468,6 @@ export default function MinistranciApp() {
             body: `${sluzbaForm.nazwa} — ${new Date(sluzbaForm.data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${cleanGodzina}`,
             url: '/app',
             kategoria: 'wydarzenie',
-            autor_id: currentUser.id,
           }),
         }).catch(() => {});
       }
@@ -2703,18 +3548,6 @@ export default function MinistranciApp() {
     await supabase
       .from('funkcje')
       .update({ zaakceptowana: true })
-      .eq('sluzba_id', sluzba.id)
-      .eq('ministrant_id', currentUser.id);
-
-    await loadSluzby();
-  };
-
-  const handleRejectSluzba = async (sluzba: Sluzba) => {
-    if (!currentUser) return;
-
-    await supabase
-      .from('funkcje')
-      .update({ ministrant_id: null, zaakceptowana: false })
       .eq('sluzba_id', sluzba.id)
       .eq('ministrant_id', currentUser.id);
 
@@ -3060,7 +3893,7 @@ export default function MinistranciApp() {
   const renderTresc = (text: string) => {
     if (!text) return null;
     if (/<[a-z][\s\S]*>/i.test(text)) {
-      return <div className="tiptap-content text-sm" dangerouslySetInnerHTML={{ __html: text }} />;
+      return <div className="tiptap-content text-sm" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(text) }} />;
     }
     // Stary format markdown
     const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
@@ -3115,7 +3948,7 @@ export default function MinistranciApp() {
 
       // Push notification (fire and forget)
       if (inserted && currentParafia) {
-        fetch('/api/push/send', {
+        authFetch('/api/push/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3125,7 +3958,6 @@ export default function MinistranciApp() {
             body: finalTytul,
             url: '/app',
             kategoria,
-            autor_id: currentUser.id,
           }),
         }).catch(console.error);
       }
@@ -3226,7 +4058,7 @@ export default function MinistranciApp() {
 
       // Push notification for ankieta (fire and forget)
       if (watek && currentParafia) {
-        fetch('/api/push/send', {
+        authFetch('/api/push/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3236,7 +4068,6 @@ export default function MinistranciApp() {
             body: pytanie.trim(),
             url: '/app',
             kategoria: 'ankieta',
-            autor_id: currentUser.id,
           }),
         }).catch(console.error);
       }
@@ -3305,21 +4136,6 @@ export default function MinistranciApp() {
     await loadTablicaData();
   };
 
-  const toggleZamkniety = async (watekId: string, current: boolean) => {
-    setSelectedWatek(prev => prev && prev.id === watekId ? { ...prev, zamkniety: !current } : prev);
-    setTablicaWatki(prev => prev.map(w => w.id === watekId ? { ...w, zamkniety: !current } : w));
-    const { error } = await supabase.from('tablica_watki').update({ zamkniety: !current }).eq('id', watekId);
-    if (error) { alert('Błąd: ' + error.message); }
-    await loadTablicaData();
-  };
-
-  const toggleWynikiUkryte = async (ankietaId: string, current: boolean) => {
-    setAnkiety(prev => prev.map(a => a.id === ankietaId ? { ...a, wyniki_ukryte: !current } : a));
-    const { error } = await supabase.from('ankiety').update({ wyniki_ukryte: !current }).eq('id', ankietaId);
-    if (error) { alert('Błąd: ' + error.message); }
-    await loadTablicaData();
-  };
-
   const deleteWatek = async (watekId: string) => {
     if (!confirm('Czy na pewno chcesz usunąć ten wątek?')) return;
     // Przenieś do archiwum — ustaw archiwum_data na teraz
@@ -3366,7 +4182,7 @@ export default function MinistranciApp() {
           applicationServerKey,
         });
       }
-      await fetch('/api/push/subscribe', {
+      await authFetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentUser.id, subscription: subscription.toJSON() }),
@@ -3374,7 +4190,7 @@ export default function MinistranciApp() {
     } catch {
       // Push not supported in this browser — ignore silently
     }
-  }, [currentUser?.id]);
+  }, [authFetch, currentUser?.id]);
 
   // Rejestracja push notifications po zalogowaniu
   useEffect(() => {
@@ -4669,7 +5485,6 @@ export default function MinistranciApp() {
                 const watekOpcje = watekAnkieta ? ankietyOpcje.filter(o => o.ankieta_id === watekAnkieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc) : [];
                 const mojeOdpowiedzi = watekAnkieta ? ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id && o.respondent_id === currentUser.id) : [];
                 const wszystkieOdpowiedzi = watekAnkieta ? ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id) : [];
-                const autorWatku = members.find(m => m.profile_id === selectedWatek.autor_id);
 
                 return (
                   <div className="space-y-4">
@@ -5063,7 +5878,6 @@ export default function MinistranciApp() {
                     aktywneWatki.map(watek => {
                       const watekAnkieta = ankiety.find(a => a.watek_id === watek.id);
                       const autorWatku = members.find(m => m.profile_id === watek.autor_id);
-                      const wiadomosciCount = 0; // Policzenie wiadomości wymagałoby joina — uproszczenie
                       const mojaOdp = watekAnkieta ? ankietyOdpowiedzi.some(o => o.ankieta_id === watekAnkieta.id && o.respondent_id === currentUser.id) : false;
 
                       return (
@@ -5644,496 +6458,65 @@ export default function MinistranciApp() {
               {/* === WIDOK KSIĘDZA === */}
               {currentUser.typ === 'ksiadz' && (
                 <div className="space-y-6">
-                  {/* Przycisk ustawień */}
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Button variant="outline" size="sm" className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300 dark:border-red-800 dark:hover:bg-red-900/20" onClick={() => setShowResetPunktacjaModal(true)}>
-                      Wyzeruj punktację
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setShowRankingSettings(!showRankingSettings)}>
-                      <Settings className="w-4 h-4 mr-2" />
-                      Ustawienia punktacji
-                      {showRankingSettings ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />}
-                    </Button>
-                  </div>
+                  <RankingSettingsPanel
+                    showRankingSettings={showRankingSettings}
+                    onToggleShowRankingSettings={() => setShowRankingSettings(!showRankingSettings)}
+                    onOpenResetPunktacja={() => setShowResetPunktacjaModal(true)}
+                    punktacjaConfig={punktacjaConfig}
+                    rangiConfig={rangiConfig}
+                    odznakiConfig={odznakiConfig}
+                    rankingSettingsTab={rankingSettingsTab}
+                    onChangeRankingSettingsTab={setRankingSettingsTab}
+                    onInitRankingConfig={initRankingConfig}
+                    punktacjaDraftDirty={punktacjaDraftDirty}
+                    punktacjaSaving={punktacjaSaving}
+                    onSavePunktacjaDraft={savePunktacjaDraft}
+                    onMutatePunktacjaConfig={setPunktacjaConfig}
+                    onUpdateConfigOpis={updateConfigOpis}
+                    getPunktacjaValue={getPunktacjaValue}
+                    onSetPunktacjaDraftValue={(id, value) => setPunktacjaDraft((prev) => ({ ...prev, [id]: value }))}
+                    onDeletePunktacja={deletePunktacja}
+                    showNewPunktacjaForm={showNewPunktacjaForm}
+                    onShowNewPunktacjaForm={setShowNewPunktacjaForm}
+                    newPunktacjaForm={newPunktacjaForm}
+                    onMutateNewPunktacjaForm={setNewPunktacjaForm}
+                    onAddPunktacja={addPunktacja}
+                    onMutateRangiConfig={setRangiConfig}
+                    onUpdateRangaKolor={updateRangaKolor}
+                    onUpdateRanga={updateRanga}
+                    onDeleteRanga={deleteRanga}
+                    onAddRanga={addRanga}
+                    editingOdznakaId={editingOdznakaId}
+                    onSetEditingOdznakaId={setEditingOdznakaId}
+                    onMutateOdznakiConfig={setOdznakiConfig}
+                    onUpdateOdznaka={updateOdznaka}
+                    onReloadRankingData={loadRankingData}
+                    onDeleteOdznaka={deleteOdznaka}
+                    onAddOdznaka={addOdznaka}
+                    limitDniConfig={limitDniConfig}
+                    getConfigValue={getConfigValue}
+                  />
 
-                  {/* Panel ustawień (rozwijany) */}
-                  {showRankingSettings && (
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                          <Settings className="w-5 h-5" />
-                          Ustawienia punktacji
-                        </CardTitle>
-                        <CardDescription>Edytuj wartości punktowe, rangi i odznaki</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        {/* Jeśli brak danych — przycisk inicjalizacji */}
-                        {punktacjaConfig.length === 0 && rangiConfig.length === 0 && odznakiConfig.length === 0 && (
-                          <div className="text-center py-6 space-y-3">
-                            <p className="text-gray-500 dark:text-gray-400">Brak konfiguracji punktacji. Kliknij poniżej, aby zainicjalizować domyślne punkty, rangi i odznaki.</p>
-                            <Button onClick={initRankingConfig}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Zainicjalizuj konfigurację
-                            </Button>
-                          </div>
-                        )}
+                  <PendingObecnosciCard
+                    pendingObecnosci={pendingObecnosci}
+                    memberByProfileId={memberByProfileId}
+                    approvedDyzuryKeySet={approvedDyzuryKeySet}
+                    approvingObecnosciIds={approvingObecnosciIds}
+                    rejectingObecnosciIds={rejectingObecnosciIds}
+                    bulkApprovingObecnosci={bulkApprovingObecnosci}
+                    onApprove={(id) => { void handleApproveObecnosc(id); }}
+                    onReject={(id) => { void handleRejectObecnosc(id); }}
+                    onApproveAll={() => { void zatwierdzWszystkie(); }}
+                  />
 
-                        {(punktacjaConfig.length > 0 || rangiConfig.length > 0 || odznakiConfig.length > 0) && (
-                        <>
-                        <div className="flex gap-2 mb-4 flex-wrap">
-                          {(['punkty', 'rangi', 'odznaki', 'ogolne'] as const).map(tab => (
-                            <Button key={tab} variant={rankingSettingsTab === tab ? 'default' : 'outline'} size="sm" onClick={() => setRankingSettingsTab(tab)}>
-                              {tab === 'punkty' ? 'Punkty' : tab === 'rangi' ? 'Rangi' : tab === 'odznaki' ? 'Odznaki' : 'Ogólne'}
-                            </Button>
-                          ))}
-                        </div>
+                  <RankingParafiiCard
+                    rankingData={rankingData}
+                    members={members}
+                    getRanga={getRanga}
+                    currentParafiaNazwa={currentParafia?.nazwa}
+                  />
 
-                        {/* Edycja punktów */}
-                        {rankingSettingsTab === 'punkty' && (
-                          <div className="space-y-4">
-                            {[
-                              { label: 'Punkty za msze', prefix: 'msza_', step: 1 },
-                              { label: 'Nabożeństwa', prefix: 'nabożeństwo_', step: 1 },
-                              { label: 'Mnożniki sezonowe', prefix: 'mnoznik_', step: 0.1 },
-                              { label: 'Bonusy za serie', prefix: 'bonus_seria_', step: 1 },
-                              { label: 'Ranking miesięczny', prefix: 'ranking_', step: 1 },
-                              { label: 'Minusowe punkty', prefix: 'minus_', step: 1 },
-                            ].map(({ label, prefix, step }) => {
-                              const items = punktacjaConfig.filter(p => p.klucz.startsWith(prefix));
-                              if (items.length === 0) return null;
-                              return (
-                                <div key={prefix}>
-                                  <h4 className="font-medium text-sm text-gray-500 dark:text-gray-400 mb-2">{label}</h4>
-                                  {items.map(p => (
-                                    <div key={p.klucz} className="flex flex-wrap items-center gap-2 mb-2">
-                                      <Input
-                                        className="flex-1 min-w-[120px] text-sm"
-                                        value={p.opis}
-                                        onChange={(e) => {
-                                          setPunktacjaConfig(prev => prev.map(x => x.klucz === p.klucz ? { ...x, opis: e.target.value } : x));
-                                        }}
-                                        onBlur={() => updateConfigOpis(p.klucz, p.opis)}
-                                      />
-                                      <div className="flex items-center gap-1">
-                                        <Input
-                                          type="number"
-                                          step={step}
-                                          className="w-20"
-                                          value={p.wartosc}
-                                          onChange={(e) => updateConfigValue(p.klucz, Number(e.target.value))}
-                                        />
-                                        <span className="text-xs text-gray-400 w-6">{prefix.startsWith('mnoznik') ? 'x' : 'pkt'}</span>
-                                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deletePunktacja(p.id)}>
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              );
-                            })}
-
-                            {/* Dodaj nowy wpis */}
-                            <div className="border-t pt-4">
-                              {!showNewPunktacjaForm ? (
-                                <Button variant="outline" size="sm" onClick={() => setShowNewPunktacjaForm(true)}>
-                                  <Plus className="w-4 h-4 mr-2" />
-                                  Dodaj nowy wpis punktacji
-                                </Button>
-                              ) : (
-                                <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                  <div className="flex gap-2">
-                                    <Input
-                                      placeholder="Klucz (np. msza_custom)"
-                                      className="flex-1"
-                                      value={newPunktacjaForm.klucz}
-                                      onChange={(e) => setNewPunktacjaForm(prev => ({ ...prev, klucz: e.target.value }))}
-                                    />
-                                    <Input
-                                      type="number"
-                                      placeholder="Wartość"
-                                      className="w-24"
-                                      value={newPunktacjaForm.wartosc || ''}
-                                      onChange={(e) => setNewPunktacjaForm(prev => ({ ...prev, wartosc: Number(e.target.value) }))}
-                                    />
-                                  </div>
-                                  <Input
-                                    placeholder="Opis (np. Msza — specjalna)"
-                                    value={newPunktacjaForm.opis}
-                                    onChange={(e) => setNewPunktacjaForm(prev => ({ ...prev, opis: e.target.value }))}
-                                  />
-                                  <div className="flex gap-2">
-                                    <Button size="sm" onClick={async () => {
-                                      if (newPunktacjaForm.klucz && newPunktacjaForm.opis) {
-                                        await addPunktacja(newPunktacjaForm.klucz, newPunktacjaForm.wartosc, newPunktacjaForm.opis);
-                                        setNewPunktacjaForm({ klucz: '', wartosc: 0, opis: '' });
-                                        setShowNewPunktacjaForm(false);
-                                      }
-                                    }}>
-                                      <Check className="w-4 h-4 mr-1" />
-                                      Dodaj
-                                    </Button>
-                                    <Button variant="ghost" size="sm" onClick={() => setShowNewPunktacjaForm(false)}>
-                                      Anuluj
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Edycja rang */}
-                        {rankingSettingsTab === 'rangi' && (
-                          <div className="space-y-3">
-                            {rangiConfig.map(r => (
-                              <div key={r.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
-                                <Select value={r.kolor} onValueChange={(val) => {
-                                  setRangiConfig(prev => prev.map(x => x.id === r.id ? { ...x, kolor: val } : x));
-                                  updateRangaKolor(r.id, val);
-                                }}>
-                                  <SelectTrigger className={`w-10 h-8 p-0 ${KOLOR_KLASY[r.kolor]?.bg}`}>
-                                    <span />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Object.keys(KOLOR_KLASY).map(k => (
-                                      <SelectItem key={k} value={k}>
-                                        <span className={`inline-block w-4 h-4 rounded ${KOLOR_KLASY[k]?.bg} mr-2`} />
-                                        {k}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <Input
-                                  className="flex-1"
-                                  value={r.nazwa}
-                                  onChange={(e) => {
-                                    setRangiConfig(prev => prev.map(x => x.id === r.id ? { ...x, nazwa: e.target.value } : x));
-                                  }}
-                                  onBlur={() => updateRanga(r.id, r.nazwa, r.min_pkt)}
-                                />
-                                <span className="text-xs text-gray-500 dark:text-gray-400">od</span>
-                                <Input
-                                  type="number"
-                                  className="w-24"
-                                  value={r.min_pkt}
-                                  onChange={(e) => {
-                                    setRangiConfig(prev => prev.map(x => x.id === r.id ? { ...x, min_pkt: Number(e.target.value) } : x));
-                                  }}
-                                  onBlur={() => updateRanga(r.id, r.nazwa, r.min_pkt)}
-                                />
-                                <span className="text-xs text-gray-500 dark:text-gray-400">pkt</span>
-                                <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deleteRanga(r.id)}>
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </div>
-                            ))}
-                            <Button variant="outline" size="sm" onClick={addRanga}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Dodaj rangę
-                            </Button>
-                          </div>
-                        )}
-
-                        {/* Edycja odznak */}
-                        {rankingSettingsTab === 'odznaki' && (
-                          <div className="space-y-3">
-                            {odznakiConfig.map(o => (
-                              <div key={o.id} className={`p-3 rounded-lg space-y-2 ${o.aktywna ? 'bg-gray-50 dark:bg-gray-800' : 'bg-gray-100 dark:bg-gray-700 opacity-60'}`}>
-                                {editingOdznakaId === o.id ? (
-                                  <div className="space-y-2">
-                                    <Input
-                                      value={o.nazwa}
-                                      placeholder="Nazwa odznaki"
-                                      onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, nazwa: e.target.value } : x))}
-                                    />
-                                    <Input
-                                      value={o.opis}
-                                      placeholder="Opis odznaki"
-                                      onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, opis: e.target.value } : x))}
-                                    />
-                                    <div className="flex gap-2">
-                                      <div className="flex-1">
-                                        <Label className="text-xs text-gray-500 dark:text-gray-400">Typ warunku</Label>
-                                        <Select value={o.warunek_typ} onValueChange={(val) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, warunek_typ: val } : x))}>
-                                          <SelectTrigger className="h-8 text-xs">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {['total_obecnosci', 'pelny_tydzien', 'ranking_miesieczny', 'sezon_adwent', 'sezon_wielki_post', 'triduum', 'nabożeństwo_droga_krzyzowa', 'nabożeństwo_rozaniec', 'nabożeństwo_majowe', 'rekord_parafii', 'zero_minusowych_tyg', 'streak_tyg'].map(t => (
-                                              <SelectItem key={t} value={t}>{t}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      <div>
-                                        <Label className="text-xs text-gray-500 dark:text-gray-400">Wartość</Label>
-                                        <Input
-                                          type="number"
-                                          className="w-20 h-8"
-                                          value={o.warunek_wartosc}
-                                          onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, warunek_wartosc: Number(e.target.value) } : x))}
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label className="text-xs text-gray-500 dark:text-gray-400">Bonus pkt</Label>
-                                        <Input
-                                          type="number"
-                                          className="w-20 h-8"
-                                          value={o.bonus_pkt}
-                                          onChange={(e) => setOdznakiConfig(prev => prev.map(x => x.id === o.id ? { ...x, bonus_pkt: Number(e.target.value) } : x))}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                      <Button size="sm" onClick={async () => {
-                                        await updateOdznaka(o.id, { nazwa: o.nazwa, opis: o.opis, warunek_typ: o.warunek_typ, warunek_wartosc: o.warunek_wartosc, bonus_pkt: o.bonus_pkt });
-                                        setEditingOdznakaId(null);
-                                      }}>
-                                        <Check className="w-4 h-4 mr-1" />
-                                        Zapisz
-                                      </Button>
-                                      <Button variant="ghost" size="sm" onClick={() => { setEditingOdznakaId(null); loadRankingData(); }}>
-                                        Anuluj
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        <Award className="w-4 h-4 text-purple-500" />
-                                        <span className="font-medium text-sm">{o.nazwa}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <Badge variant="outline" className="text-xs">+{o.bonus_pkt} pkt</Badge>
-                                        <Button variant="ghost" size="sm" className="px-2" onClick={() => updateOdznaka(o.id, { aktywna: !o.aktywna })}>
-                                          {o.aktywna ? <Unlock className="w-3.5 h-3.5 text-green-600 dark:text-green-400" /> : <Lock className="w-3.5 h-3.5 text-gray-400" />}
-                                        </Button>
-                                        <Button variant="ghost" size="sm" className="px-2" onClick={() => setEditingOdznakaId(o.id)}>
-                                          <Pencil className="w-3.5 h-3.5" />
-                                        </Button>
-                                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-600 dark:hover:text-red-400 px-2" onClick={() => deleteOdznaka(o.id)}>
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">{o.opis}</div>
-                                    <div className="text-xs text-gray-400">Warunek: {o.warunek_typ} &ge; {o.warunek_wartosc}</div>
-                                  </>
-                                )}
-                              </div>
-                            ))}
-                            <Button variant="outline" size="sm" onClick={addOdznaka}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              Dodaj odznakę
-                            </Button>
-                          </div>
-                        )}
-
-                        {/* Ogólne */}
-                        {rankingSettingsTab === 'ogolne' && (
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-between gap-4">
-                              <div>
-                                <div className="text-sm font-medium">Limit dni na zgłoszenie</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">Ile dni po służbie ministrant może zgłosić obecność</div>
-                              </div>
-                              <Input
-                                type="number"
-                                className="w-20"
-                                value={getConfigValue('limit_dni_zgloszenie', 2)}
-                                onChange={(e) => updateConfigValue('limit_dni_zgloszenie', Number(e.target.value))}
-                              />
-                            </div>
-                          </div>
-                        )}
-                        </>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Oczekujące zgłoszenia */}
-                  <Card className={obecnosci.filter(o => o.status === 'oczekuje').length > 0 ? 'border-yellow-300 dark:border-yellow-600 shadow-md shadow-yellow-100 dark:shadow-yellow-900/20' : ''}>
-                    <CardHeader className="pb-3">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <Hourglass className="w-4 h-4 text-yellow-500" />
-                          Oczekujące zgłoszenia ({obecnosci.filter(o => o.status === 'oczekuje').length})
-                        </CardTitle>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {obecnosci.filter(o => o.status === 'oczekuje').length === 0 ? (
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Brak oczekujących zgłoszeń.</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {obecnosci.filter(o => o.status === 'oczekuje').map(o => {
-                            const member = members.find(m => m.profile_id === o.ministrant_id);
-                            const d = new Date(o.data);
-                            const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-                            const isDyzur = dyzury.some(dy => dy.ministrant_id === o.ministrant_id && dy.dzien_tygodnia === d.getDay() && dy.status === 'zatwierdzona');
-                            return (
-                              <div key={o.id} className="flex items-center justify-between gap-2 p-2 sm:p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
-                                <div className="min-w-0">
-                                  <div className="font-medium text-sm sm:text-base truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</div>
-                                  <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                                    {dayName} {d.toLocaleDateString('pl-PL')} {o.godzina && `• ${o.godzina}`}
-                                    {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
-                                  </div>
-                                  <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-                                    {o.typ === 'wydarzenie' ? `⭐ ${o.nazwa_nabożeństwa}` : o.typ === 'nabożeństwo' ? o.nazwa_nabożeństwa : 'Msza'}
-                                    {' • '}{o.punkty_finalne} pkt {o.mnoznik > 1 ? `(${o.punkty_bazowe} × ${o.mnoznik})` : ''}
-                                  </div>
-                                </div>
-                                <div className="flex gap-1.5 sm:gap-2 shrink-0">
-                                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => zatwierdzObecnosc(o.id)}>
-                                    <Check className="w-4 h-4" />
-                                  </Button>
-                                  <Button size="sm" variant="destructive" onClick={() => odrzucObecnosc(o.id)}>
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {obecnosci.filter(o => o.status === 'oczekuje').length > 1 && (
-                            <button
-                              onClick={zatwierdzWszystkie}
-                              className="w-full mt-3 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 active:scale-[0.98] text-white font-bold text-base shadow-lg shadow-green-500/25 transition-all flex items-center justify-center gap-2"
-                            >
-                              <CheckCircle className="w-5 h-5" />
-                              Zatwierdź wszystkie ({obecnosci.filter(o => o.status === 'oczekuje').length})
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Ranking parafii — gaming style */}
-                  {(() => {
-                    const rankingRef = { current: null as HTMLDivElement | null };
-                    const maxPkt = rankingData.length > 0 ? Math.max(...rankingData.map(r => Number(r.total_pkt)), 1) : 1;
-
-                    const handleDownloadPdf = async () => {
-                      const el = rankingRef.current;
-                      if (!el) return;
-                      const html2canvas = (await import('html2canvas-pro')).default;
-                      const { jsPDF } = await import('jspdf');
-                      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-                      const imgData = canvas.toDataURL('image/png');
-                      const imgW = canvas.width;
-                      const imgH = canvas.height;
-                      const pdfW = 210; // A4 mm
-                      const pdfH = (imgH * pdfW) / imgW;
-                      const pdf = new jsPDF('p', 'mm', pdfH > 297 ? [pdfW, pdfH + 10] : 'a4');
-                      pdf.addImage(imgData, 'PNG', 0, 5, pdfW, pdfH);
-                      pdf.save(`ranking-${currentParafia?.nazwa || 'parafia'}-${new Date().toISOString().split('T')[0]}.pdf`);
-                    };
-
-                    return (
-                      <div ref={(el) => { rankingRef.current = el; }} className="rounded-2xl overflow-hidden border border-amber-200/50 dark:border-amber-700/30 shadow-lg shadow-amber-500/5">
-                        {/* Header */}
-                        <div className="bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500 px-4 py-3 flex items-center justify-between">
-                          <h3 className="font-extrabold text-white flex items-center gap-2 text-base tracking-tight">
-                            <Trophy className="w-5 h-5" />
-                            RANKING PARAFII
-                          </h3>
-                          {rankingData.length > 0 && (
-                            <button onClick={handleDownloadPdf} className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors" title="Pobierz PDF">
-                              <Download className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Content */}
-                        <div className="bg-white dark:bg-gray-900">
-                          {rankingData.length === 0 ? (
-                            <p className="text-gray-500 dark:text-gray-400 text-sm p-4">Brak danych w rankingu.</p>
-                          ) : (
-                            <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                              {rankingData.map((r, i) => {
-                                const member = members.find(m => m.profile_id === r.ministrant_id);
-                                const ranga = getRanga(Number(r.total_pkt));
-                                const pct = Math.round((Number(r.total_pkt) / maxPkt) * 100);
-                                const positionBg = i === 0
-                                  ? 'bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20'
-                                  : i === 1
-                                  ? 'bg-gradient-to-r from-gray-100 to-slate-50 dark:from-gray-800/50 dark:to-slate-800/30'
-                                  : i === 2
-                                  ? 'bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-900/20 dark:to-amber-900/10'
-                                  : '';
-                                const barColor = i === 0
-                                  ? 'from-amber-400 to-yellow-400'
-                                  : i === 1
-                                  ? 'from-gray-400 to-slate-400'
-                                  : i === 2
-                                  ? 'from-orange-400 to-amber-400'
-                                  : 'from-indigo-400 to-purple-400';
-
-                                return (
-                                  <div key={r.id} className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 ${positionBg}`}>
-                                    <div className="w-8 shrink-0 text-center">
-                                      {i === 0 ? <span className="text-xl sm:text-2xl">🥇</span>
-                                        : i === 1 ? <span className="text-xl sm:text-2xl">🥈</span>
-                                        : i === 2 ? <span className="text-xl sm:text-2xl">🥉</span>
-                                        : <span className="text-sm font-bold text-gray-400">{i + 1}</span>}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="font-semibold text-sm truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</span>
-                                        {ranga && (
-                                          <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${KOLOR_KLASY[ranga.kolor]?.bg} ${KOLOR_KLASY[ranga.kolor]?.text}`}>
-                                            {ranga.nazwa}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {/* XP bar */}
-                                      <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full mt-1 overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`}
-                                          style={{ width: `${pct}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                      <div className="font-extrabold text-sm tabular-nums">{Number(r.total_pkt)}</div>
-                                      <div className="text-[10px] text-gray-400 uppercase tracking-wider">XP</div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Statystyki */}
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Statystyki miesiąca</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
-                        <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
-                          <div className="font-bold text-lg">{obecnosci.filter(o => o.status === 'zatwierdzona').length}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">Zatwierdzone</div>
-                        </div>
-                        <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
-                          <div className="font-bold text-lg">{obecnosci.filter(o => o.status === 'odrzucona').length}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">Odrzucone</div>
-                        </div>
-                        <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3">
-                          <div className="font-bold text-lg">{minusowePunkty.length}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">Minusowe</div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <StatystykiMiesiacaCard obecnosci={obecnosci} minusowePunkty={minusowePunkty} />
                 </div>
               )}
             </div>
@@ -6142,75 +6525,25 @@ export default function MinistranciApp() {
           {/* Panel Wydarzenia */}
           <TabsContent value="sluzby">
             <div className="space-y-4">
-                  {currentUser.typ === 'ministrant' && (() => {
-                    const litG: Record<string, { gradient: string; shadow: string }> = {
-                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
-                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
-                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
-                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
-                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
-                    };
-                    const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
-                    return (
-                      <>
-                        <Button onClick={() => setShowZglosModal(true)} className="w-full h-14 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-xl shadow-blue-500/25 font-extrabold text-lg rounded-xl">
-                          <Plus className="w-5 h-5 mr-2" />
-                          Zgłoś obecność
-                        </Button>
-                        <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${lg.gradient} p-4 sm:p-5 shadow-lg ${lg.shadow}`}>
-                          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }} />
-                          <div className="relative flex items-center gap-3">
-                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl sm:text-3xl">📅</div>
-                            <div>
-                              <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">Wydarzenia</h2>
-                              <p className="text-white/70 text-xs sm:text-sm">Msze, nabożeństwa i celebracje</p>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
-                  {currentUser.typ === 'ksiadz' && (() => {
-                    const litBtn: Record<string, { gradient: string; hoverGradient: string; shadow: string; headerGradient: string }> = {
-                      zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', hoverGradient: 'hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', shadow: 'shadow-emerald-500/25', headerGradient: 'from-teal-600/10 via-emerald-600/5 to-transparent' },
-                      bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', hoverGradient: 'hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', shadow: 'shadow-amber-500/25', headerGradient: 'from-amber-500/10 via-yellow-500/5 to-transparent' },
-                      czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', hoverGradient: 'hover:from-red-700 hover:via-rose-700 hover:to-red-600', shadow: 'shadow-red-500/25', headerGradient: 'from-red-600/10 via-rose-600/5 to-transparent' },
-                      fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', hoverGradient: 'hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', shadow: 'shadow-purple-500/25', headerGradient: 'from-purple-700/10 via-violet-600/5 to-transparent' },
-                      rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', hoverGradient: 'hover:from-pink-600 hover:via-rose-500 hover:to-pink-500', shadow: 'shadow-pink-500/25', headerGradient: 'from-pink-500/10 via-rose-400/5 to-transparent' },
-                    };
-                    const lb = litBtn[dzisLiturgiczny?.kolor || 'zielony'] || litBtn.zielony;
-                    return (
-                      <>
-                        <div className={`relative overflow-hidden rounded-xl bg-gradient-to-r ${lb.gradient} px-3 py-2 shadow ${lb.shadow}`}>
-                          <div className="relative flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-lg">📅</span>
-                              <h2 className="text-sm font-bold text-white">Wydarzenia</h2>
-                              <span className="text-white/50 text-[10px] hidden sm:inline truncate max-w-[180px]">{dzisLiturgiczny?.nazwa || ''}</span>
-                            </div>
-                            <span className="text-lg opacity-15 select-none">✝</span>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-700 hover:via-sky-700 hover:to-blue-700 text-white shadow shadow-sky-500/20 transition-all duration-200"
-                            onClick={() => setShowFunkcjeConfigModal(true)}>
-                            <Settings className="w-4 h-4 mr-2" />
-                            Funkcje ministrantów
-                          </button>
-                          <button className={`inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r ${lb.gradient} ${lb.hoverGradient} text-white shadow-lg ${lb.shadow} transition-all duration-200`}
-                            onClick={() => {
-                              setSelectedSluzba(null);
-                              setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
-                              setSluzbaEkstraPunkty(null);
-                              setShowSluzbaModal(true);
-                            }}>
-                            <Plus className="w-4 h-4 mr-2" />
-                            Dodaj wydarzenie
-                          </button>
-                        </div>
-                      </>
-                    );
-                  })()}
+                  {currentUser.typ === 'ministrant' && (
+                    <MinistrantWydarzeniaHeader
+                      kolorLiturgiczny={dzisLiturgiczny?.kolor}
+                      onOpenZglosModal={() => setShowZglosModal(true)}
+                    />
+                  )}
+                  {currentUser.typ === 'ksiadz' && (
+                    <KsiadzWydarzeniaHeader
+                      kolorLiturgiczny={dzisLiturgiczny?.kolor}
+                      nazwaLiturgiczna={dzisLiturgiczny?.nazwa}
+                      onOpenFunkcjeConfig={() => setShowFunkcjeConfigModal(true)}
+                      onOpenAddWydarzenie={() => {
+                        setSelectedSluzba(null);
+                        setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+                        setSluzbaEkstraPunkty(null);
+                        setShowSluzbaModal(true);
+                      }}
+                    />
+                  )}
 
                   <div className="grid gap-4">
                     {sluzby.length === 0 ? (
@@ -6700,7 +7033,7 @@ export default function MinistranciApp() {
                           {posluga.dlugi_opis && (
                             <div className="text-sm break-words text-gray-700 dark:text-gray-300">
                               {/<[a-z][\s\S]*>/i.test(posluga.dlugi_opis)
-                                ? <div className="tiptap-posluga" dangerouslySetInnerHTML={{ __html: posluga.dlugi_opis }} />
+                                ? <div className="tiptap-posluga" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(posluga.dlugi_opis) }} />
                                 : <p className="whitespace-pre-wrap">{posluga.dlugi_opis}</p>
                               }
                             </div>
@@ -8993,7 +9326,6 @@ export default function MinistranciApp() {
             <div className="space-y-3">
               {(() => {
                 // Połącz wątki i wydarzenia w jedną listę, sortuj od najnowszych
-                const items: { type: 'watek'; data: typeof archiwalneWatki[0]; date: Date }[] | { type: 'sluzba'; data: typeof sluzbyArchiwum[0]; date: Date }[] = [];
                 const allItems = [
                   ...archiwalneWatki.map(w => ({ type: 'watek' as const, data: w, date: new Date(w.archiwum_data || w.created_at) })),
                   ...sluzbyArchiwum.map(s => ({ type: 'sluzba' as const, data: s, date: new Date(s.data) })),

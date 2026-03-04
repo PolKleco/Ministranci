@@ -44,6 +44,7 @@ import Picker from '@emoji-mart/react';
 import emojiData from '@emoji-mart/data';
 
 import Link from 'next/link';
+import { sanitizeRichHtml } from '@/lib/sanitize-rich-html';
 
 // ==================== TYPY ====================
 
@@ -423,7 +424,7 @@ export default function AdminPanel() {
   const renderTresc = (text: string) => {
     if (!text) return null;
     if (/<[a-z][\s\S]*>/i.test(text)) {
-      return <div className="tiptap-content text-sm" dangerouslySetInnerHTML={{ __html: text }} />;
+      return <div className="tiptap-content text-sm" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(text) }} />;
     }
     return <p className="text-sm whitespace-pre-wrap">{text}</p>;
   };

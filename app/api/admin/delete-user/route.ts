@@ -7,12 +7,30 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+async function getAuthUser(request: NextRequest) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return null;
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data.user) return null;
+  return data.user;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { profileId, parafiaId, requesterId } = await request.json();
+    const authUser = await getAuthUser(request);
+    if (!authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    if (!profileId || !parafiaId || !requesterId) {
+    const { profileId, parafiaId } = await request.json();
+
+    if (!profileId || !parafiaId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    if (profileId === authUser.id) {
+      return NextResponse.json({ error: 'Cannot delete self account with this endpoint' }, { status: 400 });
     }
 
     // Sprawdź czy requester jest adminem (księdzem) parafii
@@ -22,7 +40,7 @@ export async function POST(request: NextRequest) {
       .eq('id', parafiaId)
       .single();
 
-    if (!parafia || parafia.admin_id !== requesterId) {
+    if (!parafia || parafia.admin_id !== authUser.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -38,34 +56,74 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User not in parish' }, { status: 404 });
     }
 
-    // Usuń wszystkie powiązane dane (wszystkie tabele referencjujące profiles)
-    await supabaseAdmin.from('ankiety_odpowiedzi').delete().eq('respondent_id', profileId);
-    await supabaseAdmin.from('tablica_przeczytane').delete().eq('user_id', profileId);
-    await supabaseAdmin.from('tablica_wiadomosci').delete().eq('autor_id', profileId);
-    await supabaseAdmin.from('tablica_watki').delete().eq('autor_id', profileId);
-    await supabaseAdmin.from('powiadomienia').delete().eq('odbiorca_id', profileId);
-    await supabaseAdmin.from('push_subscriptions').delete().eq('user_id', profileId);
-    await supabaseAdmin.from('odznaki_zdobyte').delete().eq('ministrant_id', profileId);
-    await supabaseAdmin.from('ranking').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId);
-    await supabaseAdmin.from('minusowe_punkty').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId);
-    await supabaseAdmin.from('obecnosci').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId);
-    await supabaseAdmin.from('dyzury').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId);
-    await supabaseAdmin.from('funkcje').delete().eq('ministrant_id', profileId);
-    await supabaseAdmin.from('parafia_members').delete().eq('profile_id', profileId).eq('parafia_id', parafiaId);
+    const runStep = async (label: string, action: () => Promise<{ error: { message: string } | null }>) => {
+      const { error } = await action();
+      if (error) {
+        throw new Error(`${label}: ${error.message}`);
+      }
+    };
 
-    // Usuń profil
-    await supabaseAdmin.from('profiles').delete().eq('id', profileId);
+    // Usuń wszystkie powiązane dane (fail-fast na pierwszym błędzie)
+    await runStep('delete ankiety_odpowiedzi', () =>
+      supabaseAdmin.from('ankiety_odpowiedzi').delete().eq('respondent_id', profileId)
+    );
+    await runStep('delete tablica_przeczytane', () =>
+      supabaseAdmin.from('tablica_przeczytane').delete().eq('user_id', profileId)
+    );
+    await runStep('delete tablica_wiadomosci', () =>
+      supabaseAdmin.from('tablica_wiadomosci').delete().eq('autor_id', profileId)
+    );
+    await runStep('delete tablica_watki', () =>
+      supabaseAdmin.from('tablica_watki').delete().eq('autor_id', profileId).eq('parafia_id', parafiaId)
+    );
+    await runStep('delete powiadomienia', () =>
+      supabaseAdmin.from('powiadomienia').delete().eq('odbiorca_id', profileId).eq('parafia_id', parafiaId)
+    );
+    await runStep('delete push_subscriptions', () =>
+      supabaseAdmin.from('push_subscriptions').delete().eq('user_id', profileId)
+    );
+    await runStep('delete odznaki_zdobyte', () =>
+      supabaseAdmin.from('odznaki_zdobyte').delete().eq('ministrant_id', profileId)
+    );
+    await runStep('delete ranking', () =>
+      supabaseAdmin.from('ranking').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId)
+    );
+    await runStep('delete minusowe_punkty', () =>
+      supabaseAdmin.from('minusowe_punkty').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId)
+    );
+    await runStep('delete obecnosci', () =>
+      supabaseAdmin.from('obecnosci').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId)
+    );
+    await runStep('delete dyzury', () =>
+      supabaseAdmin.from('dyzury').delete().eq('ministrant_id', profileId).eq('parafia_id', parafiaId)
+    );
+    await runStep('delete funkcje', () =>
+      supabaseAdmin.from('funkcje').delete().eq('ministrant_id', profileId)
+    );
+    await runStep('delete parafia_members', () =>
+      supabaseAdmin.from('parafia_members').delete().eq('profile_id', profileId).eq('parafia_id', parafiaId)
+    );
+    await runStep('delete profile', () =>
+      supabaseAdmin.from('profiles').delete().eq('id', profileId)
+    );
 
     // Usuń konto auth
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(profileId);
     if (authError) {
       console.error('Error deleting auth user:', authError);
-      return NextResponse.json({ error: 'Failed to delete auth user' }, { status: 500 });
+      return NextResponse.json({
+        error: 'Failed to delete auth user',
+        details: authError.message,
+        partial: true,
+      }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('Delete user error:', err);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({
+      error: err instanceof Error ? err.message : 'Server error',
+      partial: true,
+    }, { status: 500 });
   }
 }

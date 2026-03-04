@@ -15,12 +15,39 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY!
 );
 
+async function getAuthUser(request: NextRequest) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return null;
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data.user) return null;
+  return data.user;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { parafia_id, grupa_docelowa, title, body, url, kategoria, autor_id, target_user_id } = await request.json();
+    const authUser = await getAuthUser(request);
+    if (!authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { parafia_id, grupa_docelowa, title, body, url, kategoria, target_user_id } = await request.json();
 
     if (!parafia_id || !title) {
       return NextResponse.json({ error: 'Missing parafia_id or title' }, { status: 400 });
+    }
+
+    // Only parish admin (priest) can broadcast notifications for this parish.
+    const { data: parafia, error: parafiaError } = await supabaseAdmin
+      .from('parafie')
+      .select('id, admin_id, grupy')
+      .eq('id', parafia_id)
+      .single();
+    if (parafiaError || !parafia) {
+      return NextResponse.json({ error: 'Parish not found' }, { status: 404 });
+    }
+    if (parafia.admin_id !== authUser.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     // Get target user IDs
@@ -28,6 +55,16 @@ export async function POST(request: NextRequest) {
 
     // If targeting a specific user, skip group logic
     if (target_user_id) {
+      const { data: member } = await supabaseAdmin
+        .from('parafia_members')
+        .select('profile_id')
+        .eq('parafia_id', parafia_id)
+        .eq('profile_id', target_user_id)
+        .eq('typ', 'ministrant')
+        .single();
+      if (!member) {
+        return NextResponse.json({ error: 'Target user is not an active ministrant in this parish' }, { status: 400 });
+      }
       targetUserIds = [target_user_id];
     } else if (!grupa_docelowa || grupa_docelowa === 'wszyscy') {
       const { data: members } = await supabaseAdmin
@@ -40,13 +77,6 @@ export async function POST(request: NextRequest) {
     } else {
       // grupa_docelowa contains comma-separated group NAMES — resolve to IDs
       const groupNames = grupa_docelowa.split(',').map((s: string) => s.trim()).filter(Boolean);
-
-      const { data: parafia } = await supabaseAdmin
-        .from('parafie')
-        .select('grupy')
-        .eq('id', parafia_id)
-        .single();
-
       const grupyConfig: Array<{ id: string; nazwa: string }> = (parafia?.grupy as Array<{ id: string; nazwa: string }>) || [];
       const targetGroupIds = groupNames
         .map((name: string) => grupyConfig.find(g => g.nazwa === name)?.id)
@@ -74,9 +104,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Exclude the author
-    if (autor_id) {
-      targetUserIds = targetUserIds.filter(id => id !== autor_id);
-    }
+    targetUserIds = targetUserIds.filter(id => id !== authUser.id);
 
     if (targetUserIds.length === 0) {
       return NextResponse.json({ ok: true, sent: 0 });

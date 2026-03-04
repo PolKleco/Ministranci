@@ -7,14 +7,37 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+async function getAuthUser(request: NextRequest) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return null;
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data.user) return null;
+  return data.user;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { emails, adminPassword } = await request.json();
-
-    // Proste zabezpieczenie
-    if (adminPassword !== process.env.NEXT_PUBLIC_ADMIN_PASSWORD) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    const authUser = await getAuthUser(request);
+    if (!authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const adminEmail = (authUser.email || '').toLowerCase();
+    const allowedEmails = (process.env.INTERNAL_ADMIN_EMAILS || '')
+      .split(',')
+      .map((v) => v.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (allowedEmails.length === 0) {
+      return NextResponse.json({ error: 'Cleanup endpoint disabled: INTERNAL_ADMIN_EMAILS is not configured' }, { status: 403 });
+    }
+
+    if (!adminEmail || !allowedEmails.includes(adminEmail)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { emails } = await request.json();
 
     // Pobierz listę userów z auth
     const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });

@@ -40,7 +40,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    const runStep = async (label: string, action: () => Promise<{ error: { message: string } | null }>) => {
+    const runStep = async (
+      label: string,
+      action: () => PromiseLike<{ error: { message: string } | null }>
+    ) => {
       const { error } = await action();
       if (error) {
         throw new Error(`${label}: ${error.message}`);

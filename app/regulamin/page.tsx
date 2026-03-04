@@ -1,13 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { Cinzel } from 'next/font/google';
 import { Church, ChevronLeft } from 'lucide-react';
 
-const cinzel = Cinzel({
-  subsets: ['latin', 'latin-ext'],
-  display: 'swap',
-});
+const cinzel = { className: 'font-serif' };
 
 export default function Regulamin() {
   return (

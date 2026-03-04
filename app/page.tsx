@@ -2,40 +2,50 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { Cinzel } from 'next/font/google';
 import {
-  Trophy, Calendar, BookOpen, Bell, Church,
-  Flame, Star, ChevronRight, ArrowRight,
-  Award,
-  HandHelping, Shield,
-  ChevronDown, Sparkles, Target,
+  ArrowRight,
+  Bell,
+  BookOpen,
+  Calendar,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Church,
+  Crown,
+  Medal,
+  MessageSquare,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  Star,
+  Ticket,
+  Users,
 } from 'lucide-react';
 
-const cinzel = Cinzel({
-  subsets: ['latin', 'latin-ext'],
-  display: 'swap',
-});
-
-// ── Scroll reveal hook ────────────────────────────────
+const headingFontClass = 'font-serif';
 
 function useReveal(threshold = 0.1) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
+
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting) {
+    const element = ref.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
           setVisible(true);
-          obs.unobserve(e.target);
+          observer.unobserve(entry.target);
         }
       },
       { threshold },
     );
-    obs.observe(el);
-    return () => obs.disconnect();
+
+    observer.observe(element);
+    return () => observer.disconnect();
   }, [threshold]);
+
   return { ref, visible };
 }
 
@@ -49,11 +59,13 @@ function Reveal({
   delay?: number;
 }) {
   const { ref, visible } = useReveal();
+
   return (
     <div
       ref={ref}
-      className={`transition-all duration-700 ease-out ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-        } ${className}`}
+      className={`transition-all duration-700 ease-out ${
+        visible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+      } ${className}`}
       style={{ transitionDelay: `${delay}ms` }}
     >
       {children}
@@ -61,128 +73,107 @@ function Reveal({
   );
 }
 
-function Ornament() {
+function Tag({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center justify-center gap-3 py-4">
-      <div className="h-px w-12 sm:w-24 bg-gradient-to-r from-transparent to-amber-400/25" />
-      <div className="w-1.5 h-1.5 rotate-45 bg-amber-400/40" />
-      <div className="h-px w-12 sm:w-24 bg-gradient-to-l from-transparent to-amber-400/25" />
-    </div>
+    <span className="inline-flex items-center gap-2 rounded-full border border-sky-300/18 bg-sky-300/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+      <Sparkles className="h-3.5 w-3.5" />
+      {children}
+    </span>
   );
 }
 
-// ── Data ──────────────────────────────────────────────
+const MODULES = [
+  'Aktualności',
+  'Ministranci',
+  'Ranking',
+  'Wydarzenia',
+  'Kalendarz',
+  'Posługi',
+  'Modlitwy',
+  'Wskazówki',
+];
 
-const FEATURES = [
+const PRIEST_FEATURES = [
   {
-    icon: Shield,
-    title: 'Panel Duszpasterza (Dashboard)',
-    desc: 'Zamknięta i bezpieczna przestrzeń parafii. W jednym oknie widzisz statystyki, zatwierdzasz obecności i nadajesz odznaki za wzorową służbę.',
-    accent: '#06b6d4',
+    title: 'Tablica parafii',
+    desc: 'Ogłoszenia, dyskusje i ankiety w jednym miejscu, z archiwum i obowiązkowymi odpowiedziami.',
   },
   {
-    icon: Calendar,
-    title: 'Przejrzyste grafiki służb',
-    desc: 'Wystarczy kilka kliknięć na smartfonie, by obsadzić funkcje: krucyferariusz, nawifer, ceremoniarz. Bez pomyłek i nieobecności.',
-    accent: '#10b981',
+    title: 'Panel ministrantów',
+    desc: 'Zatwierdzanie nowych osób, grupy, przypisywanie posług, dyżury i szybki kontakt mailowy.',
   },
   {
-    icon: Bell,
-    title: 'Powiadomienia i ogłoszenia',
-    desc: 'Publikuj ważne informacje i ankiety na czystej tablicy. Bez przekrzykiwania się w dziesiątkach wątków na czatach grupowych.',
-    accent: '#3b82f6',
+    title: 'Ranking i punktacja',
+    desc: 'Obecności, bonusy, minusowe punkty, rangi i odznaki konfigurowane bezpośrednio w aplikacji.',
   },
   {
-    icon: Trophy,
-    title: 'Rywalizacja budująca nawyki',
-    desc: 'Ty tylko akceptujesz obecności po Mszy, a aplikacja sama nalicza punkty i nagradza ministrantów, budując stałą motywację.',
-    accent: '#f59e0b',
-  },
-  {
-    icon: BookOpen,
-    title: 'Wbudowany kalendarz liturgiczny',
-    desc: 'Automatycznie podpowiada ponad 250 świąt i kolor szat liturgicznych. Aplikacja ułatwi przygotowanie asysty w każdym okresie.',
-    accent: '#a855f7',
-  },
-  {
-    icon: HandHelping,
-    title: 'Baza wiedzy liturgicznej',
-    desc: '12 szczegółowo opisanych funkcji. Skróć czas ciągłego tłumaczenia - nowicjusz ma interaktywny "podręcznik" w swoim telefonie.',
-    accent: '#f43f5e',
+    title: 'Wydarzenia i funkcje',
+    desc: 'Planowanie Mszy i nabożeństw z przypisaniem konkretnych funkcji ministrantów na godziny.',
   },
 ];
 
-const RANKS = [
-  { name: 'Gotowy', pts: 0 },
-  { name: 'Nowicjusz', pts: 50 },
-  { name: 'Aktywny', pts: 150 },
-  { name: 'Solidny', pts: 350 },
-  { name: 'Niezawodny', pts: 600 },
-  { name: 'Wprawny', pts: 1000 },
-  { name: 'Zaawansowany', pts: 1500 },
-  { name: 'Filar', pts: 2200 },
-  { name: 'Elita', pts: 3200 },
-  { name: 'Top', pts: 5000 },
+const MINISTRANT_FEATURES = [
+  'Najbliższa służba i przypisane funkcje widoczne od razu po wejściu',
+  'Zgłaszanie obecności po Mszy, a potem śledzenie akceptacji i punktów',
+  'Ranking parafii, rangi, odznaki i serie regularności',
+  'Modlitwy przed i po służbie oraz przewodnik ministranta',
 ];
 
-// ── Page ──────────────────────────────────────────────
+const LITURGY_FEATURES = [
+  'Kalendarz liturgiczny z okresami, świętami, wspomnieniami i kolorami szat',
+  'Baza posług liturgicznych z opisami, zdjęciami i filmami YouTube',
+  'Modlitwy własne parafii oraz łacina z tłumaczeniami',
+  'Wskazówki „przed Mszą”, „podczas Mszy” i najważniejsze zasady służby',
+];
 
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 50);
+    const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   return (
-    <div className="bg-[#050510] text-slate-100 min-h-screen overflow-x-hidden">
+    <div className="min-h-screen overflow-x-hidden bg-[#09111d] text-white">
       <style>{`
         html { scroll-behavior: smooth; }
-        @keyframes heroFadeIn {
-          from { opacity: 0; transform: translateY(24px); }
+        @keyframes fadeLift {
+          from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes float {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-8px); }
-        }
-        .hero-animate { animation: heroFadeIn 0.9s ease-out both; }
-        .hero-animate-d1 { animation: heroFadeIn 0.9s ease-out 0.2s both; }
-        .hero-animate-d2 { animation: heroFadeIn 0.9s ease-out 0.4s both; }
+        .intro-0 { animation: fadeLift 0.75s ease-out both; }
+        .intro-1 { animation: fadeLift 0.75s ease-out 0.12s both; }
+        .intro-2 { animation: fadeLift 0.75s ease-out 0.24s both; }
       `}</style>
 
-      {/* ─── Navigation ─── */}
       <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled
-          ? 'bg-[#050510]/85 backdrop-blur-xl border-b border-white/[0.04]'
-          : ''
-          }`}
+        className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+          scrolled ? 'border-b border-white/8 bg-[#09111d]/85 backdrop-blur-xl' : ''
+        }`}
       >
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Church className="w-5 h-5 text-amber-400" />
-            <span className={`${cinzel.className} text-slate-200 font-semibold text-lg`}>
-              Ministranci
-            </span>
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-300/20 to-cyan-300/10">
+              <Church className="h-4.5 w-4.5 text-sky-200" />
+            </div>
+            <div>
+              <div className={`${headingFontClass} text-2xl leading-none text-white`}>Ministranci</div>
+              <div className="mt-0.5 text-[10px] uppercase tracking-[0.26em] text-slate-400">Docelowa wersja 3</div>
+            </div>
           </div>
+
           <div className="flex items-center gap-6">
-            <a
-              href="#funkcje"
-              className="hidden sm:block text-slate-400 hover:text-slate-200 text-sm transition-colors"
-            >
-              Funkcje
+            <a href="#moduly" className="hidden text-sm text-slate-300 transition-colors hover:text-white sm:block">
+              Moduły
             </a>
-            <a
-              href="#jak-to-dziala"
-              className="hidden sm:block text-slate-400 hover:text-slate-200 text-sm transition-colors"
-            >
-              Jak to działa
+            <a href="#dla-kogo" className="hidden text-sm text-slate-300 transition-colors hover:text-white sm:block">
+              Dla kogo
             </a>
             <Link
               href="/app"
-              className="bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 px-5 py-2 rounded-full text-sm font-medium transition-colors"
+              className="inline-flex items-center gap-2 rounded-full bg-sky-300 px-5 py-2 text-sm font-semibold text-slate-950"
             >
               Otwórz aplikację
             </Link>
@@ -190,409 +181,445 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* ─── Hero ─── */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center px-6 overflow-hidden">
+      <section className="relative overflow-hidden px-6 pb-22 pt-28 sm:pb-28 sm:pt-34">
         <div
           className="absolute inset-0"
           style={{
             background: `
-              radial-gradient(ellipse 80% 50% at 50% 20%, rgba(217,175,90,0.07) 0%, transparent 50%),
-              radial-gradient(ellipse 60% 40% at 50% 70%, rgba(107,33,168,0.04) 0%, transparent 50%),
-              #050510
+              radial-gradient(circle at 16% 18%, rgba(125, 211, 252, 0.18), transparent 24%),
+              radial-gradient(circle at 82% 20%, rgba(34, 211, 238, 0.15), transparent 22%),
+              radial-gradient(circle at 50% 70%, rgba(59, 130, 246, 0.08), transparent 28%),
+              linear-gradient(180deg, #09111d 0%, #0a1628 42%, #0d1a2c 100%)
             `,
           }}
         />
 
-        {[...Array(6)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 rounded-full bg-amber-400/20"
-            style={{
-              left: `${12 + i * 16}%`,
-              top: `${18 + (i % 3) * 22}%`,
-              animation: `float ${3 + i * 0.6}s ease-in-out infinite`,
-              animationDelay: `${i * 0.8}s`,
-            }}
-          />
-        ))}
+        <div className="relative mx-auto max-w-6xl">
+          <div className="grid gap-14 lg:grid-cols-[0.98fr_1.02fr] lg:items-center">
+            <div>
+              <div className="intro-0">
+                <Tag>Landing oparty na realnej aplikacji</Tag>
+              </div>
 
-        <div className="relative z-10 max-w-4xl mx-auto text-center pt-16">
-          <div className="hero-animate flex items-center justify-center gap-2 mb-8">
-            <Church className="w-5 h-5 text-amber-400/70" />
-            <span className="text-amber-400/70 text-sm tracking-[0.3em] uppercase font-medium">
-              Ministranci
+              <h1 className={`${headingFontClass} intro-1 mt-6 max-w-3xl text-5xl leading-[0.96] text-white sm:text-7xl`}>
+                Parafia widzi porządek.
+                <span className="block text-sky-200">Ministrant widzi, co ma zrobić.</span>
+              </h1>
+
+              <p className="intro-2 mt-6 max-w-2xl text-lg leading-8 text-slate-200 sm:text-xl">
+                To nie jest już ogólny landing. Ta wersja pokazuje prawdziwy produkt: 8 modułów, osobny widok księdza i
+                ministranta, realny grafik służb, ranking, ogłoszenia, ankiety, kalendarz liturgiczny i baza posług.
+              </p>
+
+              <div className="intro-2 mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Link
+                  href="/app"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-sky-300 px-7 py-4 text-base font-semibold text-slate-950 transition-all hover:shadow-[0_14px_40px_rgba(125,211,252,0.18)]"
+                >
+                  Załóż darmowe konto parafii
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <a
+                  href="#podglad"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-medium text-white transition-colors hover:bg-white/[0.06]"
+                >
+                  Zobacz podgląd produktu
+                  <ChevronDown className="h-4 w-4" />
+                </a>
+              </div>
+
+              <div className="intro-2 mt-9 grid gap-3 sm:grid-cols-3">
+                {[
+                  ['8 modułów', 'w głównej aplikacji'],
+                  ['2 role', 'ksiądz i ministrant'],
+                  ['5 osób', 'w darmowym planie'],
+                ].map(([value, label], index) => (
+                  <div key={index} className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4">
+                    <div className="text-xl font-semibold text-sky-200">{value}</div>
+                    <div className="mt-1 text-sm leading-6 text-slate-300">{label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div id="podglad" className="intro-2">
+              <div className="rounded-[2.1rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_90px_rgba(2,8,23,0.5)] backdrop-blur-sm">
+                <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
+                  <div className="rounded-[1.8rem] border border-white/8 bg-[#0d1f36] p-5">
+                    <div className="flex items-center justify-between border-b border-white/8 pb-4">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Widok księdza</div>
+                        <div className="mt-1 text-lg font-semibold text-white">Panel parafii</div>
+                      </div>
+                      <div className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-semibold text-emerald-300">
+                        Dzisiaj
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl bg-[#112845] p-4">
+                          <Users className="h-4 w-4 text-sky-200" />
+                          <div className="mt-3 text-2xl font-semibold text-white">5 / 5</div>
+                          <div className="mt-1 text-xs leading-5 text-slate-300">limit darmowego planu</div>
+                        </div>
+                        <div className="rounded-2xl bg-[#112845] p-4">
+                          <Calendar className="h-4 w-4 text-cyan-200" />
+                          <div className="mt-3 text-2xl font-semibold text-white">6</div>
+                          <div className="mt-1 text-xs leading-5 text-slate-300">wydarzeń w tygodniu</div>
+                        </div>
+                        <div className="rounded-2xl bg-[#112845] p-4">
+                          <Bell className="h-4 w-4 text-emerald-200" />
+                          <div className="mt-3 text-2xl font-semibold text-white">3</div>
+                          <div className="mt-1 text-xs leading-5 text-slate-300">rzeczy do akcji</div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-3xl bg-[#112845] p-5">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-white">Co jest pod ręką</div>
+                            <div className="text-xs text-slate-400">Bez przełączania między czatami i notatkami</div>
+                          </div>
+                          <div className="rounded-full border border-sky-300/15 bg-sky-300/8 px-3 py-1 text-xs text-sky-200">
+                            4 obszary
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3">
+                          {[
+                            ['Ogłoszenia, dyskusje i ankiety', 'tablica'],
+                            ['Zatwierdzanie obecności i ranking', 'punkty'],
+                            ['Plan wydarzeń i przypisane funkcje', 'grafik'],
+                            ['Grupy, dyżury i posługi ministrantów', 'zarządzanie'],
+                          ].map(([label, action], index) => (
+                            <div key={index} className="flex items-center justify-between rounded-2xl bg-white/[0.03] px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <Check className="h-4 w-4 text-emerald-300" />
+                                <span className="text-sm text-slate-200">{label}</span>
+                              </div>
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200">
+                                {action}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.8rem] border border-white/8 bg-[#0f2742] p-5">
+                    <div className="mx-auto w-full max-w-[280px] rounded-[2rem] border border-white/8 bg-[#091a2d] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                      <div className="rounded-[1.5rem] bg-[#10243b] p-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Widok ministranta</span>
+                          <span className="rounded-full bg-sky-300/10 px-2.5 py-1 text-[10px] text-sky-200">Telefon</span>
+                        </div>
+
+                        <div className="mt-5 rounded-3xl bg-white/[0.03] p-4">
+                          <div className="text-xs uppercase tracking-[0.16em] text-slate-400">Najbliższa służba</div>
+                          <div className="mt-2 text-2xl font-semibold text-white">Niedziela 10:30</div>
+                          <div className="mt-1 text-xs leading-5 text-slate-300">Krzyż, świece, procesja wejścia</div>
+                        </div>
+
+                        <div className="mt-4 rounded-3xl bg-white/[0.03] p-4">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-white">Postęp</span>
+                            <span className="text-xs text-sky-200">+35 pkt</span>
+                          </div>
+                          <div className="mt-3 h-2 rounded-full bg-white/6">
+                            <div className="h-2 w-2/3 rounded-full bg-gradient-to-r from-sky-300 to-cyan-300" />
+                          </div>
+                          <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+                            <Medal className="h-3.5 w-3.5 text-sky-200" />
+                            Ranga: Solidny
+                          </div>
+                        </div>
+
+                        <div className="mt-4 space-y-3">
+                          <div className="rounded-2xl bg-white/[0.03] px-4 py-3">
+                            <div className="flex items-center gap-2 text-sm font-medium text-white">
+                              <MessageSquare className="h-4 w-4 text-cyan-200" />
+                              Aktualności
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-300">
+                              Ogłoszenie i ankieta są widoczne bezpośrednio w aplikacji.
+                            </p>
+                          </div>
+
+                          <div className="rounded-2xl bg-white/[0.03] px-4 py-3">
+                            <div className="flex items-center gap-2 text-sm font-medium text-white">
+                              <BookOpen className="h-4 w-4 text-sky-200" />
+                              Modlitwy i wskazówki
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-300">
+                              Przewodnik, modlitwy i baza wiedzy są zawsze pod ręką.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/6 bg-[#0b1728] px-6 py-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-medium text-slate-200">
+            Najmocniejsza wersja landing page jest wtedy, gdy pokazuje faktyczny układ produktu już na pierwszym ekranie.
+          </div>
+          <div className="flex flex-wrap gap-4 text-sm text-slate-300">
+            <span className="inline-flex items-center gap-2">
+              <Check className="h-4 w-4 text-emerald-300" />
+              realne funkcje
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <Check className="h-4 w-4 text-emerald-300" />
+              prawdziwy model cenowy
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <Check className="h-4 w-4 text-emerald-300" />
+              prawdziwe role użytkowników
             </span>
           </div>
+        </div>
+      </section>
 
-          <h1
-            className={`${cinzel.className} hero-animate-d1 text-4xl sm:text-5xl md:text-7xl font-bold leading-[1.1] mb-6`}
-            style={{
-              background: 'linear-gradient(135deg, #f5f0e8 0%, #d4a853 50%, #f5f0e8 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}
-          >
-            Służba z pasją.
-            <br />
-            Parafia z porządkiem.
-          </h1>
+      <section id="moduly" className="px-6 py-20">
+        <div className="mx-auto max-w-6xl">
+          <Reveal className="text-center">
+            <Tag>Mapa aplikacji</Tag>
+            <h2 className={`${headingFontClass} mt-5 text-4xl text-white sm:text-6xl`}>
+              8 modułów zamiast kilku osobnych narzędzi
+            </h2>
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-300">
+              Główna aplikacja naprawdę jest podzielona na konkretne zakładki. To warto pokazać na landing page, bo
+              od razu buduje zrozumienie produktu i jego zakresu.
+            </p>
+          </Reveal>
 
-          <p className="hero-animate-d2 text-slate-400 text-lg sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-            Aplikacja stworzona z myślą o duszpasterzach. Automatyzuj grafiki służb, motywuj młodzież do dyżurów i zyskaj przestrzeń na to co najważniejsze: formację.
+          <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {MODULES.map((module, index) => (
+              <Reveal key={module} delay={index * 50}>
+                <div className="rounded-[1.7rem] border border-white/8 bg-white/[0.03] px-5 py-5">
+                  <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Moduł {index + 1}</div>
+                  <div className="mt-3 text-lg font-semibold text-white">{module}</div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="dla-kogo" className="bg-[#0b1728] px-6 py-20">
+        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-2">
+          <Reveal>
+            <Tag>Dla księdza</Tag>
+            <h2 className={`${headingFontClass} mt-5 text-4xl text-white sm:text-6xl`}>
+              Zarządzanie parafią bez ręcznego pilnowania wszystkiego
+            </h2>
+            <div className="mt-8 grid gap-4">
+              {PRIEST_FEATURES.map((item, index) => (
+                <div key={index} className="rounded-[1.8rem] border border-white/8 bg-white/[0.03] p-5">
+                  <div className="text-base font-semibold text-white">{item.title}</div>
+                  <p className="mt-2 text-sm leading-7 text-slate-300">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={120}>
+            <Tag>Dla ministranta</Tag>
+            <h2 className={`${headingFontClass} mt-5 text-4xl text-white sm:text-6xl`}>
+              Prosty widok, który prowadzi krok po kroku
+            </h2>
+            <div className="mt-8 space-y-4">
+              {MINISTRANT_FEATURES.map((item, index) => (
+                <div key={index} className="flex items-start gap-3 rounded-[1.6rem] border border-white/8 bg-white/[0.03] px-4 py-4">
+                  <Smartphone className="mt-1 h-4 w-4 shrink-0 text-sky-200" />
+                  <span className="text-sm leading-7 text-slate-300">{item}</span>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="px-6 py-20">
+        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+          <Reveal>
+            <Tag>Liturgia i formacja</Tag>
+            <h2 className={`${headingFontClass} mt-5 text-4xl text-white sm:text-6xl`}>
+              To nie jest tylko grafik. To realne wsparcie służby.
+            </h2>
+            <p className="mt-5 text-base leading-8 text-slate-300">
+              Aplikacja ma wbudowane elementy, których zwykle brakuje w zwykłych “organizatorach”: kalendarz
+              liturgiczny, modlitwy, przewodnik i rozwijane posługi z materiałami.
+            </p>
+
+            <div className="mt-8 space-y-4">
+              {LITURGY_FEATURES.map((item, index) => (
+                <div key={index} className="flex items-start gap-3 rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-4">
+                  <Check className="mt-1 h-4 w-4 shrink-0 text-emerald-300" />
+                  <span className="text-sm leading-7 text-slate-300">{item}</span>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={120}>
+            <div className="rounded-[2rem] border border-white/8 bg-white/[0.03] p-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-[1.6rem] bg-[#10243b] p-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <Calendar className="h-4 w-4 text-sky-200" />
+                    Kalendarz liturgiczny
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-slate-300">
+                    Widok miesięczny, święta, wspomnienia oraz kolory liturgiczne widoczne bez dodatkowych materiałów.
+                  </p>
+                </div>
+
+                <div className="rounded-[1.6rem] bg-[#10243b] p-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <BookOpen className="h-4 w-4 text-cyan-200" />
+                    Modlitwy i łacina
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-slate-300">
+                    Modlitwa przed i po służbie, plus sekcje łacińskie z tłumaczeniem dla lepszej formacji.
+                  </p>
+                </div>
+
+                <div className="rounded-[1.6rem] bg-[#10243b] p-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <ShieldCheck className="h-4 w-4 text-sky-200" />
+                    Posługi z multimediami
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-slate-300">
+                    Każda posługa może mieć opis rozszerzony, galerię zdjęć i film instruktażowy.
+                  </p>
+                </div>
+
+                <div className="rounded-[1.6rem] bg-[#10243b] p-5">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <Star className="h-4 w-4 text-cyan-200" />
+                    Przewodnik ministranta
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-slate-300">
+                    Zasady przed Mszą, podczas Mszy i najważniejsze reguły zachowania w jednym miejscu.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="bg-[#0b1728] px-6 py-20">
+        <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1.02fr_0.98fr] lg:items-center">
+          <Reveal>
+            <Tag>Powiadomienia i dostępność</Tag>
+            <h2 className={`${headingFontClass} mt-5 text-4xl text-white sm:text-6xl`}>
+              Aplikacja działa jak narzędzie codzienne, nie jak martwy panel
+            </h2>
+            <p className="mt-5 text-base leading-8 text-slate-300">
+              W kodzie są realne powiadomienia push, wsparcie instalacji na iPhone oraz mechanika przypominająca o
+              ankietach, ogłoszeniach i zmianach. To warto pokazać, bo odróżnia aplikację od zwykłego “panelu www”.
+            </p>
+
+            <div className="mt-8 space-y-4">
+              {[
+                'Push dla ogłoszeń, dyskusji i ankiet',
+                'Obowiązkowe ankiety z terminem odpowiedzi',
+                'Widok PWA i instrukcja instalacji na iPhone',
+                'Archiwum ogłoszeń, ankiet, dyskusji i wydarzeń',
+              ].map((item, index) => (
+                <div key={index} className="flex items-start gap-3 rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-4">
+                  <Bell className="mt-1 h-4 w-4 shrink-0 text-sky-200" />
+                  <span className="text-sm leading-7 text-slate-300">{item}</span>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={120}>
+            <div className="rounded-[2rem] border border-white/8 bg-white/[0.03] p-6">
+              <div className="rounded-[1.8rem] bg-[#10243b] p-5">
+                <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Model produktu</div>
+                <div className="mt-3 flex items-center gap-3">
+                  <Ticket className="h-5 w-5 text-sky-200" />
+                  <div className="text-lg font-semibold text-white">Freemium bez cięcia funkcji</div>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  <div className="rounded-2xl bg-white/[0.03] p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-white">Plan darmowy</span>
+                      <span className="text-xs font-semibold text-sky-200">5 ministrantów</span>
+                    </div>
+                    <p className="mt-2 text-sm leading-7 text-slate-300">
+                      Wszystkie funkcje są dostępne od startu. Ograniczenie dotyczy tylko liczby ministrantów.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/[0.03] p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-white">Premium</span>
+                      <span className="text-xs font-semibold text-amber-200">bez limitu</span>
+                    </div>
+                    <p className="mt-2 text-sm leading-7 text-slate-300">
+                      Premium odblokowuje nieograniczoną liczbę ministrantów. Reszta systemu zostaje taka sama.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-sky-300/12 bg-sky-300/6 p-4">
+                    <div className="flex items-start gap-3">
+                      <Crown className="mt-1 h-4 w-4 text-sky-200" />
+                      <p className="text-sm leading-7 text-slate-200">
+                        To mocny argument sprzedażowy: nie trzeba ukrywać funkcji za paywallem. Landing może mówić
+                        wprost, że darmowy plan jest pełny, tylko mniejszy.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="px-6 pb-24 pt-20">
+        <Reveal className="mx-auto max-w-5xl rounded-[2.2rem] border border-sky-300/15 bg-[linear-gradient(135deg,rgba(125,211,252,0.1),rgba(255,255,255,0.03))] px-6 py-10 text-center sm:px-10">
+          <Tag>Docelowe CTA</Tag>
+          <h2 className={`${headingFontClass} mt-5 text-4xl text-white sm:text-6xl`}>
+            Ten wariant najlepiej pasuje do Twojej aplikacji
+          </h2>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-200">
+            Bo nie sprzedaje abstrakcyjnej obietnicy. Pokazuje dokładnie to, co naprawdę masz: dwie role użytkownika,
+            8 modułów, liturgiczne wsparcie, freemium bez cięcia funkcji i produkt, który da się zrozumieć od razu.
           </p>
-
-          <div className="hero-animate-d2 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Link
               href="/app"
-              className="group relative inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-semibold px-8 py-3.5 rounded-full overflow-hidden transition-all hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-sky-300 px-8 py-4 text-base font-semibold text-slate-950"
             >
-              <span className="relative z-10">Załóż konto parafii (Darmowe)</span>
-              <ArrowRight className="w-4 h-4 relative z-10 transition-transform group-hover:translate-x-1" />
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+              Załóż darmowe konto parafii
+              <ArrowRight className="h-4 w-4" />
             </Link>
             <a
-              href="#funkcje"
-              className="inline-flex items-center gap-2 text-slate-300 font-medium px-8 py-3.5 rounded-full border border-slate-700 hover:border-slate-500 transition-colors"
+              href="#moduly"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-8 py-4 text-base font-medium text-white"
             >
-              Dowiedz się więcej
-              <ChevronDown className="w-4 h-4" />
+              Wróć do modułów
+              <ChevronRight className="h-4 w-4" />
             </a>
           </div>
-        </div>
-
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-          <ChevronDown className="w-5 h-5 text-slate-600" />
-        </div>
-      </section>
-
-      {/* ─── Stats bar ─── */}
-      <section className="relative bg-[#0a0a1a] border-y border-white/[0.04]">
-        <div className="max-w-6xl mx-auto px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8">
-          {(
-            [
-              { value: '10', label: 'Rang do zdobycia', Icon: Trophy },
-              { value: '14', label: 'Unikalnych odznak', Icon: Award },
-              { value: '250+', label: 'Świąt w kalendarzu', Icon: Calendar },
-              { value: '7', label: 'Ról liturgicznych', Icon: HandHelping },
-            ] as const
-          ).map((stat, i) => (
-            <Reveal key={i} delay={i * 100} className="text-center">
-              <stat.Icon className="w-5 h-5 text-amber-400/50 mx-auto mb-2" />
-              <div className={`${cinzel.className} text-3xl sm:text-4xl font-bold text-amber-400 mb-1`}>
-                {stat.value}
-              </div>
-              <div className="text-slate-500 text-sm">{stat.label}</div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      <Ornament />
-
-      {/* ─── Features ─── */}
-      <section id="funkcje" className="relative bg-[#0a0a1a] py-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <Reveal className="text-center mb-14">
-            <span className="text-amber-400/50 text-xs tracking-[0.25em] uppercase font-medium">
-              Funkcje
-            </span>
-            <h2 className={`${cinzel.className} text-3xl sm:text-4xl font-bold text-slate-100 mt-3`}>
-              Wszystko, czego potrzebuje Twoja parafia
-            </h2>
-          </Reveal>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {FEATURES.map((f, i) => (
-              <Reveal key={i} delay={i * 80}>
-                <div className="group p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06] hover:border-amber-500/15 transition-all duration-300 h-full">
-                  <div
-                    className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-                    style={{ backgroundColor: `${f.accent}15`, color: f.accent }}
-                  >
-                    <f.icon className="w-5 h-5" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-slate-200 mb-2">{f.title}</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed">{f.desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <Ornament />
-
-      {/* ─── How it works ─── */}
-      <section id="jak-to-dziala" className="relative py-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <Reveal className="text-center mb-14">
-            <span className="text-amber-400/50 text-xs tracking-[0.25em] uppercase font-medium">
-              Jak to działa
-            </span>
-            <h2 className={`${cinzel.className} text-3xl sm:text-4xl font-bold text-slate-100 mt-3`}>
-              Trzy kroki do lepszej parafii
-            </h2>
-          </Reveal>
-
-          <div className="grid md:grid-cols-2 gap-12 md:gap-16">
-            {/* Priest path */}
-            <Reveal>
-              <div className="mb-8">
-                <span className="inline-flex items-center gap-2 text-purple-400 font-medium text-sm">
-                  <Church className="w-4 h-4" />
-                  Dla księdza
-                </span>
-              </div>
-              <div className="space-y-6">
-                {[
-                  {
-                    step: '01',
-                    title: 'Załóż parafię w 3 minuty',
-                    desc: 'Darmowa rejestracja, zero skomplikowanych formularzy. Tworzysz profil parafii i masz pełnię kontroli nad grupą.',
-                  },
-                  {
-                    step: '02',
-                    title: 'Zaproś ministrantów',
-                    desc: 'Udostępnij kod zaproszenia. Ministranci dołączą w kilka sekund.',
-                  },
-                  {
-                    step: '03',
-                    title: 'Zarządzaj i śledź',
-                    desc: 'Planuj służby, publikuj ogłoszenia, zatwierdzaj obecności i obserwuj zaangażowanie.',
-                  },
-                ].map((s, i) => (
-                  <div key={i} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="w-10 h-10 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 text-sm font-bold shrink-0">
-                        {s.step}
-                      </div>
-                      {i < 2 && <div className="w-px flex-1 bg-purple-500/10 mt-2" />}
-                    </div>
-                    <div className="pb-4">
-                      <h4 className="font-semibold text-slate-200 mb-1">{s.title}</h4>
-                      <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Reveal>
-
-            {/* Ministrant path */}
-            <Reveal delay={200}>
-              <div className="mb-8">
-                <span className="inline-flex items-center gap-2 text-amber-400 font-medium text-sm">
-                  <Star className="w-4 h-4" />
-                  Dla ministranta
-                </span>
-              </div>
-              <div className="space-y-6">
-                {[
-                  {
-                    step: '01',
-                    title: 'Dołącz do parafii',
-                    desc: 'Zarejestruj się i wpisz kod zaproszenia od księdza.',
-                  },
-                  {
-                    step: '02',
-                    title: 'Służ i zgłaszaj',
-                    desc: 'Po każdej służbie zgłoś obecność. Ksiądz zatwierdzi ją jednym kliknięciem.',
-                  },
-                  {
-                    step: '03',
-                    title: 'Zdobywaj i rywalizuj',
-                    desc: 'Zbieraj punkty, awansuj w rankingu, zdobywaj odznaki i strzałki.',
-                  },
-                ].map((s, i) => (
-                  <div key={i} className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="w-10 h-10 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-sm font-bold shrink-0">
-                        {s.step}
-                      </div>
-                      {i < 2 && <div className="w-px flex-1 bg-amber-500/10 mt-2" />}
-                    </div>
-                    <div className="pb-4">
-                      <h4 className="font-semibold text-slate-200 mb-1">{s.title}</h4>
-                      <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Reveal>
-          </div>
-        </div>
-      </section>
-
-      <Ornament />
-
-      {/* ─── Gamification ─── */}
-      <section className="relative bg-[#0a0a1a] py-20 px-6 overflow-hidden">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: 'radial-gradient(ellipse 70% 40% at 50% 60%, rgba(245,158,11,0.03) 0%, transparent 60%)',
-          }}
-        />
-        <div className="relative max-w-6xl mx-auto">
-          <Reveal className="text-center mb-14">
-            <span className="text-amber-400/50 text-xs tracking-[0.25em] uppercase font-medium">
-              Gamifikacja
-            </span>
-            <h2 className={`${cinzel.className} text-3xl sm:text-4xl font-bold text-slate-100 mt-3`}>
-              Służba, która wciąga
-            </h2>
-            <p className="text-slate-500 mt-4 max-w-xl mx-auto">
-              System rang, odznak i strzałek sprawia, że ministranci sami chcą służyć. Zdrowa rywalizacja buduje zaangażowanie.
-            </p>
-          </Reveal>
-
-          {/* Ranks progression */}
-          <Reveal>
-            <div className="relative py-8 mb-4">
-              <div className="absolute top-1/2 left-[5%] right-[5%] h-px bg-gradient-to-r from-slate-800 via-amber-500/20 to-amber-400/30 hidden md:block -translate-y-4" />
-              <div className="grid grid-cols-5 md:grid-cols-10 gap-3 md:gap-2">
-                {RANKS.map((rank, i) => {
-                  const t = (i + 1) / RANKS.length;
-                  return (
-                    <div key={i} className="flex flex-col items-center gap-2 relative">
-                      <div
-                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center border transition-all duration-500"
-                        style={{
-                          backgroundColor: `rgba(245,158,11,${(0.04 + t * 0.14).toFixed(2)})`,
-                          borderColor: `rgba(245,158,11,${(0.08 + t * 0.35).toFixed(2)})`,
-                          boxShadow: i >= 7 ? `0 0 ${10 + i * 3}px rgba(245,158,11,${(t * 0.18).toFixed(2)})` : 'none',
-                        }}
-                      >
-                        {i < 3 ? (
-                          <Star className="w-4 h-4" style={{ color: `rgba(245,158,11,${(0.3 + t * 0.7).toFixed(2)})` }} />
-                        ) : i < 7 ? (
-                          <Flame className="w-4 h-4" style={{ color: `rgba(245,158,11,${(0.3 + t * 0.7).toFixed(2)})` }} />
-                        ) : (
-                          <Trophy className="w-4 h-4" style={{ color: `rgba(245,158,11,${(0.3 + t * 0.7).toFixed(2)})` }} />
-                        )}
-                      </div>
-                      <div className="text-center">
-                        <span
-                          className="text-[10px] sm:text-xs font-medium block"
-                          style={{ color: `rgba(245,158,11,${(0.35 + t * 0.65).toFixed(2)})` }}
-                        >
-                          {rank.name}
-                        </span>
-                        <span className="text-[9px] text-slate-600 hidden sm:block">
-                          {rank.pts} pkt
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </Reveal>
-
-          {/* Badges, streaks, multipliers */}
-          <div className="grid sm:grid-cols-3 gap-5 mt-8">
-            {[
-              {
-                Icon: Award,
-                title: '14 odznak',
-                desc: 'Od "Pierwszej Służby" po "Rekord Parafii". Każda za wyjątkowe osiągnięcie.',
-              },
-              {
-                Icon: Flame,
-                title: 'Strzałki (streaks)',
-                desc: 'Bonusy za regularność: +5 za 3 dni/tyg., +30 za pełny tydzień, +120 za 8 tygodni z rzędu.',
-              },
-              {
-                Icon: Target,
-                title: 'Mnożniki sezonowe',
-                desc: 'Wielki Post i Adwent to ×1.5 punktów. Najlepsi zdobywają dodatkowe nagrody miesięczne.',
-              },
-            ].map((item, i) => (
-              <Reveal key={i} delay={i * 100}>
-                <div className="text-center p-6 rounded-2xl bg-white/[0.02] border border-white/[0.06] h-full">
-                  <item.Icon className="w-7 h-7 text-amber-400/50 mx-auto mb-3" />
-                  <h4 className="font-semibold text-slate-200 mb-2">{item.title}</h4>
-                  <p className="text-slate-500 text-sm leading-relaxed">{item.desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <Ornament />
-
-      {/* ─── CTA ─── */}
-      <section className="relative py-24 px-6 overflow-hidden">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `
-              radial-gradient(ellipse 70% 50% at 50% 50%, rgba(245,158,11,0.05) 0%, transparent 60%),
-              #050510
-            `,
-          }}
-        />
-        <Reveal className="relative z-10 max-w-3xl mx-auto text-center">
-          <Sparkles className="w-7 h-7 text-amber-400/35 mx-auto mb-6" />
-          <h2 className={`${cinzel.className} text-3xl sm:text-4xl md:text-5xl font-bold text-slate-100 mb-6`}>
-            Wprowadź porządek już teraz
-          </h2>
-          <p className="text-slate-400 text-lg mb-10 max-w-xl mx-auto leading-relaxed">
-            Załóż konto i przekonaj się, ile czasu zaoszczędzisz, gdy wszystko — ogłoszenia, dyżury i punkty — znajdzie się w jednej aplikacji.
-          </p>
-          <Link
-            href="/app"
-            className="group relative inline-flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-semibold px-10 py-4 rounded-full overflow-hidden transition-all hover:shadow-[0_0_40px_rgba(245,158,11,0.3)] text-lg"
-          >
-            <span className="relative z-10">Załóż darmowe konto parafii</span>
-            <ArrowRight className="w-5 h-5 relative z-10 transition-transform group-hover:translate-x-1" />
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-400 to-amber-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </Link>
-          <p className="text-slate-600 text-sm mt-6">
-            Bez karty kredytowej &middot; Bez limitu czasu &middot; Darmowy plan z limitem ministrantów
-          </p>
         </Reveal>
       </section>
-
-      {/* ─── Footer ─── */}
-      <footer className="border-t border-white/[0.04] py-10 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Church className="w-4 h-4 text-amber-400/50" />
-              <span className={`${cinzel.className} text-slate-500 font-semibold text-sm`}>
-                Ministranci
-              </span>
-            </div>
-            <p className="text-slate-700 text-xs">
-              Stworzone z miłością do służby liturgicznej
-            </p>
-            <Link
-              href="/app"
-              className="text-amber-400/50 hover:text-amber-400 text-sm transition-colors flex items-center gap-1"
-            >
-              Zaloguj się
-              <ChevronRight className="w-3 h-3" />
-            </Link>
-          </div>
-          <div className="flex items-center justify-center gap-4 mt-6 pt-6 border-t border-white/[0.03]">
-            <Link
-              href="/polityka-prywatnosci"
-              className="text-slate-600 hover:text-slate-400 text-xs transition-colors"
-            >
-              Polityka prywatności
-            </Link>
-            <span className="text-slate-800">|</span>
-            <Link
-              href="/regulamin"
-              className="text-slate-600 hover:text-slate-400 text-xs transition-colors"
-            >
-              Regulamin
-            </Link>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

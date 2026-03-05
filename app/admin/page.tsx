@@ -40,8 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import Picker from '@emoji-mart/react';
-import emojiData from '@emoji-mart/data';
+import LazyEmojiPicker from '@/components/LazyEmojiPicker';
 
 import Link from 'next/link';
 import { sanitizeRichHtml } from '@/lib/sanitize-rich-html';
@@ -1373,32 +1372,34 @@ export default function AdminPanel() {
         {/* Main content */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-1 rounded-xl">
-              <TabsTrigger value="dashboard" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
-                <BarChart3 className="w-4 h-4 mr-1.5" />
-                Dashboard
-              </TabsTrigger>
-              <TabsTrigger value="parafie" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
-                <Church className="w-4 h-4 mr-1.5" />
-                Parafie
-              </TabsTrigger>
-              <TabsTrigger value="uzytkownicy" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
-                <Users className="w-4 h-4 mr-1.5" />
-                Uzytkownicy
-              </TabsTrigger>
-              <TabsTrigger value="ogloszenia" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
-                <MessageSquare className="w-4 h-4 mr-1.5" />
-                Ogloszenia
-              </TabsTrigger>
-              <TabsTrigger value="konfiguracja" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
-                <Settings className="w-4 h-4 mr-1.5" />
-                Konfiguracja
-              </TabsTrigger>
-              <TabsTrigger value="kody-rabatowe" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
-                <KeyRound className="w-4 h-4 mr-1.5" />
-                Kody Rabatowe
-              </TabsTrigger>
-            </TabsList>
+            <div className="mb-6 overflow-x-auto no-scrollbar">
+              <TabsList className="w-max min-w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-1 rounded-xl">
+                <TabsTrigger value="dashboard" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
+                  <BarChart3 className="w-4 h-4 mr-1.5" />
+                  Dashboard
+                </TabsTrigger>
+                <TabsTrigger value="parafie" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
+                  <Church className="w-4 h-4 mr-1.5" />
+                  Parafie
+                </TabsTrigger>
+                <TabsTrigger value="uzytkownicy" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
+                  <Users className="w-4 h-4 mr-1.5" />
+                  Uzytkownicy
+                </TabsTrigger>
+                <TabsTrigger value="ogloszenia" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
+                  <MessageSquare className="w-4 h-4 mr-1.5" />
+                  Ogloszenia
+                </TabsTrigger>
+                <TabsTrigger value="konfiguracja" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
+                  <Settings className="w-4 h-4 mr-1.5" />
+                  Konfiguracja
+                </TabsTrigger>
+                <TabsTrigger value="kody-rabatowe" className="data-[state=active]:bg-amber-500 data-[state=active]:text-white rounded-lg">
+                  <KeyRound className="w-4 h-4 mr-1.5" />
+                  Kody Rabatowe
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             {/* ==================== DASHBOARD ==================== */}
             <TabsContent value="dashboard">
@@ -2583,14 +2584,16 @@ export default function AdminPanel() {
                 <div className="w-full rounded-b-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 ring-offset-background focus-within:ring-2 focus-within:ring-amber-500 focus-within:ring-offset-2">
                   <EditorContent editor={tiptapEditor} />
                 </div>
-                {showEmojiPicker && (
-                  <div className="absolute z-50 mt-1">
-                    <Picker data={emojiData} locale="pl" theme={darkMode ? 'dark' : 'light'} onEmojiSelect={(emoji: { native: string }) => {
-                      tiptapEditor?.chain().focus().insertContent(emoji.native).run();
-                      setShowEmojiPicker(false);
-                    }} />
-                  </div>
-                )}
+                <LazyEmojiPicker
+                  open={showEmojiPicker}
+                  className="absolute z-50 mt-1"
+                  locale="pl"
+                  theme={darkMode ? 'dark' : 'light'}
+                  onSelect={(emoji) => {
+                    tiptapEditor?.chain().focus().insertContent(emoji.native).run();
+                    setShowEmojiPicker(false);
+                  }}
+                />
               </div>
 
               {/* Grupa docelowa — chips */}

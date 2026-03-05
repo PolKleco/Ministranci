@@ -148,14 +148,14 @@
     flex-direction: column !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: 2px !important;
-    padding: 6px 2px !important;
-    font-size: 10px !important;
-    line-height: 1.2 !important;
+    gap: 3px !important;
+    padding: 8px 4px !important;
+    font-size: 12px !important;
+    line-height: 1.15 !important;
     white-space: normal !important;
     text-align: center;
     height: auto !important;
-    min-height: 0 !important;
+    min-height: 44px !important;
   }
 
   [data-slot="tabs-trigger"] svg {
@@ -167,7 +167,13 @@
 
   [data-slot="tabs-trigger"] > span:not([class*="absolute"]) {
     margin-left: 0 !important;
-    font-size: 9px;
+    font-size: 11px;
+  }
+
+  button.h-7,
+  [data-slot="button"].h-7 {
+    min-height: 2.25rem !important;
+    min-width: 2.25rem !important;
   }
 }
 

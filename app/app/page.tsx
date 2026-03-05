@@ -9,7 +9,7 @@ import {
   Copy, X, Plus, Check, CheckCircle, Hourglass,
   UserPlus, UserCheck, Send, Loader2, Bell, Pencil, Trash2,
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
-  MessageSquare, Pin, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping,
+  MessageSquare, Pin, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping, Reply,
   Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, GripVertical,
   Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Ticket, Download
 } from 'lucide-react';
@@ -49,8 +49,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { QRCodeSVG } from 'qrcode.react';
-import Picker from '@emoji-mart/react';
-import data from '@emoji-mart/data';
+import LazyEmojiPicker from '@/components/LazyEmojiPicker';
 import {
   getLiturgicalMonth, KOLORY_LITURGICZNE, RANGI, MIESIACE, DNI_TYGODNIA, DNI_TYGODNIA_FULL,
   type DzienLiturgiczny,
@@ -107,11 +106,33 @@ const DIECEZJE_POLSKIE = [
   'Ordynariat Polowy',
 ];
 
+const getLocalISODate = (date: Date = new Date()) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const REPLY_MARKER_RE = /^\[\[reply:([^\]]+)\]\]\n?/;
+const parseWiadomoscReply = (tresc: string): { replyToId: string | null; body: string } => {
+  const match = tresc.match(REPLY_MARKER_RE);
+  if (!match) return { replyToId: null, body: tresc };
+  return { replyToId: match[1], body: tresc.replace(REPLY_MARKER_RE, '').trimStart() };
+};
+const buildWiadomoscReplyPayload = (body: string, replyToId: string | null) => (
+  replyToId ? `[[reply:${replyToId}]]\n${body}` : body
+);
+const truncateReplyPreview = (text: string, max = 140) => (
+  text.length > max ? `${text.slice(0, max)}...` : text
+);
+
 // ==================== TYPY ====================
 
 type UserType = 'ksiadz' | 'ministrant';
 type GrupaType = string;
 type RankingSettingsTab = 'punkty' | 'rangi' | 'odznaki' | 'ogolne';
+type FunkcjaAssignmentMap = Record<string, string>;
+type FunkcjePerHourMap = Record<string, FunkcjaAssignmentMap>;
 
 interface GrupaConfig {
   id: string;
@@ -1499,6 +1520,7 @@ export default function MinistranciApp() {
   const [showRankingSettings, setShowRankingSettings] = useState(false);
   const [showResetPunktacjaModal, setShowResetPunktacjaModal] = useState(false);
   const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo' | 'wydarzenie', nazwa_nabożeństwa: '', godzina: '', wydarzenie_id: '' });
+  const [zglosSubmitting, setZglosSubmitting] = useState(false);
   const [zglosSuccess, setZglosSuccess] = useState(false);
   const [rankingSettingsTab, setRankingSettingsTab] = useState<RankingSettingsTab>('punkty');
   const [newPunktacjaForm, setNewPunktacjaForm] = useState<NewPunktacjaFormState>({ klucz: '', wartosc: 0, opis: '' });
@@ -1513,6 +1535,7 @@ export default function MinistranciApp() {
   const prevObecnosciRef = useRef<Obecnosc[]>([]);
   const [showIOSInstallBanner, setShowIOSInstallBanner] = useState(false);
   const [showAllZgloszenia, setShowAllZgloszenia] = useState(false);
+  const [showAllSluzbyForMinistrant, setShowAllSluzbyForMinistrant] = useState(false);
 
   // ==================== STAN — TABLICA OGŁOSZEŃ ====================
   const [tablicaWatki, setTablicaWatki] = useState<TablicaWatek[]>([]);
@@ -1529,8 +1552,10 @@ export default function MinistranciApp() {
   const [newWatekForm, setNewWatekForm] = useState({ tytul: '', tresc: '', kategoria: 'ogłoszenie' as 'ogłoszenie' | 'dyskusja' | 'ankieta', grupa_docelowa: 'wszyscy', archiwum_data: '' });
   const [newAnkietaForm, setNewAnkietaForm] = useState({ pytanie: '', typ: 'tak_nie' as 'tak_nie' | 'jednokrotny' | 'wielokrotny', obowiazkowa: true, wyniki_ukryte: false, termin: '', opcje: ['', ''], archiwum_data: '' });
   const [showArchiwum, setShowArchiwum] = useState(false);
+  const [tablicaCategoryFilter, setTablicaCategoryFilter] = useState<'wszystkie' | 'ogłoszenie' | 'dyskusja' | 'ankieta'>('wszystkie');
   const [expandedArchSluzba, setExpandedArchSluzba] = useState<string | null>(null);
   const [newWiadomoscTresc, setNewWiadomoscTresc] = useState('');
+  const [replyToMessageId, setReplyToMessageId] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
   const [showInfoBanner, setShowInfoBanner] = useState(true);
   const [infoBanerTresc, setInfoBanerTresc] = useState({ tytul: '', opis: '' });
@@ -1546,9 +1571,14 @@ export default function MinistranciApp() {
   const [editingAnkietaId, setEditingAnkietaId] = useState<string | null>(null);
   const [ukryjMinistrantow, setUkryjMinistrantow] = useState(false);
   const [editAnkietaForm, setEditAnkietaForm] = useState({ pytanie: '', obowiazkowa: false, wyniki_ukryte: true, termin: '', aktywna: true, opcje: [] as { id: string; tresc: string; kolejnosc: number }[], noweOpcje: [''] });
+  const [watekLastReadMap, setWatekLastReadMap] = useState<Record<string, string>>({});
+  const [watekUnreadCounts, setWatekUnreadCounts] = useState<Record<string, number>>({});
 
   // QR Code
   const [showQrModal, setShowQrModal] = useState(false);
+  const [qrPdfLoading, setQrPdfLoading] = useState(false);
+  const qrPosterRef = useRef<HTMLDivElement | null>(null);
+  const wiadomoscInputRef = useRef<HTMLInputElement | null>(null);
 
   // Premium / Subskrypcja
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -1566,6 +1596,122 @@ export default function MinistranciApp() {
     }
     return fetch(input, { ...init, headers });
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !currentUser?.id) {
+      setWatekLastReadMap({});
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(`watek-last-read:${currentUser.id}`);
+      setWatekLastReadMap(raw ? JSON.parse(raw) as Record<string, string> : {});
+    } catch {
+      setWatekLastReadMap({});
+    }
+  }, [currentUser?.id]);
+
+  const markWatekLocallyRead = useCallback((watekId: string, whenIso = new Date().toISOString()) => {
+    if (!currentUser?.id) return;
+    setWatekLastReadMap((prev) => {
+      const next = { ...prev, [watekId]: whenIso };
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(`watek-last-read:${currentUser.id}`, JSON.stringify(next));
+      }
+      return next;
+    });
+    setWatekUnreadCounts((prev) => ({ ...prev, [watekId]: 0 }));
+  }, [currentUser?.id]);
+
+  const refreshWatekUnreadCounts = useCallback(async () => {
+    if (!currentUser?.id) {
+      setWatekUnreadCounts({});
+      return;
+    }
+    const now = new Date();
+    const dyskusje = tablicaWatki.filter((w) => {
+      if (w.kategoria !== 'dyskusja') return false;
+      if (w.archiwum_data && new Date(w.archiwum_data) <= now) return false;
+      if (w.grupa_docelowa === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
+      if (w.grupa_docelowa === 'ministranci' && currentUser.typ !== 'ministrant') return false;
+      return true;
+    });
+    if (dyskusje.length === 0) {
+      setWatekUnreadCounts({});
+      return;
+    }
+
+    const entries = await Promise.all(
+      dyskusje.map(async (w) => {
+        let query = supabase
+          .from('tablica_wiadomosci')
+          .select('*', { count: 'exact', head: true })
+          .eq('watek_id', w.id)
+          .neq('autor_id', currentUser.id);
+        const lastRead = watekLastReadMap[w.id];
+        if (lastRead) query = query.gt('created_at', lastRead);
+        const { count, error } = await query;
+        return [w.id, error ? 0 : (count || 0)] as const;
+      })
+    );
+
+    setWatekUnreadCounts(Object.fromEntries(entries));
+  }, [currentUser?.id, currentUser?.typ, tablicaWatki, watekLastReadMap]);
+
+  useEffect(() => {
+    if (activeTab !== 'tablica' || selectedWatek) return;
+    refreshWatekUnreadCounts();
+  }, [activeTab, selectedWatek, refreshWatekUnreadCounts]);
+
+  useEffect(() => {
+    setReplyToMessageId(null);
+  }, [selectedWatek?.id]);
+
+  const handleDownloadQrPosterPdf = useCallback(async () => {
+    const el = qrPosterRef.current;
+    if (!el || qrPdfLoading) return;
+
+    setQrPdfLoading(true);
+    try {
+      const html2canvas = (await import('html2canvas-pro')).default;
+      const { jsPDF } = await import('jspdf');
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageW = 210;
+      const pageH = 297;
+      const margin = 10;
+      const drawW = pageW - margin * 2;
+      const drawH = (imgH * drawW) / imgW;
+
+      if (drawH <= pageH - margin * 2) {
+        const y = (pageH - drawH) / 2;
+        pdf.addImage(imgData, 'PNG', margin, y, drawW, drawH);
+      } else {
+        const fitH = pageH - margin * 2;
+        const fitW = (imgW * fitH) / imgH;
+        const x = (pageW - fitW) / 2;
+        pdf.addImage(imgData, 'PNG', x, margin, fitW, fitH);
+      }
+
+      const parishSlug = (currentParafia?.nazwa || 'parafia')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const date = new Date().toISOString().slice(0, 10);
+      pdf.save(`plakat-qr-${parishSlug || 'parafia'}-${date}.pdf`);
+    } catch (error) {
+      console.error('Błąd generowania plakatu PDF:', error);
+      alert('Nie udało się wygenerować PDF. Spróbuj ponownie.');
+    } finally {
+      setQrPdfLoading(false);
+    }
+  }, [currentParafia?.nazwa, qrPdfLoading]);
 
   // Tiptap Image extension with float & width + hover controls
   const FloatImage = useMemo(() => TiptapImage.extend({
@@ -1681,7 +1827,7 @@ export default function MinistranciApp() {
     nazwa: '',
     data: '',
     godzina: '',
-    funkcjePerHour: {} as Record<string, Record<FunkcjaType, string>>
+    funkcjePerHour: {} as FunkcjePerHourMap
   });
   const [sluzbaEkstraPunkty, setSluzbaEkstraPunkty] = useState<number | null>(null);
 
@@ -1757,7 +1903,7 @@ export default function MinistranciApp() {
   const loadSluzby = useCallback(async () => {
     if (!currentUser?.parafia_id) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalISODate();
 
     const { data: sluzbyData } = await supabase
       .from('sluzby')
@@ -1771,7 +1917,7 @@ export default function MinistranciApp() {
     // Archiwum — wydarzenia z przeszłości (max 30 dni wstecz)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+    const thirtyDaysAgoStr = getLocalISODate(thirtyDaysAgo);
 
     const { data: archiwumData } = await supabase
       .from('sluzby')
@@ -2040,10 +2186,10 @@ export default function MinistranciApp() {
   // ==================== AKCJE — RANKING SŁUŻBY ====================
 
   const zglosObecnosc = async () => {
-    if (!currentUser?.parafia_id || !zglosForm.data) return;
+    if (!currentUser?.parafia_id || !zglosForm.data || zglosSubmitting) return;
 
     // Porównuj daty jako stringi YYYY-MM-DD żeby uniknąć problemów ze strefami czasowymi
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalISODate();
     const dataStr = zglosForm.data; // już jest w formacie YYYY-MM-DD z inputa
     const limitDni = getConfigValue('limit_dni_zgloszenie', 2);
 
@@ -2063,30 +2209,48 @@ export default function MinistranciApp() {
       return;
     }
 
+    if (zglosForm.typ === 'wydarzenie') {
+      const selectedWydarzenie = sluzby.find((s) => s.id === zglosForm.wydarzenie_id);
+      if (!selectedWydarzenie) {
+        alert('To wydarzenie nie jest już dostępne do zgłoszenia.');
+        return;
+      }
+      if (zglosForm.data !== selectedWydarzenie.data) {
+        alert('Data zgłoszenia musi być zgodna z datą wybranego wydarzenia.');
+        return;
+      }
+    }
+
     const { bazowe, mnoznik } = obliczPunktyBazowe(zglosForm.data, zglosForm.typ, zglosForm.nazwa_nabożeństwa, zglosForm.wydarzenie_id);
 
     const wydarzenieNazwa = zglosForm.typ === 'wydarzenie' ? (sluzby.find(s => s.id === zglosForm.wydarzenie_id)?.nazwa || '') : '';
 
-    const { error } = await supabase.from('obecnosci').insert({
-      ministrant_id: currentUser.id,
-      parafia_id: currentUser.parafia_id,
-      data: zglosForm.data,
-      godzina: zglosForm.godzina,
-      typ: zglosForm.typ,
-      nazwa_nabożeństwa: zglosForm.typ === 'nabożeństwo' ? zglosForm.nazwa_nabożeństwa : (zglosForm.typ === 'wydarzenie' ? wydarzenieNazwa : ''),
-      punkty_bazowe: bazowe,
-      mnoznik,
-      punkty_finalne: Math.round(bazowe * mnoznik),
-    });
+    setZglosSubmitting(true);
+    try {
+      const { error } = await supabase.from('obecnosci').insert({
+        ministrant_id: currentUser.id,
+        parafia_id: currentUser.parafia_id,
+        data: zglosForm.data,
+        godzina: zglosForm.godzina,
+        typ: zglosForm.typ,
+        nazwa_nabożeństwa: zglosForm.typ === 'nabożeństwo' ? zglosForm.nazwa_nabożeństwa : (zglosForm.typ === 'wydarzenie' ? wydarzenieNazwa : ''),
+        punkty_bazowe: bazowe,
+        mnoznik,
+        punkty_finalne: Math.round(bazowe * mnoznik),
+      });
 
-    if (error) {
-      alert('Błąd zgłoszenia: ' + error.message);
-    } else {
+      if (error) {
+        alert('Błąd zgłoszenia: ' + error.message);
+        return;
+      }
+
       setShowZglosModal(false);
       setZglosForm({ data: '', typ: 'msza', nazwa_nabożeństwa: '', godzina: '', wydarzenie_id: '' });
       loadRankingData();
       setZglosSuccess(true);
       setTimeout(() => setZglosSuccess(false), 3000);
+    } finally {
+      setZglosSubmitting(false);
     }
   };
 
@@ -2592,7 +2756,26 @@ export default function MinistranciApp() {
     ),
     [dyzury]
   );
-
+  const sluzbyModalTitleClass = useMemo(() => {
+    const map: Record<string, string> = {
+      zielony: 'bg-gradient-to-r from-teal-600 to-emerald-700 dark:from-teal-400 dark:to-emerald-400',
+      bialy: 'bg-gradient-to-r from-amber-600 to-yellow-700 dark:from-amber-400 dark:to-yellow-400',
+      czerwony: 'bg-gradient-to-r from-red-600 to-rose-700 dark:from-red-400 dark:to-rose-400',
+      fioletowy: 'bg-gradient-to-r from-purple-700 to-violet-700 dark:from-purple-400 dark:to-violet-400',
+      rozowy: 'bg-gradient-to-r from-pink-600 to-rose-600 dark:from-pink-400 dark:to-rose-400',
+    };
+    return map[dzisLiturgiczny?.kolor || 'zielony'] || map.zielony;
+  }, [dzisLiturgiczny?.kolor]);
+  const sluzbyAssignLabelClass = useMemo(() => {
+    const map: Record<string, string> = {
+      zielony: 'text-emerald-700 dark:text-emerald-300',
+      bialy: 'text-amber-700 dark:text-amber-300',
+      czerwony: 'text-red-700 dark:text-red-300',
+      fioletowy: 'text-violet-700 dark:text-violet-300',
+      rozowy: 'text-pink-700 dark:text-pink-300',
+    };
+    return map[dzisLiturgiczny?.kolor || 'zielony'] || map.zielony;
+  }, [dzisLiturgiczny?.kolor]);
   const savePunktacjaDraft = async () => {
     const pending = punktacjaConfig
       .filter((p) => punktacjaDraft[p.id] !== undefined && Number(punktacjaDraft[p.id]) !== Number(p.wartosc))
@@ -3385,14 +3568,42 @@ export default function MinistranciApp() {
 
   const FUNKCJE_TYPES: FunkcjaType[] = funkcjeConfig.map(f => f.nazwa);
   const FUNKCJE_OPISY: Record<string, string> = Object.fromEntries(funkcjeConfig.map(f => [f.nazwa, f.opis]));
+  const FUNKCJA_DUP_SEPARATOR = '__DUP__';
 
-  const buildFunkcjeRecords = (sluzbaId: string, godzina: string, funkcjePerHour: Record<string, Record<FunkcjaType, string>>) => {
+  const normalizeFunkcjaName = (name: string) =>
+    name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const getFunkcjaBaseType = (key: string) => key.split(FUNKCJA_DUP_SEPARATOR)[0];
+
+  const getFunkcjaSlotNumber = (key: string) => {
+    const parts = key.split(FUNKCJA_DUP_SEPARATOR);
+    if (parts.length < 2) return 1;
+    const slot = Number(parts[1]);
+    return Number.isFinite(slot) && slot > 1 ? slot : 1;
+  };
+
+  const isMultiAssigneeFunkcja = (typ: string) => {
+    const normalized = normalizeFunkcjaName(typ);
+    return normalized.includes('dzwonk') || normalized.includes('paten');
+  };
+
+  const getHourFunkcjaKeys = (hourFunkcje: FunkcjaAssignmentMap) =>
+    FUNKCJE_TYPES.flatMap((typ) => {
+      const extras = Object.keys(hourFunkcje)
+        .filter((key) => getFunkcjaBaseType(key) === typ && key !== typ)
+        .sort((a, b) => getFunkcjaSlotNumber(a) - getFunkcjaSlotNumber(b));
+      return [typ, ...extras];
+    });
+
+  const buildFunkcjeRecords = (sluzbaId: string, godzina: string, funkcjePerHour: FunkcjePerHourMap) => {
     const hours = parseGodziny(godzina);
     const records: { sluzba_id: string; typ: string; ministrant_id: string | null; aktywna: boolean; zaakceptowana: boolean; godzina: string }[] = [];
     hours.forEach(h => {
       const hourFunkcje = funkcjePerHour[h] || {};
-      FUNKCJE_TYPES.forEach(typ => {
-        const assigned = hourFunkcje[typ] || 'BEZ';
+      const keys = new Set<string>([...FUNKCJE_TYPES, ...Object.keys(hourFunkcje)]);
+      keys.forEach((key) => {
+        const typ = getFunkcjaBaseType(key);
+        const assigned = hourFunkcje[key] || 'BEZ';
         records.push({
           sluzba_id: sluzbaId,
           typ,
@@ -3484,39 +3695,75 @@ export default function MinistranciApp() {
     return parts.length > 0 ? parts : [godzina];
   };
 
+  const addDuplicateFunkcjaSlot = (hour: string, baseTyp: string) => {
+    if (!isMultiAssigneeFunkcja(baseTyp)) return;
+    setSluzbaForm((prev) => {
+      const hourFunkcje = { ...(prev.funkcjePerHour[hour] || {}) };
+      let maxSlot = 1;
+      Object.keys(hourFunkcje).forEach((key) => {
+        if (getFunkcjaBaseType(key) === baseTyp) {
+          maxSlot = Math.max(maxSlot, getFunkcjaSlotNumber(key));
+        }
+      });
+      const newKey = `${baseTyp}${FUNKCJA_DUP_SEPARATOR}${maxSlot + 1}`;
+      hourFunkcje[newKey] = 'UNASSIGNED';
+      return {
+        ...prev,
+        funkcjePerHour: {
+          ...prev.funkcjePerHour,
+          [hour]: hourFunkcje,
+        },
+      };
+    });
+  };
+
+  const removeDuplicateFunkcjaSlot = (hour: string, key: string) => {
+    const baseTyp = getFunkcjaBaseType(key);
+    if (key === baseTyp) return;
+    setSluzbaForm((prev) => {
+      const hourFunkcje = { ...(prev.funkcjePerHour[hour] || {}) };
+      delete hourFunkcje[key];
+      return {
+        ...prev,
+        funkcjePerHour: {
+          ...prev.funkcjePerHour,
+          [hour]: hourFunkcje,
+        },
+      };
+    });
+  };
+
   const handleEditSluzba = (sluzba: Sluzba) => {
     setSelectedSluzba(sluzba);
     const hours = parseGodziny(sluzba.godzina);
-    const funkcjePerHour: Record<string, Record<FunkcjaType, string>> = {};
+    const funkcjePerHour: FunkcjePerHourMap = {};
+    const mapFunkcjeToHourAssignments = (funkcje: Funkcja[]): FunkcjaAssignmentMap => {
+      const counts: Record<string, number> = {};
+      const hourFunkcje: FunkcjaAssignmentMap = {};
+      funkcje.forEach((f) => {
+        const baseTyp = f.typ as string;
+        const next = (counts[baseTyp] || 0) + 1;
+        counts[baseTyp] = next;
+        const key = next === 1 ? baseTyp : `${baseTyp}${FUNKCJA_DUP_SEPARATOR}${next}`;
+        if (!f.aktywna) {
+          hourFunkcje[key] = 'BEZ';
+        } else if (f.ministrant_id) {
+          hourFunkcje[key] = f.ministrant_id;
+        } else {
+          hourFunkcje[key] = 'UNASSIGNED';
+        }
+      });
+      return hourFunkcje;
+    };
 
     if (hours.length > 1) {
       // Multi-hour event: group funkcje by godzina
       hours.forEach(h => {
-        const hourFunkcje = {} as Record<FunkcjaType, string>;
-        sluzba.funkcje.filter(f => f.godzina === h).forEach(f => {
-          if (!f.aktywna) {
-            hourFunkcje[f.typ as FunkcjaType] = 'BEZ';
-          } else if (f.ministrant_id) {
-            hourFunkcje[f.typ as FunkcjaType] = f.ministrant_id;
-          } else {
-            hourFunkcje[f.typ as FunkcjaType] = 'UNASSIGNED';
-          }
-        });
-        funkcjePerHour[h] = hourFunkcje;
+        funkcjePerHour[h] = mapFunkcjeToHourAssignments(sluzba.funkcje.filter(f => f.godzina === h));
       });
     } else {
       // Single-hour: all funkcje go to that hour
-      const hourFunkcje = {} as Record<FunkcjaType, string>;
-      sluzba.funkcje.forEach(f => {
-        if (!f.aktywna) {
-          hourFunkcje[f.typ as FunkcjaType] = 'BEZ';
-        } else if (f.ministrant_id) {
-          hourFunkcje[f.typ as FunkcjaType] = f.ministrant_id;
-        } else {
-          hourFunkcje[f.typ as FunkcjaType] = 'UNASSIGNED';
-        }
-      });
-      funkcjePerHour[hours[0]] = hourFunkcje;
+      funkcjePerHour[hours[0]] = mapFunkcjeToHourAssignments(sluzba.funkcje);
     }
 
     setSluzbaForm({
@@ -4081,14 +4328,18 @@ export default function MinistranciApp() {
   };
 
   const sendWiadomosc = async () => {
-    if (!currentUser || !selectedWatek || !newWiadomoscTresc.trim()) return;
+    if (!currentUser || !selectedWatek) return;
+    if (selectedWatek.kategoria === 'ogłoszenie') return;
+    const body = newWiadomoscTresc.trim();
+    if (!body) return;
     const { error } = await supabase.from('tablica_wiadomosci').insert({
       watek_id: selectedWatek.id,
       autor_id: currentUser.id,
-      tresc: newWiadomoscTresc.trim(),
+      tresc: buildWiadomoscReplyPayload(body, replyToMessageId),
     });
     if (error) { alert('Błąd: ' + error.message); return; }
     setNewWiadomoscTresc('');
+    setReplyToMessageId(null);
     await loadWatekWiadomosci(selectedWatek.id);
   };
 
@@ -4159,6 +4410,16 @@ export default function MinistranciApp() {
     await supabase.from('powiadomienia').update({ przeczytane: true }).eq('id', id);
     await loadTablicaData();
   };
+
+  const openWatek = useCallback((watek: TablicaWatek) => {
+    setSelectedWatek(watek);
+    loadWatekWiadomosci(watek.id);
+    markWatekLocallyRead(watek.id);
+    const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
+    watekPowiadomienia.forEach((p) => {
+      markPowiadomienieRead(p.id);
+    });
+  }, [loadWatekWiadomosci, markWatekLocallyRead, powiadomienia]);
 
   // ==================== PUSH NOTIFICATIONS ====================
   const registerPushSubscription = useCallback(async () => {
@@ -4693,7 +4954,7 @@ export default function MinistranciApp() {
                                     onChange={(e) => setDiecezjaSearch(e.target.value)}
                                     placeholder="Szukaj diecezji..."
                                     autoFocus
-                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-xs text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-400/30"
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-sm text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-400/30"
                                   />
                                 </div>
                               </div>
@@ -4767,7 +5028,7 @@ export default function MinistranciApp() {
                                     onChange={(e) => setDekanatSearch(e.target.value)}
                                     placeholder="Szukaj dekanatu..."
                                     autoFocus
-                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-xs text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-400/30"
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-sm text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-400/30"
                                   />
                                 </div>
                               </div>
@@ -5179,7 +5440,7 @@ export default function MinistranciApp() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 sm:h-9 sm:w-9 p-0 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  className="h-9 w-9 p-0 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
                   title="Usuń parafię"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -5189,10 +5450,10 @@ export default function MinistranciApp() {
                   <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={toggleDarkMode} className="h-8 w-8 sm:h-9 sm:w-9 p-0">
+              <Button variant="ghost" size="sm" onClick={toggleDarkMode} className="h-9 w-9 p-0">
                 {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleLogout} className="h-8 sm:h-9 px-2 sm:px-3">
+              <Button variant="outline" size="sm" onClick={handleLogout} className="h-9 px-2 sm:px-3">
                 <LogOut className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">Wyloguj</span>
               </Button>
@@ -5209,46 +5470,96 @@ export default function MinistranciApp() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 w-7 p-0"
+                className="h-9 w-9 p-0"
                 onClick={() => {
                   navigator.clipboard.writeText(currentParafia.kod_zaproszenia);
                   alert('Kod skopiowany!');
                 }}
                 title="Kopiuj kod"
               >
-                <Copy className="w-3.5 h-3.5" />
+                <Copy className="w-4 h-4" />
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 w-7 p-0"
+                className="h-9 w-9 p-0"
                 onClick={() => setShowQrModal(true)}
                 title="Pokaż kod QR"
               >
-                <QrCode className="w-3.5 h-3.5" />
+                <QrCode className="w-4 h-4" />
               </Button>
             </div>
           )}
 
           {/* Modal QR Code */}
           <Dialog open={showQrModal} onOpenChange={setShowQrModal}>
-            <DialogContent className="max-w-sm text-center">
+            <DialogContent className="w-[calc(100%-1rem)] max-w-3xl max-h-[90dvh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Kod QR zaproszenia</DialogTitle>
                 <DialogDescription>
-                  Ministrant skanuje ten kod, aby dołączyć do parafii
+                  Gotowy plakat do wydruku dla ministrantów
                 </DialogDescription>
               </DialogHeader>
-              <div className="flex flex-col items-center gap-4 py-4">
-                <div className="bg-white p-4 rounded-xl">
-                  <QRCodeSVG
-                    value={`https://ministranci.net/app?kod=${currentParafia?.kod_zaproszenia || ''}`}
-                    size={200}
-                    level="H"
-                  />
+
+              <div className="py-2">
+                <div
+                  ref={qrPosterRef}
+                  className="mx-auto w-full max-w-[760px] rounded-2xl border border-gray-200 bg-white p-6 sm:p-8 text-gray-900 shadow-xl"
+                >
+                  <div className="rounded-xl bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 px-5 py-4 text-white">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-90">Służba Liturgiczna</p>
+                    <h2 className="mt-1 text-2xl sm:text-3xl font-extrabold tracking-tight">Dołącz do ministrantów</h2>
+                    <p className="mt-2 text-sm sm:text-base text-emerald-50">
+                      Zeskanuj kod QR i dołącz do parafialnej grupy w aplikacji.
+                    </p>
+                  </div>
+
+                  <div className="mt-6 grid gap-5 sm:grid-cols-[1fr_auto] sm:items-center">
+                    <div className="space-y-3">
+                      <p className="text-base sm:text-lg font-semibold">
+                        To zajmie mniej niż minutę:
+                      </p>
+                      <div className="space-y-2 text-sm sm:text-base leading-relaxed text-gray-700">
+                        <p>1. Otwórz aparat lub aplikację do skanowania QR.</p>
+                        <p>2. Zeskanuj kod z plakatu.</p>
+                        <p>3. Potwierdź dołączenie do parafii.</p>
+                      </div>
+                      <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+                        <p className="text-xs uppercase tracking-[0.14em] text-emerald-700 font-bold">Kod zaproszenia</p>
+                        <p className="mt-1 text-2xl sm:text-3xl font-black tracking-[0.18em] text-emerald-900">
+                          {currentParafia?.kod_zaproszenia}
+                        </p>
+                        <p className="mt-1 text-xs sm:text-sm text-emerald-800">
+                          Parafia: <span className="font-semibold">{currentParafia?.nazwa || 'Twoja parafia'}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mx-auto">
+                      <div className="rounded-2xl border-4 border-emerald-100 bg-white p-4 shadow-md">
+                        <QRCodeSVG
+                          value={`https://ministranci.net/app?kod=${currentParafia?.kod_zaproszenia || ''}`}
+                          size={240}
+                          level="H"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
-                <code className="text-2xl font-bold tracking-widest">{currentParafia?.kod_zaproszenia}</code>
               </div>
+
+              <DialogFooter className="flex-col sm:flex-row sm:justify-center gap-2">
+                <Button
+                  type="button"
+                  onClick={handleDownloadQrPosterPdf}
+                  disabled={qrPdfLoading}
+                  className="w-full sm:w-auto"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  {qrPdfLoading ? 'Generowanie PDF...' : 'Pobierz plakat PDF'}
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -5274,7 +5585,7 @@ export default function MinistranciApp() {
       </div>
 
       {/* Nawigacja */}
-      <div className="max-w-7xl mx-auto px-2.5 py-3 sm:px-4 sm:py-6">
+      <div className="max-w-7xl mx-auto px-2.5 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:px-4 sm:py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {(() => {
             const litColor = dzisLiturgiczny ? ({
@@ -5397,21 +5708,20 @@ export default function MinistranciApp() {
                   {currentUser.typ === 'ksiadz' && (
                     <div className="flex gap-1.5 sm:gap-2 flex-wrap">
                       <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
-                        <Plus className="w-4 h-4 mr-1" />
                         Dodaj ankietę
                       </Button>
                       <Button size="sm" variant="outline" className="border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800 dark:bg-teal-900/20 dark:text-teal-300 dark:hover:bg-teal-900/40" onClick={() => {
                         setNewWatekForm({ tytul: '', tresc: '', kategoria: 'ogłoszenie', grupa_docelowa: 'wszyscy', archiwum_data: '' });
                         setShowNewWatekModal(true);
                       }}>
-                        <Plus className="w-4 h-4 mr-1" />
+                        <Plus className="w-3.5 h-3.5 mr-1" />
                         Ogłoszenie
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => {
                         setNewWatekForm({ tytul: '', tresc: '', kategoria: 'dyskusja', grupa_docelowa: 'wszyscy', archiwum_data: '' });
                         setShowNewWatekModal(true);
                       }}>
-                        <Plus className="w-4 h-4 mr-1" />
+                        <Plus className="w-3.5 h-3.5 mr-1" />
                         Dyskusja
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => setShowArchiwum(true)}>
@@ -5466,8 +5776,7 @@ export default function MinistranciApp() {
                           </div>
                           {watek && (
                             <Button size="sm" variant="destructive" onClick={() => {
-                              setSelectedWatek(watek);
-                              loadWatekWiadomosci(watek.id);
+                              openWatek(watek);
                             }}>
                               Odpowiedz
                             </Button>
@@ -5485,6 +5794,10 @@ export default function MinistranciApp() {
                 const watekOpcje = watekAnkieta ? ankietyOpcje.filter(o => o.ankieta_id === watekAnkieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc) : [];
                 const mojeOdpowiedzi = watekAnkieta ? ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id && o.respondent_id === currentUser.id) : [];
                 const wszystkieOdpowiedzi = watekAnkieta ? ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id) : [];
+                const wiadomoscById = new Map(tablicaWiadomosci.map((m) => [m.id, m]));
+                const replyTarget = replyToMessageId ? wiadomoscById.get(replyToMessageId) || null : null;
+                const replyTargetParsed = replyTarget ? parseWiadomoscReply(replyTarget.tresc) : null;
+                const replyTargetAutor = replyTarget ? members.find((m) => m.profile_id === replyTarget.autor_id) : null;
 
                 return (
                   <div className="space-y-4">
@@ -5500,7 +5813,7 @@ export default function MinistranciApp() {
                               {selectedWatek.zamkniety && <LockKeyhole className="w-4 h-4 text-red-500" />}
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              Ważna do: {watekAnkieta?.termin ? new Date(watekAnkieta.termin).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) : 'bez terminu'}
+                              Termin przeniesienia do archiwum: {selectedWatek.archiwum_data ? new Date(selectedWatek.archiwum_data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) : 'bez terminu'}
                             </p>
                           </div>
                           {currentUser.typ === 'ksiadz' && watekAnkieta && (
@@ -5803,51 +6116,122 @@ export default function MinistranciApp() {
                       </Card>
                     )}
 
-                    {/* Wiadomości w wątku */}
-                    <div className="space-y-2">
-                      {tablicaWiadomosci.length > 0 && (
-                        <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">Komentarze ({tablicaWiadomosci.length})</p>
-                      )}
-                      {tablicaWiadomosci.map(msg => {
-                        const autor = members.find(m => m.profile_id === msg.autor_id);
-                        return (
-                          <div key={msg.id} className={`p-3 rounded-lg ${msg.autor_id === currentUser.id ? 'bg-indigo-100 dark:bg-indigo-900/30 ml-4 sm:ml-8' : 'bg-white dark:bg-gray-800 border mr-4 sm:mr-8'}`}>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs font-semibold">{msg.autor_id === currentUser.id ? 'Ty' : (autor ? `${autor.imie} ${autor.nazwisko || ''}`.trim() : 'Ksiądz')}</span>
-                              <span className="text-xs text-gray-400">{new Date(msg.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
-                            </div>
-                            <p className="text-sm">{msg.tresc}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Pole do pisania wiadomości */}
-                    {!selectedWatek.zamkniety && (
-                      <div className="relative">
-                        <div className="flex gap-2">
-                          <Button variant="ghost" size="sm" className="h-9 w-9 p-0 flex-shrink-0" onClick={() => setShowEmojiPicker(showEmojiPicker === 'wiadomosc' ? null : 'wiadomosc')}>
-                            <Smile className="w-4 h-4 text-gray-400" />
-                          </Button>
-                          <Input
-                            placeholder="Napisz komentarz..."
-                            value={newWiadomoscTresc}
-                            onChange={(e) => setNewWiadomoscTresc(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendWiadomosc(); } }}
-                          />
-                          <Button onClick={sendWiadomosc} disabled={!newWiadomoscTresc.trim()}>
-                            <Send className="w-4 h-4" />
-                          </Button>
+                    {selectedWatek.kategoria === 'ogłoszenie' ? (
+                      <Card className="border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20">
+                        <CardContent className="py-3">
+                          <p className="text-sm text-teal-800 dark:text-teal-200">
+                            To ogłoszenie jest tylko do odczytu. Komentarze są wyłączone.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <>
+                        {/* Wiadomości w wątku */}
+                        <div className="space-y-2">
+                          {tablicaWiadomosci.length > 0 && (
+                            <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">Komentarze ({tablicaWiadomosci.length})</p>
+                          )}
+                          {tablicaWiadomosci.map(msg => {
+                            const autor = members.find(m => m.profile_id === msg.autor_id);
+                            const { replyToId, body } = parseWiadomoscReply(msg.tresc);
+                            const repliedMsg = replyToId ? wiadomoscById.get(replyToId) : undefined;
+                            const repliedAutor = repliedMsg ? members.find(m => m.profile_id === repliedMsg.autor_id) : null;
+                            const repliedBody = repliedMsg ? parseWiadomoscReply(repliedMsg.tresc).body : '';
+                            const isReplyTarget = replyToMessageId === msg.id;
+                            return (
+                              <div
+                                key={msg.id}
+                                className={`p-3 rounded-lg ${msg.autor_id === currentUser.id ? 'bg-indigo-100 dark:bg-indigo-900/30 ml-4 sm:ml-8' : 'bg-white dark:bg-gray-800 border mr-4 sm:mr-8'} ${isReplyTarget ? 'ring-2 ring-indigo-400 dark:ring-indigo-500' : ''}`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-semibold">{msg.autor_id === currentUser.id ? 'Ty' : (autor ? `${autor.imie} ${autor.nazwisko || ''}`.trim() : 'Ksiądz')}</span>
+                                  <span className="text-xs text-gray-400">{new Date(msg.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                {replyToId && (
+                                  <div className="mb-2 rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-900/20 p-2">
+                                    <p className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+                                      Odpowiedź na: {repliedAutor ? `${repliedAutor.imie} ${repliedAutor.nazwisko || ''}`.trim() : 'wiadomość'}
+                                    </p>
+                                    <p className="text-xs text-indigo-900/80 dark:text-indigo-200/90 break-words">
+                                      {repliedMsg ? truncateReplyPreview(repliedBody) : 'Wiadomość, do której odnosi się odpowiedź, nie jest już dostępna.'}
+                                    </p>
+                                  </div>
+                                )}
+                                <p className="text-sm whitespace-pre-wrap break-words">{body}</p>
+                                {!selectedWatek.zamkniety && (
+                                  <div className="mt-2 flex justify-end">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs"
+                                      onClick={() => {
+                                        setReplyToMessageId(msg.id);
+                                        setShowEmojiPicker(null);
+                                        setTimeout(() => wiadomoscInputRef.current?.focus(), 0);
+                                      }}
+                                    >
+                                      <Reply className="w-3.5 h-3.5 mr-1" />
+                                      Odpowiedz
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                        {showEmojiPicker === 'wiadomosc' && (
-                          <div className="absolute bottom-12 left-0 z-50">
-                            <Picker data={data} locale="pl" theme={darkMode ? 'dark' : 'light'} onEmojiSelect={(emoji: { native: string }) => { setNewWiadomoscTresc(prev => prev + emoji.native); setShowEmojiPicker(null); }} />
+
+                        {/* Pole do pisania wiadomości */}
+                        {!selectedWatek.zamkniety && (
+                          <div className="relative">
+                            {replyToMessageId && (
+                              <div className="mb-2 flex items-start justify-between gap-2 rounded-md border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+                                    Odpowiadasz: {replyTargetAutor ? `${replyTargetAutor.imie} ${replyTargetAutor.nazwisko || ''}`.trim() : 'wiadomość'}
+                                  </p>
+                                  <p className="text-xs text-indigo-900/80 dark:text-indigo-200/90 break-words">
+                                    {replyTargetParsed ? truncateReplyPreview(replyTargetParsed.body) : 'Wiadomość, do której chcesz odpowiedzieć, nie jest już dostępna.'}
+                                  </p>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 flex-shrink-0"
+                                  onClick={() => setReplyToMessageId(null)}
+                                  title="Anuluj odpowiedź"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="sm" className="h-9 w-9 p-0 flex-shrink-0" onClick={() => setShowEmojiPicker(showEmojiPicker === 'wiadomosc' ? null : 'wiadomosc')}>
+                                <Smile className="w-4 h-4 text-gray-400" />
+                              </Button>
+                              <Input
+                                ref={wiadomoscInputRef}
+                                placeholder="Napisz komentarz..."
+                                value={newWiadomoscTresc}
+                                onChange={(e) => setNewWiadomoscTresc(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendWiadomosc(); } }}
+                              />
+                              <Button onClick={sendWiadomosc} disabled={!newWiadomoscTresc.trim()}>
+                                <Send className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <LazyEmojiPicker
+                              open={showEmojiPicker === 'wiadomosc'}
+                              className="absolute bottom-12 left-0 z-50"
+                              locale="pl"
+                              theme={darkMode ? 'dark' : 'light'}
+                              onSelect={(emoji) => { setNewWiadomoscTresc(prev => prev + emoji.native); setShowEmojiPicker(null); }}
+                            />
                           </div>
                         )}
-                      </div>
-                    )}
-                    {selectedWatek.zamkniety && (
-                      <p className="text-center text-sm text-gray-400 py-2">Wątek zamknięty — brak możliwości komentowania</p>
+                        {selectedWatek.zamkniety && (
+                          <p className="text-center text-sm text-gray-400 py-2">Wątek zamknięty — brak możliwości komentowania</p>
+                        )}
+                      </>
                     )}
                   </div>
                 );
@@ -5863,19 +6247,46 @@ export default function MinistranciApp() {
                   if (w.archiwum_data && new Date(w.archiwum_data) <= now) return false;
                   return true;
                 });
+                const filtrowaneWatki = aktywneWatki.filter((w) => (
+                  tablicaCategoryFilter === 'wszystkie' || w.kategoria === tablicaCategoryFilter
+                ));
 
                 return (
                 <div className="space-y-3">
-                  {aktywneWatki.length === 0 ? (
+                  <div className="flex flex-wrap items-center gap-1.5 px-1 py-0.5">
+                    {[
+                      { key: 'wszystkie', label: 'Wszystkie' },
+                      { key: 'ogłoszenie', label: 'Ogłoszenia' },
+                      { key: 'dyskusja', label: 'Dyskusje' },
+                      { key: 'ankieta', label: 'Ankiety' },
+                    ].map((f) => {
+                      const active = tablicaCategoryFilter === f.key;
+                      return (
+                        <Button
+                          key={f.key}
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className={`h-7 rounded-full px-2.5 text-[11px] ${active ? 'bg-gray-200/80 text-gray-900 dark:bg-gray-700/80 dark:text-gray-100' : 'text-gray-500 hover:bg-gray-100/70 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200'}`}
+                          onClick={() => setTablicaCategoryFilter(f.key as 'wszystkie' | 'ogłoszenie' | 'dyskusja' | 'ankieta')}
+                        >
+                          {f.label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  {filtrowaneWatki.length === 0 ? (
                     <Card>
                       <CardContent className="py-12 text-center">
                         <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-500 dark:text-gray-400">Brak ogłoszeń</p>
-                        {currentUser.typ === 'ksiadz' && <p className="text-sm text-gray-400 mt-1">Utwórz pierwszy wątek lub ankietę!</p>}
+                        <p className="text-gray-500 dark:text-gray-400">
+                          {tablicaCategoryFilter === 'wszystkie' ? 'Brak aktualności' : 'Brak wpisów dla wybranego filtra'}
+                        </p>
+                        {currentUser.typ === 'ksiadz' && tablicaCategoryFilter === 'wszystkie' && <p className="text-sm text-gray-400 mt-1">Utwórz pierwszy wątek lub ankietę!</p>}
                       </CardContent>
                     </Card>
                   ) : (
-                    aktywneWatki.map(watek => {
+                    filtrowaneWatki.map(watek => {
                       const watekAnkieta = ankiety.find(a => a.watek_id === watek.id);
                       const autorWatku = members.find(m => m.profile_id === watek.autor_id);
                       const mojaOdp = watekAnkieta ? ankietyOdpowiedzi.some(o => o.ankieta_id === watekAnkieta.id && o.respondent_id === currentUser.id) : false;
@@ -5885,15 +6296,11 @@ export default function MinistranciApp() {
                           key={watek.id}
                           className={`cursor-pointer hover:shadow-md transition-shadow ${watek.kategoria === 'ankieta' ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : watek.kategoria === 'ogłoszenie' ? 'border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20' : watek.przypiety ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : ''}`}
                           onClick={() => {
-                            if ((watek.kategoria === 'ogłoszenie' || watek.kategoria === 'dyskusja') && currentUser.typ === 'ksiadz') {
+                            if (watek.kategoria === 'ogłoszenie' && currentUser.typ === 'ksiadz') {
                               setPreviewOgloszenie(watek);
                               return;
                             }
-                            setSelectedWatek(watek);
-                            loadWatekWiadomosci(watek.id);
-                            // Oznacz powiadomienia tego wątku jako przeczytane
-                            const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
-                            watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                            openWatek(watek);
                           }}
                         >
                           <CardHeader className="pb-2">
@@ -5904,6 +6311,12 @@ export default function MinistranciApp() {
                                   <Badge variant={watek.kategoria === 'ankieta' ? 'destructive' : 'secondary'} className={`text-xs ${watek.kategoria === 'ogłoszenie' ? 'bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600' : ''}`}>
                                     {watek.kategoria === 'ogłoszenie' ? 'Ogłoszenie' : watek.kategoria === 'ankieta' ? 'Ankieta' : 'Dyskusja'}
                                   </Badge>
+                                  {watek.kategoria === 'dyskusja' && (watekUnreadCounts[watek.id] || 0) > 0 && (
+                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 flex items-center gap-1">
+                                      <MessageSquare className="w-3 h-3" />
+                                      {watekUnreadCounts[watek.id]}
+                                    </Badge>
+                                  )}
                                   {watek.zamkniety && <LockKeyhole className="w-3 h-3 text-red-500" />}
                                   {watekAnkieta && watekAnkieta.wyniki_ukryte && <EyeOff className="w-3 h-3 text-red-500" />}
                                 </div>
@@ -5951,10 +6364,7 @@ export default function MinistranciApp() {
                                       size="sm"
                                       className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
                                       onClick={() => {
-                                        setSelectedWatek(watek);
-                                        loadWatekWiadomosci(watek.id);
-                                        const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
-                                        watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                                        openWatek(watek);
                                       }}
                                     >
                                       Szczegóły
@@ -6074,11 +6484,12 @@ export default function MinistranciApp() {
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      className="h-7 w-full text-xs text-teal-600 border-teal-200 hover:bg-teal-50 hover:border-teal-400 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-950 dark:hover:border-teal-600"
-                                      onClick={() => setPreviewOgloszenie(watek)}
+                                      className="h-7 w-full text-xs text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-400 dark:text-indigo-400 dark:border-indigo-800 dark:hover:bg-indigo-950 dark:hover:border-indigo-600"
+                                      onClick={() => {
+                                        openWatek(watek);
+                                      }}
                                     >
-                                      <Eye className="w-3 h-3 mr-1" />
-                                      Podgląd
+                                      Szczegóły
                                     </Button>
                                   </div>
                                 )}
@@ -6282,7 +6693,7 @@ export default function MinistranciApp() {
                         ) : (
                           <div className="space-y-1.5">
                             {(showAllZgloszenia ? myObecnosci : myObecnosci.slice(0, 3)).map(o => {
-                              const d = new Date(o.data);
+                              const d = new Date(`${o.data}T00:00:00`);
                               const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
                               const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay() && dy.status === 'zatwierdzona');
                               return (
@@ -6545,15 +6956,44 @@ export default function MinistranciApp() {
                     />
                   )}
 
-                  <div className="grid gap-4">
-                    {sluzby.length === 0 ? (
-                      <Card>
-                        <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
-                          Brak zaplanowanych wydarzeń
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      sluzby.map(sluzba => {
+                  {(() => {
+                    const assignedCount = currentUser.typ === 'ministrant'
+                      ? sluzby.filter((s) => isSluzbaAssignedToMe(s)).length
+                      : sluzby.length;
+                    const visibleSluzby = currentUser.typ === 'ministrant' && !showAllSluzbyForMinistrant
+                      ? sluzby.filter((s) => isSluzbaAssignedToMe(s))
+                      : sluzby;
+
+                    return (
+                      <>
+                        {currentUser.typ === 'ministrant' && sluzby.length > 0 && (
+                          <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-gray-900 px-3 py-2">
+                            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+                              Pokazano <strong>{visibleSluzby.length}</strong> z <strong>{sluzby.length}</strong> wydarzeń
+                            </p>
+                            {assignedCount < sluzby.length && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowAllSluzbyForMinistrant((prev) => !prev)}
+                              >
+                                {showAllSluzbyForMinistrant ? 'Pokaż przypisane' : 'Pokaż wszystkie'}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="grid gap-4">
+                          {visibleSluzby.length === 0 ? (
+                            <Card>
+                              <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
+                                {currentUser.typ === 'ministrant'
+                                  ? 'Nie masz obecnie przypisanych wydarzeń.'
+                                  : 'Brak zaplanowanych wydarzeń'}
+                              </CardContent>
+                            </Card>
+                          ) : (
+                            visibleSluzby.map(sluzba => {
                         const isMySluzba = isSluzbaAssignedToMe(sluzba);
                         const myFunkcje = getMyFunkcje(sluzba);
                         const needsAcceptance = hasUnacceptedFunkcje(sluzba);
@@ -6713,9 +7153,12 @@ export default function MinistranciApp() {
                             </CardContent>
                           </Card>
                         );
-                      })
-                    )}
-                  </div>
+                            })
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
             </div>
           </TabsContent>
 
@@ -7675,7 +8118,9 @@ export default function MinistranciApp() {
       }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{selectedSluzba ? 'Edytuj wydarzenie' : 'Dodaj wydarzenie'}</DialogTitle>
+            <DialogTitle className={`text-xl sm:text-2xl font-extrabold tracking-tight bg-clip-text text-transparent ${sluzbyModalTitleClass}`}>
+              {selectedSluzba ? 'Edytuj wydarzenie' : 'Dodaj wydarzenie'}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -7788,20 +8233,49 @@ export default function MinistranciApp() {
               if (hours.length <= 1) {
                 // Single hour — flat list
                 const h = hours[0] || '';
+                const hourFunkcje = sluzbaForm.funkcjePerHour[h] || {};
+                const funkcjaKeys = getHourFunkcjaKeys(hourFunkcje);
                 return (
                   <div>
-                    <Label className="mb-2 block">Przypisz funkcje</Label>
+                    <Label className={`mb-2 block text-base font-bold ${sluzbyAssignLabelClass}`}>Przypisz funkcje</Label>
                     <div className="space-y-2">
-                      {FUNKCJE_TYPES.map(funkcja => (
-                        <div key={funkcja} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                          <span className="w-full sm:w-32 text-sm font-medium">{funkcja}:</span>
+                      {funkcjaKeys.map((funkcjaKey) => {
+                        const funkcja = getFunkcjaBaseType(funkcjaKey);
+                        const slot = getFunkcjaSlotNumber(funkcjaKey);
+                        const isDuplicate = funkcjaKey !== funkcja;
+                        const canDuplicate = isMultiAssigneeFunkcja(funkcja);
+                        return (
+                        <div key={funkcjaKey} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                          <div className="w-full sm:w-32 text-sm font-medium flex items-center gap-1.5">
+                            <span>{funkcja}{slot > 1 ? ` (${slot})` : ''}:</span>
+                            {canDuplicate && !isDuplicate && (
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-indigo-300 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                                onClick={() => addDuplicateFunkcjaSlot(h, funkcja)}
+                                title={`Dodaj kolejnego ministranta: ${funkcja}`}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            )}
+                            {isDuplicate && (
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                                onClick={() => removeDuplicateFunkcjaSlot(h, funkcjaKey)}
+                                title={`Usuń dodatkowy slot: ${funkcja}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                           <Select
-                            value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'BEZ'}
+                            value={hourFunkcje[funkcjaKey] || 'BEZ'}
                             onValueChange={(v) => setSluzbaForm({
                               ...sluzbaForm,
                               funkcjePerHour: {
                                 ...sluzbaForm.funkcjePerHour,
-                                [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcja]: v }
+                                [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcjaKey]: v }
                               }
                             })}
                           >
@@ -7819,7 +8293,7 @@ export default function MinistranciApp() {
                             </SelectContent>
                           </Select>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   </div>
                 );
@@ -7827,21 +8301,51 @@ export default function MinistranciApp() {
               // Multi-hour — sections per hour
               return (
                 <div className="space-y-3">
-                  <Label className="block">Przypisz funkcje do każdej godziny</Label>
-                  {hours.map(h => (
+                  <Label className={`block text-base font-bold ${sluzbyAssignLabelClass}`}>Przypisz funkcje do każdej godziny</Label>
+                  {hours.map(h => {
+                    const hourFunkcje = sluzbaForm.funkcjePerHour[h] || {};
+                    const funkcjaKeys = getHourFunkcjaKeys(hourFunkcje);
+                    return (
                     <div key={h} className="border rounded-lg p-3 space-y-2 bg-gray-50 dark:bg-gray-900">
                       <Label className="font-semibold block text-indigo-600 dark:text-indigo-400">{h}</Label>
                       <div className="space-y-1">
-                        {FUNKCJE_TYPES.map(funkcja => (
-                          <div key={funkcja} className="flex items-center gap-2">
-                            <span className="w-28 text-xs font-medium truncate">{funkcja}:</span>
+                        {funkcjaKeys.map((funkcjaKey) => {
+                          const funkcja = getFunkcjaBaseType(funkcjaKey);
+                          const slot = getFunkcjaSlotNumber(funkcjaKey);
+                          const isDuplicate = funkcjaKey !== funkcja;
+                          const canDuplicate = isMultiAssigneeFunkcja(funkcja);
+                          return (
+                          <div key={funkcjaKey} className="flex items-center gap-2">
+                            <div className="w-28 text-xs font-medium truncate flex items-center gap-1">
+                              <span>{funkcja}{slot > 1 ? ` (${slot})` : ''}:</span>
+                              {canDuplicate && !isDuplicate && (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-indigo-300 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-400 dark:hover:bg-indigo-900/30"
+                                  onClick={() => addDuplicateFunkcjaSlot(h, funkcja)}
+                                  title={`Dodaj kolejnego ministranta: ${funkcja}`}
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                              {isDuplicate && (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
+                                  onClick={() => removeDuplicateFunkcjaSlot(h, funkcjaKey)}
+                                  title={`Usuń dodatkowy slot: ${funkcja}`}
+                                >
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </div>
                             <Select
-                              value={sluzbaForm.funkcjePerHour[h]?.[funkcja] || 'BEZ'}
+                              value={hourFunkcje[funkcjaKey] || 'BEZ'}
                               onValueChange={(v) => setSluzbaForm({
                                 ...sluzbaForm,
                                 funkcjePerHour: {
                                   ...sluzbaForm.funkcjePerHour,
-                                  [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcja]: v }
+                                  [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcjaKey]: v }
                                 }
                               })}
                             >
@@ -7859,13 +8363,25 @@ export default function MinistranciApp() {
                               </SelectContent>
                             </Select>
                           </div>
-                        ))}
+                        )})}
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               );
             })()}
+
+            {currentUser?.typ === 'ksiadz' && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-1/2"
+                onClick={() => setShowFunkcjeConfigModal(true)}
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Utwórz funkcję
+              </Button>
+            )}
 
             <div className="flex gap-2">
               <Button onClick={handleCreateSluzba} className="flex-1">
@@ -8894,7 +9410,7 @@ export default function MinistranciApp() {
 
       {/* Modal zgłoszenia obecności — Liturgiczny */}
       <Dialog open={showZglosModal} onOpenChange={setShowZglosModal}>
-        <DialogContent className="p-0 overflow-hidden border-0 shadow-2xl">
+        <DialogContent className="w-[calc(100%-1rem)] p-0 overflow-y-auto border-0 shadow-2xl max-h-[90dvh]">
           <DialogTitle className="sr-only">Zgłoś obecność</DialogTitle>
           {(() => {
             const litModal: Record<string, { gradient: string; subtitleColor: string; border: string; activeBg: string; activeBorder: string; btnGradient: string; btnHover: string }> = {
@@ -8917,7 +9433,7 @@ export default function MinistranciApp() {
                 <div className="p-5 space-y-4">
                   <div>
                     <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Data służby *</Label>
-                    <Input type="date" value={zglosForm.data} max={new Date().toISOString().split('T')[0]} onChange={(e) => setZglosForm({ ...zglosForm, data: e.target.value })} className="mt-1" />
+                    <Input type="date" value={zglosForm.data} max={getLocalISODate()} onChange={(e) => setZglosForm({ ...zglosForm, data: e.target.value })} className="mt-1" />
                   </div>
                   <div>
                     <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Godzina (opcjonalnie)</Label>
@@ -8936,11 +9452,26 @@ export default function MinistranciApp() {
                       </button>
                       {sluzby.filter(s => s.ekstra_punkty && s.ekstra_punkty > 0 && (() => {
                         const eventDate = new Date(s.data + 'T00:00:00');
-                        const now = new Date(); now.setHours(0,0,0,0);
-                        const diff = (now.getTime() - eventDate.getTime()) / (1000*60*60*24);
-                        return diff <= 3;
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const diff = Math.floor((today.getTime() - eventDate.getTime()) / (1000 * 60 * 60 * 24));
+                        return diff >= 0 && diff <= 3;
                       })()).map(wyd => (
-                        <button key={wyd.id} onClick={() => setZglosForm({ ...zglosForm, typ: 'wydarzenie', wydarzenie_id: wyd.id, nazwa_nabożeństwa: '' })} className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'wydarzenie' && zglosForm.wydarzenie_id === wyd.id ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
+                        <button
+                          key={wyd.id}
+                          onClick={() => {
+                            const firstHour = wyd.godzina?.split(',')[0]?.trim() || '';
+                            setZglosForm({
+                              ...zglosForm,
+                              typ: 'wydarzenie',
+                              wydarzenie_id: wyd.id,
+                              nazwa_nabożeństwa: '',
+                              data: wyd.data,
+                              godzina: firstHour,
+                            });
+                          }}
+                          className={`p-3 rounded-xl border-2 text-center transition-all ${zglosForm.typ === 'wydarzenie' && zglosForm.wydarzenie_id === wyd.id ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}
+                        >
                           <span className="text-2xl">⭐</span>
                           <p className="text-sm font-bold mt-1 truncate">{wyd.nazwa}</p>
                           <p className="text-[10px] text-amber-600 dark:text-amber-400">+{wyd.ekstra_punkty} pkt</p>
@@ -8979,9 +9510,9 @@ export default function MinistranciApp() {
                   {zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 font-medium text-center">Wybierz rodzaj nabożeństwa z listy powyżej</p>
                   )}
-                  <Button onClick={zglosObecnosc} className={`w-full h-12 bg-gradient-to-r ${lm.btnGradient} ${lm.btnHover} text-white font-extrabold text-base`} disabled={!zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa) || (zglosForm.typ === 'wydarzenie' && !zglosForm.wydarzenie_id)}>
+                  <Button onClick={zglosObecnosc} className={`w-full h-12 bg-gradient-to-r ${lm.btnGradient} ${lm.btnHover} text-white font-extrabold text-base`} disabled={zglosSubmitting || !zglosForm.data || (zglosForm.typ === 'nabożeństwo' && !zglosForm.nazwa_nabożeństwa) || (zglosForm.typ === 'wydarzenie' && !zglosForm.wydarzenie_id)}>
                     <Send className="w-5 h-5 mr-2" />
-                    Wyślij zgłoszenie
+                    {zglosSubmitting ? 'Wysyłanie...' : 'Wyślij zgłoszenie'}
                   </Button>
                 </div>
               </>
@@ -9048,6 +9579,13 @@ export default function MinistranciApp() {
                   onChange={(e) => setNewWatekForm({ ...newWatekForm, tytul: e.target.value })}
                   placeholder="Tytuł dyskusji"
                 />
+              </div>
+            )}
+            {newWatekForm.kategoria === 'ogłoszenie' && (
+              <div className="rounded-md border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20 px-3 py-2">
+                <p className="text-sm text-teal-800 dark:text-teal-200">
+                  Ogłoszenie jest publikowane w trybie tylko do odczytu. Komentarze są wyłączone.
+                </p>
               </div>
             )}
             <div className="relative">
@@ -9124,14 +9662,16 @@ export default function MinistranciApp() {
               <div className="w-full rounded-b-md border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
                 <EditorContent editor={tiptapEditor} />
               </div>
-              {showEmojiPicker === 'watek' && (
-                <div className="absolute z-50 mt-1">
-                  <Picker data={data} locale="pl" theme={darkMode ? 'dark' : 'light'} onEmojiSelect={(emoji: { native: string }) => {
-                    tiptapEditor?.chain().focus().insertContent(emoji.native).run();
-                    setShowEmojiPicker(null);
-                  }} />
-                </div>
-              )}
+              <LazyEmojiPicker
+                open={showEmojiPicker === 'watek'}
+                className="absolute z-50 mt-1"
+                locale="pl"
+                theme={darkMode ? 'dark' : 'light'}
+                onSelect={(emoji) => {
+                  tiptapEditor?.chain().focus().insertContent(emoji.native).run();
+                  setShowEmojiPicker(null);
+                }}
+              />
             </div>
             {currentUser?.typ === 'ksiadz' && (
               <div>
@@ -9344,10 +9884,7 @@ export default function MinistranciApp() {
                         onClick={() => {
                           setShowArchiwum(false);
                           if (watek.kategoria === 'ogłoszenie') { setPreviewOgloszenie(watek); return; }
-                          setSelectedWatek(watek);
-                          loadWatekWiadomosci(watek.id);
-                          const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
-                          watekPowiadomienia.forEach(p => markPowiadomienieRead(p.id));
+                          openWatek(watek);
                         }}
                       >
                         <div className="flex items-center gap-1.5 flex-wrap mb-1.5">

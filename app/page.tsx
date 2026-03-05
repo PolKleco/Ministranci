@@ -7,13 +7,10 @@ import {
   Bell,
   BookOpen,
   Calendar,
-  Check,
   ChevronDown,
   ChevronRight,
   Church,
   Crown,
-  Medal,
-  MessageSquare,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -119,13 +116,6 @@ const MINISTRANT_FEATURES = [
   'Modlitwy przed i po służbie oraz przewodnik ministranta',
 ];
 
-const LITURGY_FEATURES = [
-  'Kalendarz liturgiczny z okresami, świętami, wspomnieniami i kolorami szat',
-  'Baza posług liturgicznych z opisami, zdjęciami i filmami YouTube',
-  'Modlitwy własne parafii oraz łacina z tłumaczeniami',
-  'Wskazówki „przed Mszą”, „podczas Mszy” i najważniejsze zasady służby',
-];
-
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
 
@@ -160,7 +150,7 @@ export default function LandingPage() {
             </div>
             <div>
               <div className={`${headingFontClass} text-2xl leading-none text-white`}>Ministranci</div>
-              <div className="mt-0.5 text-[10px] uppercase tracking-[0.26em] text-slate-400">Docelowa wersja 3</div>
+              <div className="mt-0.5 text-[10px] uppercase tracking-[0.26em] text-slate-400">Aplikacja parafialna</div>
             </div>
           </div>
 
@@ -195,23 +185,23 @@ export default function LandingPage() {
         />
 
         <div className="relative mx-auto max-w-6xl">
-          <div className="grid gap-14 lg:grid-cols-[0.98fr_1.02fr] lg:items-center">
+          <div className="mx-auto max-w-3xl text-center">
             <div>
               <div className="intro-0">
                 <Tag>Landing oparty na realnej aplikacji</Tag>
               </div>
 
-              <h1 className={`${headingFontClass} intro-1 mt-6 max-w-3xl text-5xl leading-[0.96] text-white sm:text-7xl`}>
+              <h1 className={`${headingFontClass} intro-1 mt-6 text-5xl leading-[0.96] text-white sm:text-7xl`}>
                 Parafia widzi porządek.
                 <span className="block text-sky-200">Ministrant widzi, co ma zrobić.</span>
               </h1>
 
-              <p className="intro-2 mt-6 max-w-2xl text-lg leading-8 text-slate-200 sm:text-xl">
-                To nie jest już ogólny landing. Ta wersja pokazuje prawdziwy produkt: 8 modułów, osobny widok księdza i
-                ministranta, realny grafik służb, ranking, ogłoszenia, ankiety, kalendarz liturgiczny i baza posług.
+              <p className="intro-2 mt-6 text-lg leading-8 text-slate-200 sm:text-xl">
+                Jedna aplikacja do codziennego prowadzenia grupy ministrantów: 8 modułów, osobny widok księdza i
+                ministranta, grafik służb, ranking, ogłoszenia, ankiety, kalendarz liturgiczny i baza posług.
               </p>
 
-              <div className="intro-2 mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="intro-2 mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
                 <Link
                   href="/app"
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-sky-300 px-7 py-4 text-base font-semibold text-slate-950 transition-all hover:shadow-[0_14px_40px_rgba(125,211,252,0.18)]"
@@ -219,172 +209,8 @@ export default function LandingPage() {
                   Załóż darmowe konto parafii
                   <ArrowRight className="h-4 w-4" />
                 </Link>
-                <a
-                  href="#podglad"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-7 py-4 text-base font-medium text-white transition-colors hover:bg-white/[0.06]"
-                >
-                  Zobacz podgląd produktu
-                  <ChevronDown className="h-4 w-4" />
-                </a>
-              </div>
-
-              <div className="intro-2 mt-9 grid gap-3 sm:grid-cols-3">
-                {[
-                  ['8 modułów', 'w głównej aplikacji'],
-                  ['2 role', 'ksiądz i ministrant'],
-                  ['5 osób', 'w darmowym planie'],
-                ].map(([value, label], index) => (
-                  <div key={index} className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4">
-                    <div className="text-xl font-semibold text-sky-200">{value}</div>
-                    <div className="mt-1 text-sm leading-6 text-slate-300">{label}</div>
-                  </div>
-                ))}
               </div>
             </div>
-
-            <div id="podglad" className="intro-2">
-              <div className="rounded-[2.1rem] border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_90px_rgba(2,8,23,0.5)] backdrop-blur-sm">
-                <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
-                  <div className="rounded-[1.8rem] border border-white/8 bg-[#0d1f36] p-5">
-                    <div className="flex items-center justify-between border-b border-white/8 pb-4">
-                      <div>
-                        <div className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Widok księdza</div>
-                        <div className="mt-1 text-lg font-semibold text-white">Panel parafii</div>
-                      </div>
-                      <div className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-semibold text-emerald-300">
-                        Dzisiaj
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-4">
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-2xl bg-[#112845] p-4">
-                          <Users className="h-4 w-4 text-sky-200" />
-                          <div className="mt-3 text-2xl font-semibold text-white">5 / 5</div>
-                          <div className="mt-1 text-xs leading-5 text-slate-300">limit darmowego planu</div>
-                        </div>
-                        <div className="rounded-2xl bg-[#112845] p-4">
-                          <Calendar className="h-4 w-4 text-cyan-200" />
-                          <div className="mt-3 text-2xl font-semibold text-white">6</div>
-                          <div className="mt-1 text-xs leading-5 text-slate-300">wydarzeń w tygodniu</div>
-                        </div>
-                        <div className="rounded-2xl bg-[#112845] p-4">
-                          <Bell className="h-4 w-4 text-emerald-200" />
-                          <div className="mt-3 text-2xl font-semibold text-white">3</div>
-                          <div className="mt-1 text-xs leading-5 text-slate-300">rzeczy do akcji</div>
-                        </div>
-                      </div>
-
-                      <div className="rounded-3xl bg-[#112845] p-5">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-semibold text-white">Co jest pod ręką</div>
-                            <div className="text-xs text-slate-400">Bez przełączania między czatami i notatkami</div>
-                          </div>
-                          <div className="rounded-full border border-sky-300/15 bg-sky-300/8 px-3 py-1 text-xs text-sky-200">
-                            4 obszary
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-3">
-                          {[
-                            ['Ogłoszenia, dyskusje i ankiety', 'tablica'],
-                            ['Zatwierdzanie obecności i ranking', 'punkty'],
-                            ['Plan wydarzeń i przypisane funkcje', 'grafik'],
-                            ['Grupy, dyżury i posługi ministrantów', 'zarządzanie'],
-                          ].map(([label, action], index) => (
-                            <div key={index} className="flex items-center justify-between rounded-2xl bg-white/[0.03] px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <Check className="h-4 w-4 text-emerald-300" />
-                                <span className="text-sm text-slate-200">{label}</span>
-                              </div>
-                              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200">
-                                {action}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[1.8rem] border border-white/8 bg-[#0f2742] p-5">
-                    <div className="mx-auto w-full max-w-[280px] rounded-[2rem] border border-white/8 bg-[#091a2d] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                      <div className="rounded-[1.5rem] bg-[#10243b] p-4">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Widok ministranta</span>
-                          <span className="rounded-full bg-sky-300/10 px-2.5 py-1 text-[10px] text-sky-200">Telefon</span>
-                        </div>
-
-                        <div className="mt-5 rounded-3xl bg-white/[0.03] p-4">
-                          <div className="text-xs uppercase tracking-[0.16em] text-slate-400">Najbliższa służba</div>
-                          <div className="mt-2 text-2xl font-semibold text-white">Niedziela 10:30</div>
-                          <div className="mt-1 text-xs leading-5 text-slate-300">Krzyż, świece, procesja wejścia</div>
-                        </div>
-
-                        <div className="mt-4 rounded-3xl bg-white/[0.03] p-4">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-semibold text-white">Postęp</span>
-                            <span className="text-xs text-sky-200">+35 pkt</span>
-                          </div>
-                          <div className="mt-3 h-2 rounded-full bg-white/6">
-                            <div className="h-2 w-2/3 rounded-full bg-gradient-to-r from-sky-300 to-cyan-300" />
-                          </div>
-                          <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
-                            <Medal className="h-3.5 w-3.5 text-sky-200" />
-                            Ranga: Solidny
-                          </div>
-                        </div>
-
-                        <div className="mt-4 space-y-3">
-                          <div className="rounded-2xl bg-white/[0.03] px-4 py-3">
-                            <div className="flex items-center gap-2 text-sm font-medium text-white">
-                              <MessageSquare className="h-4 w-4 text-cyan-200" />
-                              Aktualności
-                            </div>
-                            <p className="mt-2 text-xs leading-5 text-slate-300">
-                              Ogłoszenie i ankieta są widoczne bezpośrednio w aplikacji.
-                            </p>
-                          </div>
-
-                          <div className="rounded-2xl bg-white/[0.03] px-4 py-3">
-                            <div className="flex items-center gap-2 text-sm font-medium text-white">
-                              <BookOpen className="h-4 w-4 text-sky-200" />
-                              Modlitwy i wskazówki
-                            </div>
-                            <p className="mt-2 text-xs leading-5 text-slate-300">
-                              Przewodnik, modlitwy i baza wiedzy są zawsze pod ręką.
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="border-y border-white/6 bg-[#0b1728] px-6 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm font-medium text-slate-200">
-            Najmocniejsza wersja landing page jest wtedy, gdy pokazuje faktyczny układ produktu już na pierwszym ekranie.
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-300">
-            <span className="inline-flex items-center gap-2">
-              <Check className="h-4 w-4 text-emerald-300" />
-              realne funkcje
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <Check className="h-4 w-4 text-emerald-300" />
-              prawdziwy model cenowy
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <Check className="h-4 w-4 text-emerald-300" />
-              prawdziwe role użytkowników
-            </span>
           </div>
         </div>
       </section>
@@ -397,8 +223,8 @@ export default function LandingPage() {
               8 modułów zamiast kilku osobnych narzędzi
             </h2>
             <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-300">
-              Główna aplikacja naprawdę jest podzielona na konkretne zakładki. To warto pokazać na landing page, bo
-              od razu buduje zrozumienie produktu i jego zakresu.
+              Każdy moduł odpowiada za konkretny obszar, dzięki czemu zarządzanie grupą jest prostsze i
+              bardziej przewidywalne.
             </p>
           </Reveal>
 
@@ -460,15 +286,6 @@ export default function LandingPage() {
               Aplikacja ma wbudowane elementy, których zwykle brakuje w zwykłych “organizatorach”: kalendarz
               liturgiczny, modlitwy, przewodnik i rozwijane posługi z materiałami.
             </p>
-
-            <div className="mt-8 space-y-4">
-              {LITURGY_FEATURES.map((item, index) => (
-                <div key={index} className="flex items-start gap-3 rounded-2xl border border-white/6 bg-white/[0.02] px-4 py-4">
-                  <Check className="mt-1 h-4 w-4 shrink-0 text-emerald-300" />
-                  <span className="text-sm leading-7 text-slate-300">{item}</span>
-                </div>
-              ))}
-            </div>
           </Reveal>
 
           <Reveal delay={120}>
@@ -527,8 +344,8 @@ export default function LandingPage() {
               Aplikacja działa jak narzędzie codzienne, nie jak martwy panel
             </h2>
             <p className="mt-5 text-base leading-8 text-slate-300">
-              W kodzie są realne powiadomienia push, wsparcie instalacji na iPhone oraz mechanika przypominająca o
-              ankietach, ogłoszeniach i zmianach. To warto pokazać, bo odróżnia aplikację od zwykłego “panelu www”.
+              Powiadomienia push, wsparcie instalacji na iPhone i przypomnienia o ankietach, ogłoszeniach oraz zmianach
+              sprawiają, że aplikacja realnie wspiera codzienną pracę.
             </p>
 
             <div className="mt-8 space-y-4">
@@ -580,8 +397,7 @@ export default function LandingPage() {
                     <div className="flex items-start gap-3">
                       <Crown className="mt-1 h-4 w-4 text-sky-200" />
                       <p className="text-sm leading-7 text-slate-200">
-                        To mocny argument sprzedażowy: nie trzeba ukrywać funkcji za paywallem. Landing może mówić
-                        wprost, że darmowy plan jest pełny, tylko mniejszy.
+                        Darmowy plan daje pełny dostęp do funkcji. Premium zwiększa tylko limit liczby ministrantów.
                       </p>
                     </div>
                   </div>
@@ -594,13 +410,12 @@ export default function LandingPage() {
 
       <section className="px-6 pb-24 pt-20">
         <Reveal className="mx-auto max-w-5xl rounded-[2.2rem] border border-sky-300/15 bg-[linear-gradient(135deg,rgba(125,211,252,0.1),rgba(255,255,255,0.03))] px-6 py-10 text-center sm:px-10">
-          <Tag>Docelowe CTA</Tag>
+          <Tag>Rozpocznij dziś</Tag>
           <h2 className={`${headingFontClass} mt-5 text-4xl text-white sm:text-6xl`}>
-            Ten wariant najlepiej pasuje do Twojej aplikacji
+            Zacznij porządkować służbę ministrantów w parafii
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-slate-200">
-            Bo nie sprzedaje abstrakcyjnej obietnicy. Pokazuje dokładnie to, co naprawdę masz: dwie role użytkownika,
-            8 modułów, liturgiczne wsparcie, freemium bez cięcia funkcji i produkt, który da się zrozumieć od razu.
+            Przejrzysty podział ról, komplet modułów i gotowe narzędzia do pracy z ministrantami od pierwszego dnia.
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Link

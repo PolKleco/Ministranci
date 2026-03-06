@@ -176,15 +176,20 @@ export default function LandingPage() {
         }`}
       >
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-300/20 to-cyan-300/10">
-              <Church className="h-4.5 w-4.5 text-sky-200" />
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex items-center gap-3 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/70"
+            aria-label="Przejdź na górę strony"
+          >
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
+              <img src="/logo/mark-white.svg" alt="Logo Ministranci" className="h-12 w-12" />
             </div>
-            <div>
+            <div className="text-left">
               <div className={`${headingFontClass} text-2xl leading-none text-white`}>Ministranci</div>
               <div className="mt-0.5 text-[10px] uppercase tracking-[0.26em] text-slate-400">Aplikacja parafialna</div>
             </div>
-          </div>
+          </button>
 
           <div className="flex items-center gap-6">
             <a href="#moduly" className="hidden text-sm text-slate-300 transition-colors hover:text-white sm:block">
@@ -225,7 +230,7 @@ export default function LandingPage() {
 
               <h1 className={`${headingFontClass} intro-1 mt-6 text-5xl leading-[0.96] text-white sm:text-7xl`}>
                 Parafia widzi porządek.
-                <span className="block text-sky-200">Ministrant widzi, co ma zrobić.</span>
+                <span className="mt-2 block text-sky-200 sm:mt-3">Ministrant widzi, co ma zrobić.</span>
               </h1>
 
               <p className="intro-2 mt-6 text-lg leading-8 text-slate-200 sm:text-xl">

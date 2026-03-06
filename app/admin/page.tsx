@@ -1092,7 +1092,7 @@ export default function AdminPanel() {
                 ) : authMode === 'forgot' || authMode === 'reset-sent' ? (
                   <Mail className="w-8 h-8 text-white" />
                 ) : (
-                  <Shield className="w-8 h-8 text-white" />
+                  <img src="/logo/mark-white.svg" alt="Logo Ministranci" className="w-8 h-8" />
                 )}
               </div>
               <CardTitle className="text-2xl text-white">
@@ -1294,7 +1294,7 @@ export default function AdminPanel() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md">
-                <Shield className="w-5 h-5 text-white" />
+                <img src="/logo/mark-white.svg" alt="Logo Ministranci" className="w-5 h-5" />
               </div>
               <div>
                 <h1 className="text-lg font-bold">Panel Admina</h1>

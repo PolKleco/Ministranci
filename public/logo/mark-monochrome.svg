@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" aria-label="Ministranci mark">
+  <g stroke="currentColor" stroke-width="64" stroke-linecap="butt" stroke-linejoin="miter">
+    <polyline points="220 620 385 338 512 548 639 338 804 620" />
+  </g>
+  <g stroke="currentColor" stroke-width="50" stroke-linecap="butt" stroke-linejoin="miter">
+    <line x1="512" y1="226" x2="512" y2="548" />
+    <line x1="430" y1="256" x2="594" y2="256" />
+    <line x1="512" y1="168" x2="512" y2="256" />
+  </g>
+  <path fill="currentColor" d="M220 664 C 360 646, 460 646, 512 700 C 564 646, 664 646, 804 664 L804 730 C664 712, 586 712, 536 740 C526 746, 519 755, 512 764 C505 755, 498 746, 488 740 C438 712, 360 712, 220 730 Z" />
+</svg>

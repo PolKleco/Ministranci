@@ -4581,7 +4581,11 @@ export default function MinistranciApp() {
         <Card className="w-full max-w-md">
           <CardHeader>
             <div className="flex items-center justify-center mb-4">
-              <Church className="w-12 h-12 text-indigo-600 dark:text-indigo-400" />
+              <img
+                src={darkMode ? '/logo/mark-white.svg' : '/logo/mark-dark.svg'}
+                alt="Logo Ministranci"
+                className="w-12 h-12"
+              />
             </div>
             <CardTitle className="text-center text-2xl">Dokończ rejestrację</CardTitle>
             <CardDescription className="text-center">
@@ -4675,7 +4679,7 @@ export default function MinistranciApp() {
           {/* Logo i nagłówek */}
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, #d4a853 0%, #b8912e 100%)', boxShadow: '0 8px 32px rgba(212,168,83,0.3)' }}>
-              <Church className="w-8 h-8 text-white" />
+              <img src="/logo/mark-white.svg" alt="Logo Ministranci" className="w-8 h-8" />
             </div>
             <h1 className="text-2xl font-bold text-slate-100 mb-1">
               {authMode === 'login' && 'Witaj ponownie'}
@@ -5146,7 +5150,11 @@ export default function MinistranciApp() {
         <div className="max-w-4xl mx-auto">
           <div className="flex justify-between items-center mb-8">
             <div className="flex items-center gap-2 min-w-0">
-              <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <img
+                src={darkMode ? '/logo/mark-white.svg' : '/logo/mark-dark.svg'}
+                alt="Logo Ministranci"
+                className="w-6 h-6 sm:w-8 sm:h-8 shrink-0"
+              />
               <h1 className="text-lg sm:text-2xl font-bold truncate">Witaj, {currentUser.imie} {currentUser.nazwisko || ''}!</h1>
               <button
                 onClick={() => {
@@ -5347,7 +5355,11 @@ export default function MinistranciApp() {
         <div className="max-w-7xl mx-auto px-2.5 py-2 sm:px-4 sm:py-3">
           {/* Linia 1: nazwa parafii na całą szerokość */}
           <div className="flex items-center justify-center gap-2 sm:gap-3 cursor-pointer" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); } }}>
-            <Church className="w-6 h-6 sm:w-8 sm:h-8 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <img
+              src={darkMode ? '/logo/mark-white.svg' : '/logo/mark-dark.svg'}
+              alt="Logo Ministranci"
+              className="w-6 h-6 sm:w-8 sm:h-8 shrink-0"
+            />
             {editingParafiaNazwa ? (
               <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                 <Input

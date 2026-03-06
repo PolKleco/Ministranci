@@ -80,14 +80,46 @@ function Tag({ children }: { children: ReactNode }) {
 }
 
 const MODULES = [
-  'Aktualności',
-  'Ministranci',
-  'Ranking',
-  'Wydarzenia',
-  'Kalendarz',
-  'Posługi',
-  'Modlitwy',
-  'Wskazówki',
+  {
+    title: 'Aktualności',
+    desc: 'Ogłoszenia, ankiety i dyskusje w jednym miejscu.',
+    icon: Bell,
+  },
+  {
+    title: 'Ministranci',
+    desc: 'Lista osób, grupy i szybkie zatwierdzanie nowych.',
+    icon: Users,
+  },
+  {
+    title: 'Ranking',
+    desc: 'Punkty, rangi i odznaki budujące motywację.',
+    icon: Crown,
+  },
+  {
+    title: 'Wydarzenia',
+    desc: 'Planowanie Mszy i przypisanie funkcji na godziny.',
+    icon: Calendar,
+  },
+  {
+    title: 'Kalendarz',
+    desc: 'Okresy liturgiczne, święta i kolor dnia.',
+    icon: Church,
+  },
+  {
+    title: 'Posługi',
+    desc: 'Opis funkcji liturgicznych z materiałami.',
+    icon: ShieldCheck,
+  },
+  {
+    title: 'Modlitwy',
+    desc: 'Modlitwy przed i po służbie oraz formacja.',
+    icon: BookOpen,
+  },
+  {
+    title: 'Wskazówki',
+    desc: 'Krótko: co przed Mszą i w jej trakcie.',
+    icon: Star,
+  },
 ];
 
 const PRIEST_FEATURES = [
@@ -228,15 +260,30 @@ export default function LandingPage() {
             </p>
           </Reveal>
 
-          <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {MODULES.map((module, index) => (
-              <Reveal key={module} delay={index * 50}>
-                <div className="rounded-[1.7rem] border border-white/8 bg-white/[0.03] px-5 py-5">
-                  <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Moduł {index + 1}</div>
-                  <div className="mt-3 text-lg font-semibold text-white">{module}</div>
-                </div>
-              </Reveal>
-            ))}
+          <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {MODULES.map((module, index) => {
+              const Icon = module.icon;
+              return (
+                <Reveal key={module.title} delay={index * 50}>
+                  <div className="rounded-[1.7rem] border border-white/8 bg-white/[0.03] px-4 py-4">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-300/15 text-sky-200">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/10 px-1.5 text-[10px] font-semibold text-slate-300">
+                            {index + 1}
+                          </span>
+                          <div className="text-base font-semibold text-white">{module.title}</div>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-300">{module.desc}</p>
+                      </div>
+                    </div>
+                  </div>
+                </Reveal>
+              );
+            })}
           </div>
         </div>
       </section>

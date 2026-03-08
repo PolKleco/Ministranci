@@ -6,12 +6,12 @@ import {
   Shield, Church, Users, Settings, MessageSquare, Trophy,
   LogOut, Search, Trash2, Pencil, Check, X, Plus,
   Moon, Sun, BarChart3, Eye, ChevronDown, ChevronUp,
-  Copy, RefreshCw, Globe, MapPin, Loader2, AlertTriangle,
-  Lock, ArrowLeft, Send, Smile, Paperclip, Megaphone, Mail, EyeOff, KeyRound,
+  Globe, MapPin, Loader2, AlertTriangle,
+  Lock, ArrowLeft, Send, Smile, Megaphone, Mail, EyeOff, KeyRound,
   Bold, Italic, AlignLeft, AlignCenter, AlignRight,
-  Heading1, Heading2, Heading3, Youtube, ImageIcon, Pin,
+  Heading1, Heading2, Heading3, Youtube, ImageIcon,
 } from 'lucide-react';
-import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from '@tiptap/react';
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import TiptapImage from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/select';
 import LazyEmojiPicker from '@/components/LazyEmojiPicker';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { sanitizeRichHtml } from '@/lib/sanitize-rich-html';
 
@@ -141,6 +142,34 @@ interface Stats {
   watki: number;
 }
 
+type RenderAttributes = Record<string, string | number | null | undefined>;
+type AppConfigRow = { klucz: string; wartosc: string };
+type AdminAction =
+  | 'loadStats'
+  | 'loadParafie'
+  | 'loadProfiles'
+  | 'loadMembers'
+  | 'loadWatki'
+  | 'loadPunktacja'
+  | 'loadRangi'
+  | 'loadOdznaki'
+  | 'loadBanery'
+  | 'saveBanery'
+  | 'findParafiaByCode'
+  | 'updateParafia'
+  | 'deleteProfile'
+  | 'updateProfileType'
+  | 'updateMemberGroup'
+  | 'deleteMember'
+  | 'sendAnnouncement'
+  | 'updateAnnouncement'
+  | 'deleteWatek'
+  | 'updatePunktacjaValue'
+  | 'toggleOdznaka'
+  | 'fetchRabaty'
+  | 'createRabat'
+  | 'deleteRabat';
+
 
 // ==================== SUPABASE ====================
 
@@ -148,17 +177,6 @@ const supabaseAuth = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
-
-function createAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_KEY!;
-  return createClient(url, serviceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
 
 // ==================== KOLORY ====================
 
@@ -180,7 +198,7 @@ const KOLOR_KLASY: Record<string, { bg: string; text: string; border: string }> 
 
 // ==================== TIPTAP IMAGE NODE VIEW ====================
 
-function TiptapImageView({ node, updateAttributes, selected }: any) {
+function TiptapImageView({ node, updateAttributes, selected }: ReactNodeViewProps) {
   const [showControls, setShowControls] = useState(false);
   const wrapperStyle: React.CSSProperties = { display: 'inline-block' };
   if (node.attrs.float === 'left') Object.assign(wrapperStyle, { float: 'left' as const, margin: '4px 16px 8px 0', maxWidth: '50%' });
@@ -190,6 +208,7 @@ function TiptapImageView({ node, updateAttributes, selected }: any) {
   return (
     <NodeViewWrapper as="span" style={wrapperStyle} className="tiptap-image-wrapper">
       <span className="relative inline-block" onMouseEnter={() => setShowControls(true)} onMouseLeave={() => setShowControls(false)}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={node.attrs.src} alt={node.attrs.alt || ''} style={imgStyle} className={selected ? 'outline-2 outline-indigo-500 outline-offset-2' : ''} />
         {showControls && (
           <span className="absolute top-1 left-1 flex items-center gap-0.5 bg-black/80 backdrop-blur-sm rounded-lg p-1 z-10" onMouseDown={(e) => e.preventDefault()}>
@@ -209,7 +228,7 @@ function TiptapImageView({ node, updateAttributes, selected }: any) {
 
 // ==================== TIPTAP YOUTUBE NODE VIEW ====================
 
-function TiptapYoutubeView({ node, updateAttributes, selected }: any) {
+function TiptapYoutubeView({ node, updateAttributes, selected }: ReactNodeViewProps) {
   const [showControls, setShowControls] = useState(false);
   const wrapperStyle: React.CSSProperties = { display: 'inline-block' };
   if (node.attrs.float === 'left') Object.assign(wrapperStyle, { float: 'left' as const, margin: '4px 16px 8px 0', maxWidth: '50%' });
@@ -265,7 +284,6 @@ export default function AdminPanel() {
   const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [authChecking, setAuthChecking] = useState(true);
-  const [loading, setLoading] = useState(false);
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
@@ -330,17 +348,57 @@ export default function AdminPanel() {
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  // Supabase client ref
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [sb, setSb] = useState<any>(null);
+  const adminRequest = useCallback(async <T,>(action: AdminAction, payload?: Record<string, unknown>) => {
+    const { data: { session }, error: sessionError } = await supabaseAuth.auth.getSession();
+    if (sessionError || !session?.access_token) {
+      throw new Error('Brak aktywnej sesji. Zaloguj się ponownie.');
+    }
+
+    const res = await fetch('/api/admin/panel', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action, payload }),
+    });
+
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || !result?.ok) {
+      throw new Error(result?.error || 'Operacja nie powiodla sie');
+    }
+    return (result?.data as T) ?? (undefined as T);
+  }, []);
+
+  const adminUploadFile = useCallback(async (file: File) => {
+    const { data: { session }, error: sessionError } = await supabaseAuth.auth.getSession();
+    if (sessionError || !session?.access_token) {
+      throw new Error('Brak aktywnej sesji. Zaloguj się ponownie.');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch('/api/admin/upload', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${session.access_token}` },
+      body: formData,
+    });
+
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || !result?.ok) {
+      throw new Error(result?.error || 'Nie udalo sie wgrac pliku');
+    }
+    return result.data as { publicUrl: string; ext: string; fileName: string };
+  }, []);
 
   // Tiptap Image extension with float & width + hover controls
   const FloatImage = useMemo(() => TiptapImage.extend({
     addAttributes() {
       return {
         ...this.parent?.(),
-        float: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-float'), renderHTML: (attributes: any) => attributes.float ? { 'data-float': attributes.float } : {} },
-        width: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-width'), renderHTML: (attributes: any) => attributes.width ? { 'data-width': attributes.width } : {} },
+        float: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-float'), renderHTML: (attributes: RenderAttributes) => attributes.float ? { 'data-float': attributes.float } : {} },
+        width: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-width'), renderHTML: (attributes: RenderAttributes) => attributes.width ? { 'data-width': attributes.width } : {} },
       };
     },
     addNodeView() {
@@ -352,8 +410,8 @@ export default function AdminPanel() {
     addAttributes() {
       return {
         ...this.parent?.(),
-        float: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-float'), renderHTML: (attributes: any) => attributes.float ? { 'data-float': attributes.float } : {} },
-        width: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-width'), renderHTML: (attributes: any) => attributes.width ? { 'data-width': attributes.width, style: `width: ${attributes.width}px; max-width: 100%;` } : {} },
+        float: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-float'), renderHTML: (attributes: RenderAttributes) => attributes.float ? { 'data-float': attributes.float } : {} },
+        width: { default: null, parseHTML: (element: HTMLElement) => element.getAttribute('data-width'), renderHTML: (attributes: RenderAttributes) => attributes.width ? { 'data-width': attributes.width, style: `width: ${attributes.width}px; max-width: 100%;` } : {} },
       };
     },
     addNodeView() {
@@ -398,22 +456,18 @@ export default function AdminPanel() {
 
   // Upload pliku i wstawienie do Tiptap
   const uploadAndInsertFile = async (file: File) => {
-    if (!sb || !tiptapEditor) return;
+    if (!tiptapEditor) return;
     setIsUploadingInline(true);
     try {
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
-      const path = `admin/inline/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-      const { error } = await sb.storage
-        .from('watki-files')
-        .upload(path, file, { upsert: true, contentType: file.type });
-      if (error) { alert('Blad uploadu: ' + error.message); return; }
-      const { data: { publicUrl } } = sb.storage.from('watki-files').getPublicUrl(path);
+      const { publicUrl, ext } = await adminUploadFile(file);
       const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
       if (imageExts.includes(ext)) {
         tiptapEditor.chain().focus().setImage({ src: publicUrl, alt: file.name }).run();
       } else {
         tiptapEditor.chain().focus().setLink({ href: publicUrl, target: '_blank' }).insertContent(file.name).unsetLink().run();
       }
+    } catch (err) {
+      alert(err instanceof Error ? `Blad uploadu: ${err.message}` : 'Blad uploadu');
     } finally {
       setIsUploadingInline(false);
     }
@@ -444,7 +498,6 @@ export default function AdminPanel() {
     supabaseAuth.auth.getSession().then(({ data: { session } }) => {
       if (session && checkAdmin(session.user.email)) {
         setIsAuthenticated(true);
-        setSb(createAdminClient());
       }
       setAuthChecking(false);
     });
@@ -457,7 +510,6 @@ export default function AdminPanel() {
       }
       if (session && event === 'SIGNED_IN' && checkAdmin(session.user.email)) {
         setIsAuthenticated(true);
-        setSb(createAdminClient());
       }
     });
 
@@ -507,7 +559,6 @@ export default function AdminPanel() {
     }
 
     setIsAuthenticated(true);
-    setSb(createAdminClient());
     setAuthLoading(false);
     setAuthEmail('');
     setAuthPassword('');
@@ -516,7 +567,6 @@ export default function AdminPanel() {
   const handleLogout = async () => {
     await supabaseAuth.auth.signOut();
     setIsAuthenticated(false);
-    setSb(null);
   };
 
   const handleForgotPassword = async () => {
@@ -570,7 +620,6 @@ export default function AdminPanel() {
     setNewPasswordConfirm('');
     setAuthLoading(false);
     setIsAuthenticated(true);
-    setSb(createAdminClient());
     setAuthMode('login');
   };
 
@@ -586,272 +635,264 @@ export default function AdminPanel() {
   // ==================== LOAD DATA ====================
 
   const loadStats = useCallback(async () => {
-    if (!sb) return;
-    const [p, pr, ob, w] = await Promise.all([
-      sb.from('parafie').select('id', { count: 'exact', head: true }),
-      sb.from('profiles').select('id, typ', { count: 'exact' }),
-      sb.from('obecnosci').select('id', { count: 'exact', head: true }).gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
-      sb.from('tablica_watki').select('id', { count: 'exact', head: true }),
-    ]);
-    const allProfiles = pr.data || [];
-    setStats({
-      parafie: p.count || 0,
-      profiles: pr.count || 0,
-      ministranci: allProfiles.filter((x: any) => x.typ === 'ministrant').length,
-      ksieza: allProfiles.filter((x: any) => x.typ === 'ksiadz').length,
-      obecnosci30: ob.count || 0,
-      watki: w.count || 0,
-    });
-  }, [sb]);
+    const nextStats = await adminRequest<Stats>('loadStats');
+    setStats(nextStats);
+  }, [adminRequest]);
 
   const loadParafie = useCallback(async () => {
-    if (!sb) return;
-    const { data } = await sb.from('parafie').select('*').order('created_at', { ascending: false });
-    if (data) {
-      setParafie(data);
-      setRecentParafie(data.slice(0, 5));
-    }
-  }, [sb]);
+    const data = await adminRequest<Parafia[]>('loadParafie');
+    setParafie(data || []);
+    setRecentParafie((data || []).slice(0, 5));
+  }, [adminRequest]);
 
   const loadProfiles = useCallback(async () => {
-    if (!sb) return;
-    const { data } = await sb.from('profiles').select('*').order('created_at', { ascending: false });
-    if (data) setProfiles(data);
-  }, [sb]);
+    const data = await adminRequest<Profile[]>('loadProfiles');
+    setProfiles(data || []);
+  }, [adminRequest]);
 
   const loadMembers = useCallback(async (parafiaId: string) => {
-    if (!sb) return;
-    const { data } = await sb.from('parafia_members').select('*').eq('parafia_id', parafiaId);
-    if (data) setMembers(data);
-  }, [sb]);
+    const data = await adminRequest<Member[]>('loadMembers', { parafiaId });
+    setMembers(data || []);
+  }, [adminRequest]);
 
   const loadWatki = useCallback(async (parafiaId?: string) => {
-    if (!sb) return;
-    let q = sb.from('tablica_watki').select('*').order('created_at', { ascending: false });
-    if (parafiaId) q = q.eq('parafia_id', parafiaId);
-    const { data } = await q.limit(50);
-    if (data) setWatki(data);
-  }, [sb]);
+    const data = await adminRequest<TablicaWatek[]>('loadWatki', { parafiaId: parafiaId || null });
+    setWatki(data || []);
+  }, [adminRequest]);
 
   const loadPunktacja = useCallback(async (parafiaId?: string) => {
-    if (!sb) return;
-    let q = sb.from('punktacja_config').select('*');
-    if (parafiaId) q = q.eq('parafia_id', parafiaId);
-    const { data } = await q.order('klucz');
-    if (data) setPunktacja(data);
-  }, [sb]);
+    const data = await adminRequest<PunktacjaConfig[]>('loadPunktacja', { parafiaId: parafiaId || null });
+    setPunktacja(data || []);
+  }, [adminRequest]);
 
   const loadRangi = useCallback(async (parafiaId?: string) => {
-    if (!sb) return;
-    let q = sb.from('rangi_config').select('*');
-    if (parafiaId) q = q.eq('parafia_id', parafiaId);
-    const { data } = await q.order('kolejnosc');
-    if (data) setRangi(data);
-  }, [sb]);
+    const data = await adminRequest<RangaConfig[]>('loadRangi', { parafiaId: parafiaId || null });
+    setRangi(data || []);
+  }, [adminRequest]);
 
   const loadOdznaki = useCallback(async (parafiaId?: string) => {
-    if (!sb) return;
-    let q = sb.from('odznaki_config').select('*');
-    if (parafiaId) q = q.eq('parafia_id', parafiaId);
-    const { data } = await q.order('nazwa');
-    if (data) setOdznaki(data);
-  }, [sb]);
+    const data = await adminRequest<OdznakaConfig[]>('loadOdznaki', { parafiaId: parafiaId || null });
+    setOdznaki(data || []);
+  }, [adminRequest]);
 
   // Load banery powitalne
   const loadBanery = useCallback(async () => {
-    if (!sb) return;
-    const { data } = await sb.from('app_config').select('*').in('klucz', [
-      'baner_ministrant_tytul', 'baner_ministrant_opis',
-      'baner_ksiadz_tytul', 'baner_ksiadz_opis',
-    ]);
-    if (data) {
-      const get = (k: string) => data.find((d: any) => d.klucz === k)?.wartosc || '';
-      setBanerMinistrant({ tytul: get('baner_ministrant_tytul'), opis: get('baner_ministrant_opis') });
-      setBanerKsiadz({ tytul: get('baner_ksiadz_tytul'), opis: get('baner_ksiadz_opis') });
-    }
-  }, [sb]);
+    const data = await adminRequest<AppConfigRow[]>('loadBanery');
+    const configRows = data || [];
+    const get = (k: string) => configRows.find((d) => d.klucz === k)?.wartosc || '';
+    setBanerMinistrant({ tytul: get('baner_ministrant_tytul'), opis: get('baner_ministrant_opis') });
+    setBanerKsiadz({ tytul: get('baner_ksiadz_tytul'), opis: get('baner_ksiadz_opis') });
+  }, [adminRequest]);
 
   const saveBanery = async () => {
-    if (!sb) return;
     setBanerLoading(true);
-    const rows = [
-      { klucz: 'baner_ministrant_tytul', wartosc: banerMinistrant.tytul },
-      { klucz: 'baner_ministrant_opis', wartosc: banerMinistrant.opis },
-      { klucz: 'baner_ksiadz_tytul', wartosc: banerKsiadz.tytul },
-      { klucz: 'baner_ksiadz_opis', wartosc: banerKsiadz.opis },
-    ];
-    for (const row of rows) {
-      await sb.from('app_config').upsert(row, { onConflict: 'klucz' });
+    try {
+      const rows = [
+        { klucz: 'baner_ministrant_tytul', wartosc: banerMinistrant.tytul },
+        { klucz: 'baner_ministrant_opis', wartosc: banerMinistrant.opis },
+        { klucz: 'baner_ksiadz_tytul', wartosc: banerKsiadz.tytul },
+        { klucz: 'baner_ksiadz_opis', wartosc: banerKsiadz.opis },
+      ];
+      await adminRequest('saveBanery', { rows });
+      setSuccessMsg('Banery powitalne zapisane');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie zapisac banerow');
+    } finally {
+      setBanerLoading(false);
     }
-    setSuccessMsg('Banery powitalne zapisane');
-    setBanerLoading(false);
   };
 
   // Load all data on auth
   useEffect(() => {
-    if (isAuthenticated && sb) {
-      loadStats();
-      loadParafie();
-      loadProfiles();
-      loadBanery();
+    if (isAuthenticated) {
+      void loadStats().catch(() => {});
+      void loadParafie().catch(() => {});
+      void loadProfiles().catch(() => {});
+      void loadBanery().catch(() => {});
     }
-  }, [isAuthenticated, sb, loadStats, loadParafie, loadProfiles, loadBanery]);
+  }, [isAuthenticated, loadStats, loadParafie, loadProfiles, loadBanery]);
 
   // Load scope-specific data
   useEffect(() => {
-    if (!sb || !isAuthenticated) return;
+    if (!isAuthenticated) return;
     if (scope === 'parafia' && selectedParafia) {
-      loadMembers(selectedParafia.id);
-      loadWatki(selectedParafia.id);
-      loadPunktacja(selectedParafia.id);
-      loadRangi(selectedParafia.id);
-      loadOdznaki(selectedParafia.id);
+      void loadMembers(selectedParafia.id).catch(() => {});
+      void loadWatki(selectedParafia.id).catch(() => {});
+      void loadPunktacja(selectedParafia.id).catch(() => {});
+      void loadRangi(selectedParafia.id).catch(() => {});
+      void loadOdznaki(selectedParafia.id).catch(() => {});
     } else if (scope === 'global') {
-      loadWatki();
-      loadPunktacja();
-      loadRangi();
-      loadOdznaki();
+      void loadWatki().catch(() => {});
+      void loadPunktacja().catch(() => {});
+      void loadRangi().catch(() => {});
+      void loadOdznaki().catch(() => {});
     }
-  }, [sb, isAuthenticated, scope, selectedParafia, loadMembers, loadWatki, loadPunktacja, loadRangi, loadOdznaki]);
+  }, [isAuthenticated, scope, selectedParafia, loadMembers, loadWatki, loadPunktacja, loadRangi, loadOdznaki]);
 
   // ==================== SCOPE ====================
 
   const findParafiaByCode = async () => {
-    if (!sb || !kodParafii.trim()) return;
+    if (!kodParafii.trim()) return;
     setScopeLoading(true);
     setScopeError('');
-    const { data } = await sb.from('parafie').select('*').eq('kod_zaproszenia', kodParafii.trim()).single();
-    if (data) {
-      setSelectedParafia(data);
-      setScopeError('');
-    } else {
-      setScopeError('Nie znaleziono parafii z tym kodem');
+    try {
+      const data = await adminRequest<Parafia | null>('findParafiaByCode', { kodParafii: kodParafii.trim() });
+      if (data) {
+        setSelectedParafia(data);
+        setScopeError('');
+      } else {
+        setScopeError('Nie znaleziono parafii z tym kodem');
+        setSelectedParafia(null);
+      }
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie znalezc parafii');
       setSelectedParafia(null);
+    } finally {
+      setScopeLoading(false);
     }
-    setScopeLoading(false);
   };
 
   // ==================== AKCJE: PARAFIE ====================
 
   const updateParafia = async () => {
-    if (!sb || !editParafia) return;
+    if (!editParafia) return;
     setActionLoading(true);
-    await sb.from('parafie').update({
-      nazwa: editParafiaForm.nazwa,
-      miasto: editParafiaForm.miasto,
-      adres: editParafiaForm.adres,
-    }).eq('id', editParafia.id);
-    setEditParafia(null);
-    loadParafie();
-    setSuccessMsg('Parafia zaktualizowana');
-    setActionLoading(false);
+    setScopeError('');
+    try {
+      await adminRequest('updateParafia', {
+        id: editParafia.id,
+        nazwa: editParafiaForm.nazwa,
+        miasto: editParafiaForm.miasto,
+        adres: editParafiaForm.adres,
+      });
+      setEditParafia(null);
+      await loadParafie();
+      setSuccessMsg('Parafia zaktualizowana');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie zaktualizowac parafii');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const deleteParafia = async (id: string) => {
-    if (!sb) return;
     setActionLoading(true);
-    await sb.from('parafie').delete().eq('id', id);
-    setDeleteConfirm(null);
-    loadParafie();
-    loadStats();
-    if (selectedParafia?.id === id) {
-      setSelectedParafia(null);
-      setScope('global');
+    setScopeError('');
+    try {
+      const { data: { session }, error: sessionError } = await supabaseAuth.auth.getSession();
+      if (sessionError) {
+        throw new Error('Nie udało się pobrać sesji. Zaloguj się ponownie.');
+      }
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        throw new Error('Brak aktywnej sesji. Zaloguj się ponownie.');
+      }
+
+      const res = await fetch('/api/admin/delete-parish', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ parafiaId: id }),
+      });
+
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const suffix = result?.partial ? ' (operacja częściowo wykonana, sprawdź logi serwera)' : '';
+        throw new Error((result?.error || 'Nie udało się usunąć parafii') + suffix);
+      }
+
+      setDeleteConfirm(null);
+      await Promise.all([loadParafie(), loadProfiles(), loadStats()]);
+      if (selectedParafia?.id === id) {
+        setSelectedParafia(null);
+        setScope('global');
+      }
+      setSuccessMsg('Parafia usunieta');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie usunac parafii');
     }
-    setSuccessMsg('Parafia usunieta');
     setActionLoading(false);
   };
 
   // ==================== AKCJE: UŻYTKOWNICY ====================
 
   const deleteProfile = async (id: string) => {
-    if (!sb) return;
     setActionLoading(true);
-    await sb.from('profiles').delete().eq('id', id);
-    setDeleteConfirm(null);
-    loadProfiles();
-    loadStats();
-    setSuccessMsg('Profil usuniety');
-    setActionLoading(false);
+    setScopeError('');
+    try {
+      await adminRequest('deleteProfile', { id });
+      setDeleteConfirm(null);
+      await Promise.all([loadProfiles(), loadStats()]);
+      setSuccessMsg('Profil usuniety');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie usunac profilu');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const updateProfileType = async (id: string, newTyp: 'ksiadz' | 'ministrant') => {
-    if (!sb) return;
-    await sb.from('profiles').update({ typ: newTyp }).eq('id', id);
-    loadProfiles();
-    setSuccessMsg('Typ uzytkownika zmieniony');
+    setScopeError('');
+    try {
+      await adminRequest('updateProfileType', { id, typ: newTyp });
+      await loadProfiles();
+      setSuccessMsg('Typ uzytkownika zmieniony');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie zmienic typu uzytkownika');
+    }
   };
 
   const updateMemberGroup = async (memberId: string, newGrupa: string | null) => {
-    if (!sb) return;
-    await sb.from('parafia_members').update({ grupa: newGrupa }).eq('id', memberId);
-    if (selectedParafia) loadMembers(selectedParafia.id);
-    setSuccessMsg('Grupa zmieniona');
+    setScopeError('');
+    try {
+      await adminRequest('updateMemberGroup', { memberId, grupa: newGrupa });
+      if (selectedParafia) await loadMembers(selectedParafia.id);
+      setSuccessMsg('Grupa zmieniona');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie zmienic grupy');
+    }
   };
 
   const deleteMember = async (id: string) => {
-    if (!sb) return;
     setActionLoading(true);
-    await sb.from('parafia_members').delete().eq('id', id);
-    setDeleteConfirm(null);
-    if (selectedParafia) loadMembers(selectedParafia.id);
-    setSuccessMsg('Czlonek usuniety z parafii');
-    setActionLoading(false);
+    setScopeError('');
+    try {
+      await adminRequest('deleteMember', { memberId: id });
+      setDeleteConfirm(null);
+      if (selectedParafia) await loadMembers(selectedParafia.id);
+      setSuccessMsg('Czlonek usuniety z parafii');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie usunac czlonka');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // ==================== AKCJE: OGŁOSZENIA ====================
 
   const sendAnnouncement = async () => {
-    if (!sb) return;
     const tresc = tiptapEditor?.getHTML() || announcementForm.tresc;
     if (!tresc || tresc === '<p></p>') return;
     setActionLoading(true);
 
-    // Generuj tytul z tresci (tak jak w glownej aplikacji dla ogloszen)
-    const plainText = tresc.replace(/<[^>]*>/g, '').trim();
-    const tytul = plainText ? `[ADMIN] ${plainText.substring(0, 50)}${plainText.length > 50 ? '...' : ''}` : '[ADMIN] Ogloszenie';
-
     try {
       if (scope === 'global') {
-        const { data: allParafie, error: fetchErr } = await sb.from('parafie').select('id, admin_id');
-        if (fetchErr) {
-          setScopeError(`Blad pobierania parafii: ${fetchErr.message}`);
-          setActionLoading(false);
-          return;
-        }
-        if (allParafie && allParafie.length > 0) {
-          const inserts = allParafie.map((p: any) => ({
-            parafia_id: p.id,
-            autor_id: p.admin_id,
-            tytul,
-            tresc,
-            kategoria: 'ogłoszenie' as const,
-            grupa_docelowa: announcementForm.grupa_docelowa,
-            przypiety: true,
-          }));
-          const { error: insertErr } = await sb.from('tablica_watki').insert(inserts);
-          if (insertErr) {
-            setScopeError(`Blad wysylania ogloszenia: ${insertErr.message}`);
-            setActionLoading(false);
-            return;
-          }
-          setSuccessMsg(`Ogloszenie wyslane do ${allParafie.length} parafii`);
-        }
-      } else if (selectedParafia) {
-        const { error: insertErr } = await sb.from('tablica_watki').insert({
-          parafia_id: selectedParafia.id,
-          autor_id: selectedParafia.admin_id,
-          tytul,
+        const result = await adminRequest<{ count?: number }>('sendAnnouncement', {
+          scope: 'global',
           tresc,
-          kategoria: 'ogłoszenie',
-          grupa_docelowa: announcementForm.grupa_docelowa,
-          przypiety: true,
+          grupaDocelowa: announcementForm.grupa_docelowa,
         });
-        if (insertErr) {
-          setScopeError(`Blad wysylania ogloszenia: ${insertErr.message}`);
-          setActionLoading(false);
-          return;
-        }
+        setSuccessMsg(`Ogloszenie wyslane do ${result?.count ?? 0} parafii`);
+      } else if (selectedParafia) {
+        await adminRequest('sendAnnouncement', {
+          scope: 'parafia',
+          parafiaId: selectedParafia.id,
+          autorId: selectedParafia.admin_id,
+          tresc,
+          grupaDocelowa: announcementForm.grupa_docelowa,
+        });
         setSuccessMsg('Ogloszenie wyslane');
       }
 
@@ -859,33 +900,21 @@ export default function AdminPanel() {
       setAnnouncementForm({ tytul: '', tresc: '', grupa_docelowa: 'wszyscy' });
       tiptapEditor?.commands.clearContent();
       await loadWatki(scope === 'parafia' ? selectedParafia?.id : undefined);
-    } catch (err: any) {
-      setScopeError(`Nieoczekiwany blad: ${err?.message || 'Nieznany blad'}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Nieznany blad';
+      setScopeError(`Nieoczekiwany blad: ${message}`);
     }
     setActionLoading(false);
   };
 
   const updateAnnouncement = async () => {
-    if (!sb || !editingWatekId) return;
+    if (!editingWatekId) return;
     const tresc = tiptapEditor?.getHTML() || announcementForm.tresc;
     if (!tresc || tresc === '<p></p>') return;
     setActionLoading(true);
 
-    const plainText = tresc.replace(/<[^>]*>/g, '').trim();
-    const tytul = plainText ? `[ADMIN] ${plainText.substring(0, 50)}${plainText.length > 50 ? '...' : ''}` : '[ADMIN] Ogloszenie';
-
     try {
-      const { error } = await sb.from('tablica_watki').update({
-        tytul,
-        tresc,
-        grupa_docelowa: announcementForm.grupa_docelowa,
-      }).eq('id', editingWatekId);
-
-      if (error) {
-        setScopeError(`Blad edycji ogloszenia: ${error.message}`);
-        setActionLoading(false);
-        return;
-      }
+      await adminRequest('updateAnnouncement', { id: editingWatekId, tresc, grupaDocelowa: announcementForm.grupa_docelowa });
 
       setSuccessMsg('Ogloszenie zaktualizowane');
       setShowAnnouncementModal(false);
@@ -893,73 +922,87 @@ export default function AdminPanel() {
       setEditingWatekId(null);
       tiptapEditor?.commands.clearContent();
       await loadWatki(scope === 'parafia' ? selectedParafia?.id : undefined);
-    } catch (err: any) {
-      setScopeError(`Nieoczekiwany blad: ${err?.message || 'Nieznany blad'}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Nieznany blad';
+      setScopeError(`Nieoczekiwany blad: ${message}`);
     }
     setActionLoading(false);
   };
 
   const deleteWatek = async (id: string) => {
-    if (!sb) return;
     setActionLoading(true);
-    await sb.from('tablica_watki').delete().eq('id', id);
-    setDeleteConfirm(null);
-    loadWatki(scope === 'parafia' ? selectedParafia?.id : undefined);
-    setSuccessMsg('Watek usuniety');
-    setActionLoading(false);
+    setScopeError('');
+    try {
+      await adminRequest('deleteWatek', { id });
+      setDeleteConfirm(null);
+      await loadWatki(scope === 'parafia' ? selectedParafia?.id : undefined);
+      setSuccessMsg('Watek usuniety');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie usunac watku');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // ==================== AKCJE: KONFIGURACJA ====================
 
   const updatePunktacjaValue = async () => {
-    if (!sb || !editPunktacja) return;
+    if (!editPunktacja) return;
     setActionLoading(true);
+    setScopeError('');
 
-    if (scope === 'global') {
-      // Aktualizuj we wszystkich parafiach
-      await sb.from('punktacja_config').update({ wartosc: Number(editPunktacjaValue) }).eq('klucz', editPunktacja.klucz);
-      setSuccessMsg('Punktacja zaktualizowana we wszystkich parafiach');
-    } else {
-      await sb.from('punktacja_config').update({ wartosc: Number(editPunktacjaValue) }).eq('id', editPunktacja.id);
-      setSuccessMsg('Punktacja zaktualizowana');
+    try {
+      if (scope === 'global') {
+        await adminRequest('updatePunktacjaValue', {
+          scope: 'global',
+          klucz: editPunktacja.klucz,
+          wartosc: Number(editPunktacjaValue),
+        });
+        setSuccessMsg('Punktacja zaktualizowana we wszystkich parafiach');
+      } else {
+        await adminRequest('updatePunktacjaValue', {
+          scope: 'parafia',
+          id: editPunktacja.id,
+          wartosc: Number(editPunktacjaValue),
+        });
+        setSuccessMsg('Punktacja zaktualizowana');
+      }
+      setEditPunktacja(null);
+      await loadPunktacja(scope === 'parafia' ? selectedParafia?.id : undefined);
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie zaktualizowac punktacji');
+    } finally {
+      setActionLoading(false);
     }
-
-    setEditPunktacja(null);
-    loadPunktacja(scope === 'parafia' ? selectedParafia?.id : undefined);
-    setActionLoading(false);
-  };
-
-  const updateRanga = async (id: string, field: string, value: any) => {
-    if (!sb) return;
-    await sb.from('rangi_config').update({ [field]: value }).eq('id', id);
-    loadRangi(scope === 'parafia' ? selectedParafia?.id : undefined);
-    setSuccessMsg('Ranga zaktualizowana');
   };
 
   const toggleOdznaka = async (id: string, aktywna: boolean) => {
-    if (!sb) return;
-    await sb.from('odznaki_config').update({ aktywna: !aktywna }).eq('id', id);
-    loadOdznaki(scope === 'parafia' ? selectedParafia?.id : undefined);
+    setScopeError('');
+    try {
+      await adminRequest('toggleOdznaka', { id, aktywna });
+      await loadOdznaki(scope === 'parafia' ? selectedParafia?.id : undefined);
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie zaktualizowac odznaki');
+    }
   };
 
   // ==================== AKCJE: KODY RABATOWE ====================
 
   const fetchRabaty = useCallback(async () => {
-    if (!sb) return;
     setLoadingRabaty(true);
-    const { data, error } = await sb.from('rabaty').select('*');
-    if (error) {
-      console.error('Błąd pobierania kodów rabatowych:', error);
-      alert('Nie udało się pobrać kodów rabatowych.');
-    } else {
-      setRabaty((data as Rabat[]) || []);
+    try {
+      const data = await adminRequest<Rabat[]>('fetchRabaty');
+      setRabaty(data || []);
+    } catch (err) {
+      console.error('Błąd pobierania kodów rabatowych:', err);
+      alert(err instanceof Error ? err.message : 'Nie udało się pobrać kodów rabatowych.');
+    } finally {
+      setLoadingRabaty(false);
     }
-    setLoadingRabaty(false);
-  }, [sb]);
+  }, [adminRequest]);
 
   async function handleCreateRabat(e: React.FormEvent) {
     e.preventDefault();
-    if (!sb) return;
     const { kod, procent_znizki, max_uzyc, wazny_do } = nowyRabat;
 
     if (!kod || !procent_znizki || !max_uzyc) {
@@ -967,18 +1010,13 @@ export default function AdminPanel() {
       return;
     }
 
-    const { error } = await sb.from('rabaty').insert({
-      kod,
-      procent_znizki,
-      max_uzyc,
-      wazny_do: wazny_do || null,
-      jednorazowy: max_uzyc === 1,
-    });
-
-    if (error) {
-      console.error('Błąd tworzenia kodu rabatowego:', error);
-      alert('Nie udało się utworzyć kodu rabatowego.');
-    } else {
+    try {
+      await adminRequest('createRabat', {
+        kod,
+        procent_znizki,
+        max_uzyc,
+        wazny_do: wazny_do || null,
+      });
       alert('Kod rabatowy został utworzony!');
       setNowyRabat({
         kod: '',
@@ -987,20 +1025,21 @@ export default function AdminPanel() {
         wazny_do: '',
       });
       fetchRabaty();
+    } catch (err) {
+      console.error('Błąd tworzenia kodu rabatowego:', err);
+      alert(err instanceof Error ? err.message : 'Nie udało się utworzyć kodu rabatowego.');
     }
   }
 
   async function handleDeleteRabat(id: string) {
-    if (!sb) return;
     if (window.confirm('Czy na pewno chcesz usunąć ten kod rabatowy?')) {
-      const { error } = await sb.from('rabaty').delete().eq('id', id);
-
-      if (error) {
-        console.error('Błąd usuwania kodu rabatowego:', error);
-        alert('Nie udało się usunąć kodu rabatowego.');
-      } else {
+      try {
+        await adminRequest('deleteRabat', { id });
         alert('Kod rabatowy został usunięty.');
         fetchRabaty();
+      } catch (err) {
+        console.error('Błąd usuwania kodu rabatowego:', err);
+        alert(err instanceof Error ? err.message : 'Nie udało się usunąć kodu rabatowego.');
       }
     }
   }
@@ -1021,8 +1060,16 @@ export default function AdminPanel() {
 
   // ==================== HELPERS ====================
 
+  const memberCountsByParafia = useMemo(() => {
+    return profiles.reduce<Record<string, number>>((acc, profile) => {
+      if (!profile.parafia_id) return acc;
+      acc[profile.parafia_id] = (acc[profile.parafia_id] || 0) + 1;
+      return acc;
+    }, {});
+  }, [profiles]);
+
   const getMemberCount = (parafiaId: string) => {
-    return profiles.filter(p => p.parafia_id === parafiaId).length;
+    return memberCountsByParafia[parafiaId] || 0;
   };
 
   const getParafiaName = (parafiaId: string | null) => {
@@ -1031,40 +1078,49 @@ export default function AdminPanel() {
     return p ? p.nazwa : '—';
   };
 
-  const filteredParafie = parafie.filter(p =>
-    p.nazwa.toLowerCase().includes(searchParafie.toLowerCase()) ||
-    p.miasto.toLowerCase().includes(searchParafie.toLowerCase()) ||
-    p.admin_email.toLowerCase().includes(searchParafie.toLowerCase()) ||
-    p.kod_zaproszenia.toLowerCase().includes(searchParafie.toLowerCase())
-  );
+  const filteredParafie = useMemo(() => {
+    const query = searchParafie.toLowerCase();
+    return parafie.filter((p) =>
+      p.nazwa.toLowerCase().includes(query) ||
+      p.miasto.toLowerCase().includes(query) ||
+      p.admin_email.toLowerCase().includes(query) ||
+      p.kod_zaproszenia.toLowerCase().includes(query)
+    );
+  }, [parafie, searchParafie]);
 
-  const filteredProfiles = profiles.filter(p =>
-    p.email.toLowerCase().includes(searchUsers.toLowerCase()) ||
-    p.imie.toLowerCase().includes(searchUsers.toLowerCase()) ||
-    p.nazwisko.toLowerCase().includes(searchUsers.toLowerCase())
-  );
+  const filteredProfiles = useMemo(() => {
+    const query = searchUsers.toLowerCase();
+    return profiles.filter((p) =>
+      p.email.toLowerCase().includes(query) ||
+      p.imie.toLowerCase().includes(query) ||
+      p.nazwisko.toLowerCase().includes(query)
+    );
+  }, [profiles, searchUsers]);
 
   // Deduplikacja punktacji w trybie globalnym — pokaż unikalne klucze
-  const uniquePunktacja = scope === 'global'
-    ? Object.values(punktacja.reduce((acc, p) => {
-        if (!acc[p.klucz]) acc[p.klucz] = p;
-        return acc;
-      }, {} as Record<string, PunktacjaConfig>))
-    : punktacja;
+  const uniquePunktacja = useMemo(() => {
+    if (scope !== 'global') return punktacja;
+    return Object.values(punktacja.reduce((acc, p) => {
+      if (!acc[p.klucz]) acc[p.klucz] = p;
+      return acc;
+    }, {} as Record<string, PunktacjaConfig>));
+  }, [scope, punktacja]);
 
-  const uniqueRangi = scope === 'global'
-    ? Object.values(rangi.reduce((acc, r) => {
-        if (!acc[r.nazwa]) acc[r.nazwa] = r;
-        return acc;
-      }, {} as Record<string, RangaConfig>))
-    : rangi;
+  const uniqueRangi = useMemo(() => {
+    if (scope !== 'global') return rangi;
+    return Object.values(rangi.reduce((acc, r) => {
+      if (!acc[r.nazwa]) acc[r.nazwa] = r;
+      return acc;
+    }, {} as Record<string, RangaConfig>));
+  }, [scope, rangi]);
 
-  const uniqueOdznaki = scope === 'global'
-    ? Object.values(odznaki.reduce((acc, o) => {
-        if (!acc[o.nazwa]) acc[o.nazwa] = o;
-        return acc;
-      }, {} as Record<string, OdznakaConfig>))
-    : odznaki;
+  const uniqueOdznaki = useMemo(() => {
+    if (scope !== 'global') return odznaki;
+    return Object.values(odznaki.reduce((acc, o) => {
+      if (!acc[o.nazwa]) acc[o.nazwa] = o;
+      return acc;
+    }, {} as Record<string, OdznakaConfig>));
+  }, [scope, odznaki]);
 
   // ==================== RENDER: LOADING ====================
 
@@ -1092,7 +1148,7 @@ export default function AdminPanel() {
                 ) : authMode === 'forgot' || authMode === 'reset-sent' ? (
                   <Mail className="w-8 h-8 text-white" />
                 ) : (
-                  <img src="/logo/mark-white.svg" alt="Logo Ministranci" className="w-8 h-8" />
+                  <Image src="/logo/mark-white.svg" alt="Logo Ministranci" width={32} height={32} className="w-8 h-8" />
                 )}
               </div>
               <CardTitle className="text-2xl text-white">
@@ -1262,10 +1318,10 @@ export default function AdminPanel() {
                     <Lock className="w-4 h-4 mr-2" />
                     Zaloguj się
                   </Button>
-                  <a href="/" className="flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 text-sm transition-colors">
+                  <Link href="/" className="flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 text-sm transition-colors">
                     <ArrowLeft className="w-4 h-4" />
                     Powrót do strony głównej
-                  </a>
+                  </Link>
                 </div>
               )}
             </CardContent>
@@ -1294,7 +1350,7 @@ export default function AdminPanel() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md">
-                <img src="/logo/mark-white.svg" alt="Logo Ministranci" className="w-5 h-5" />
+                <Image src="/logo/mark-white.svg" alt="Logo Ministranci" width={20} height={20} className="w-5 h-5" />
               </div>
               <div>
                 <h1 className="text-lg font-bold">Panel Admina</h1>
@@ -1715,6 +1771,7 @@ export default function AdminPanel() {
                     </CardContent>
                   </Card>
                 )}
+
               </div>
             </TabsContent>
 

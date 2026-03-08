@@ -7,6 +7,16 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
+const allowedInternalAdminEmails = (process.env.INTERNAL_ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+  .split(',')
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+function isInternalAdminEmail(email?: string | null) {
+  if (!email) return false;
+  return allowedInternalAdminEmails.includes(email.toLowerCase());
+}
+
 async function getAuthUser(request: NextRequest) {
   const authHeader = request.headers.get('authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -29,14 +39,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Sprawdź czy requester jest adminem (księdzem) parafii
-    const { data: parafia } = await supabaseAdmin
+    // Sprawdź czy requester jest adminem parafii lub super-adminem aplikacji
+    const { data: parafia, error: parafiaError } = await supabaseAdmin
       .from('parafie')
       .select('admin_id')
       .eq('id', parafiaId)
       .single();
 
-    if (!parafia || parafia.admin_id !== authUser.id) {
+    if (parafiaError || !parafia) {
+      return NextResponse.json({ error: 'Parish not found' }, { status: 404 });
+    }
+
+    const isParishAdmin = parafia.admin_id === authUser.id;
+    const isInternalAdmin = isInternalAdminEmail(authUser.email);
+    if (!isParishAdmin && !isInternalAdmin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
@@ -56,11 +72,12 @@ export async function POST(request: NextRequest) {
       .select('profile_id')
       .eq('parafia_id', parafiaId);
 
-    const profileIds = allMembers?.map(m => m.profile_id) || [];
-    // Dodaj admina jeśli nie jest w members
-    if (!profileIds.includes(authUser.id)) {
-      profileIds.push(authUser.id);
+    const profileIdsSet = new Set<string>((allMembers || []).map((m) => m.profile_id));
+    // Dodaj admina parafii jeśli nie jest w members (może się zdarzyć przy niespójnych danych)
+    if (parafia.admin_id) {
+      profileIdsSet.add(parafia.admin_id);
     }
+    const profileIds = Array.from(profileIdsSet);
 
     // Wyczyść dane powiązane z profilami (tabele bez cascade na parafia_id)
     for (const profileId of profileIds) {

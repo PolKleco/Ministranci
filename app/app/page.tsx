@@ -5861,12 +5861,12 @@ export default function MinistranciApp() {
   // ==================== GŁÓWNY INTERFEJS ====================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
       {/* Header */}
       <div className="bg-white dark:bg-gray-900 border-b shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-2.5 py-2 sm:px-4 sm:py-3">
           {/* Linia 1: nazwa parafii na całą szerokość */}
-          <div className="flex items-center justify-center gap-2 sm:gap-3 cursor-pointer" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); } }}>
+          <div className="flex items-center justify-center gap-2 sm:gap-3 cursor-pointer min-w-0" onClick={() => { if (!editingParafiaNazwa) { setActiveTab('tablica'); setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); } }}>
             <img
               src={darkMode ? '/logo/mark-white.svg' : '/logo/mark-dark.svg'}
               alt="Logo Ministranci"
@@ -5889,8 +5889,10 @@ export default function MinistranciApp() {
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm sm:text-xl font-bold">{currentParafia?.nazwa}</h1>
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-sm sm:text-xl font-bold truncate max-w-[70vw] sm:max-w-[56vw]">
+                  {currentParafia?.nazwa}
+                </h1>
                 {currentUser.typ === 'ksiadz' && (
                   <Button size="sm" variant="ghost" className="h-6 w-6 p-0 shrink-0 text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={(e) => { e.stopPropagation(); setParafiaNazwaInput(currentParafia?.nazwa || ''); setEditingParafiaNazwa(true); }}>
                     <Pencil className="w-3 h-3" />
@@ -5986,9 +5988,9 @@ export default function MinistranciApp() {
 
           {/* Linia 2: kod zaproszenia + kopiuj + QR */}
           {canManageInvites && currentParafia && (
-            <div className="flex items-center justify-center gap-1.5 md:gap-2 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800">
+            <div className="flex flex-wrap items-center justify-center gap-1.5 md:gap-2 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800">
               <span className="text-xs text-gray-500 dark:text-gray-400">Kod zaproszenia:</span>
-              <code className="text-xs md:text-sm font-bold bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded tracking-wider">
+              <code className="text-xs md:text-sm font-bold bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded tracking-wider break-all">
                 {currentParafia.kod_zaproszenia}
               </code>
               <Button
@@ -6109,7 +6111,7 @@ export default function MinistranciApp() {
       </div>
 
       {/* Nawigacja */}
-      <div className="max-w-7xl mx-auto px-2.5 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:px-4 sm:py-6">
+      <div className="max-w-7xl mx-auto px-2.5 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:px-4 sm:py-6 overflow-x-hidden">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           {(() => {
             const litColor = dzisLiturgiczny ? ({
@@ -8577,10 +8579,10 @@ export default function MinistranciApp() {
 
       {/* Toast sukcesu zgłoszenia */}
       {zglosSuccess && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="bg-green-500 text-white px-5 py-3 rounded-xl shadow-lg shadow-green-500/30 flex items-center gap-2 font-semibold text-sm">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-2 duration-300 max-w-[calc(100vw-1rem)]">
+          <div className="bg-green-500 text-white px-5 py-3 rounded-xl shadow-lg shadow-green-500/30 flex items-center gap-2 font-semibold text-sm max-w-full">
             <Check className="w-5 h-5" />
-            Zgłoszenie zostało wysłane!
+            <span className="truncate">Zgłoszenie zostało wysłane!</span>
           </div>
         </div>
       )}

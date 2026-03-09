@@ -6836,8 +6836,8 @@ export default function MinistranciApp() {
                           }}
                         >
                           <CardHeader className="pb-2">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
                                   {watek.przypiety && <Pin className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />}
                                   <Badge variant={watek.kategoria === 'ankieta' ? 'destructive' : 'secondary'} className={`text-xs ${watek.kategoria === 'ogłoszenie' ? 'bg-teal-600 text-white hover:bg-teal-700 dark:bg-teal-700 dark:hover:bg-teal-600' : ''}`}>
@@ -6867,11 +6867,11 @@ export default function MinistranciApp() {
                                   </CardDescription>
                                 )}
                               </div>
-                              <div className="flex flex-col items-end gap-1">
+                              <div className="w-full sm:w-auto flex flex-col items-stretch sm:items-end gap-1 min-w-0">
                                 {/* Ankiety — oryginalne przyciski bez zmian */}
                                 {canManageNews && watekAnkieta && (
                                   <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex flex-wrap items-center justify-end gap-1">
                                       <Button
                                         variant="outline"
                                         size="sm"
@@ -6933,7 +6933,7 @@ export default function MinistranciApp() {
                                       </>
                                     ) : (
                                       <>
-                                        <div className="flex items-center gap-1">
+                                        <div className="flex flex-wrap items-center justify-end gap-1">
                                           <Button
                                             variant="outline"
                                             size="sm"
@@ -6981,7 +6981,7 @@ export default function MinistranciApp() {
                                 {/* Dyskusje */}
                                 {canManageNews && !watekAnkieta && watek.kategoria === 'dyskusja' && (
                                   <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex flex-wrap items-center justify-end gap-1">
                                       <Button
                                         variant="outline"
                                         size="sm"

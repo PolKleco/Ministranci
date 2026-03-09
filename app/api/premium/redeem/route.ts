@@ -16,6 +16,15 @@ async function getAuthUser(request: NextRequest) {
   return data.user;
 }
 
+function isMissingColumnError(error: { message?: string } | null) {
+  const message = error?.message || '';
+  return (
+    message.includes('does not exist') ||
+    message.includes("Could not find the '") ||
+    message.includes('schema cache')
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
@@ -81,11 +90,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Kod został właśnie wykorzystany. Spróbuj ponownie.' }, { status: 409 });
     }
 
-    const { error: updateParafiaError } = await supabaseAdmin
+    const premiumExpiresAt = new Date();
+    premiumExpiresAt.setFullYear(premiumExpiresAt.getFullYear() + 1);
+
+    let { error: updateParafiaError } = await supabaseAdmin
       .from('parafie')
-      .update({ tier: 'premium', rabat_id: selectedCode.id })
+      .update({
+        tier: 'premium',
+        rabat_id: selectedCode.id,
+        premium_status: 'active',
+        premium_source: 'kod_rabatowy',
+        premium_expires_at: premiumExpiresAt.toISOString(),
+      })
       .eq('id', normalizedParafiaId)
       .eq('admin_id', authUser.id);
+
+    if (updateParafiaError && isMissingColumnError(updateParafiaError)) {
+      const fallback = await supabaseAdmin
+        .from('parafie')
+        .update({ tier: 'premium', rabat_id: selectedCode.id })
+        .eq('id', normalizedParafiaId)
+        .eq('admin_id', authUser.id);
+      updateParafiaError = fallback.error;
+    }
 
     if (updateParafiaError) {
       // Compensating action: rollback only if usage counter is still unchanged since reservation.

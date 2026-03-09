@@ -11,7 +11,7 @@ import {
   Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping, Reply,
   Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, GripVertical,
-  Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Ticket, Download
+  Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Ticket, Download, CreditCard
 } from 'lucide-react';
 import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -490,6 +490,9 @@ interface AppConfigEntry {
 interface PremiumSubscription {
   tier: string;
   rabat_id: string | null;
+  premium_status?: string | null;
+  premium_source?: string | null;
+  premium_expires_at?: string | null;
   rabaty?: {
     kod: string;
     procent_znizki: number | null;
@@ -1757,6 +1760,8 @@ export default function MinistranciApp() {
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [premiumCode, setPremiumCode] = useState('');
   const [subscription, setSubscription] = useState<PremiumSubscription | null>(null);
+  const [premiumCheckoutLoading, setPremiumCheckoutLoading] = useState(false);
+  const [premiumPortalLoading, setPremiumPortalLoading] = useState(false);
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
@@ -1789,6 +1794,14 @@ export default function MinistranciApp() {
   const canEditPrayers = hasPriestPermission('edit_prayers');
   const canManageInvites = hasPriestPermission('manage_invites');
   const canManagePremium = hasPriestPermission('manage_premium');
+  const premiumDaysLeft = useMemo(() => {
+    const rawDate = subscription?.premium_expires_at;
+    if (!rawDate) return null;
+    const expiresAt = new Date(rawDate);
+    if (Number.isNaN(expiresAt.getTime())) return null;
+    const diffMs = expiresAt.getTime() - Date.now();
+    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  }, [subscription?.premium_expires_at]);
   const isRegularMinistrant = currentUser?.typ === 'ministrant';
   const canUseMinistrantTablica = currentUser?.typ === 'ministrant' && !canManageNews;
   const canUseMinistrantRanking = currentUser?.typ === 'ministrant' && !canManageRanking;
@@ -3209,7 +3222,7 @@ export default function MinistranciApp() {
     if (!currentParafia) return;
     const { data, error } = await supabase
       .from('parafie')
-      .select('tier, rabat_id')
+      .select('*')
       .eq('id', currentParafia.id)
       .single();
 
@@ -3219,16 +3232,24 @@ export default function MinistranciApp() {
     }
 
     if (data && data.tier === 'premium') {
+      const normalized: PremiumSubscription = {
+        tier: typeof data.tier === 'string' ? data.tier : 'free',
+        rabat_id: typeof data.rabat_id === 'string' ? data.rabat_id : null,
+        premium_status: typeof data.premium_status === 'string' ? data.premium_status : null,
+        premium_source: typeof data.premium_source === 'string' ? data.premium_source : null,
+        premium_expires_at: typeof data.premium_expires_at === 'string' ? data.premium_expires_at : null,
+      };
+
       // Pobierz dane rabatu osobno jeśli jest
-      if (data.rabat_id) {
+      if (normalized.rabat_id) {
         const { data: rabat } = await supabase
           .from('rabaty')
           .select('kod, procent_znizki')
-          .eq('id', data.rabat_id)
+          .eq('id', normalized.rabat_id)
           .single();
-        setSubscription({ ...data, rabaty: rabat });
+        setSubscription({ ...normalized, rabaty: rabat });
       } else {
-        setSubscription(data);
+        setSubscription(normalized);
       }
     } else {
       setSubscription(null);
@@ -3237,6 +3258,23 @@ export default function MinistranciApp() {
 
   useEffect(() => {
     if (currentParafia) loadSubscription();
+  }, [currentParafia, loadSubscription]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !currentParafia) return;
+    const url = new URL(window.location.href);
+    const stripeStatus = url.searchParams.get('stripe');
+    if (!stripeStatus) return;
+
+    if (stripeStatus === 'success') {
+      alert('Płatność zakończona. Odświeżam status Premium.');
+      loadSubscription();
+    } else if (stripeStatus === 'cancel') {
+      alert('Płatność została anulowana.');
+    }
+
+    url.searchParams.delete('stripe');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, [currentParafia, loadSubscription]);
 
   const handleRedeemCode = async (code?: string, parafiaId?: string) => {
@@ -3262,6 +3300,60 @@ export default function MinistranciApp() {
       loadSubscription();
     } catch (err) {
       alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const handleStartStripeCheckout = async () => {
+    if (!currentParafia) return;
+    setPremiumCheckoutLoading(true);
+    try {
+      const res = await authFetch('/api/billing/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parafiaId: currentParafia.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || 'Nie udało się rozpocząć płatności.');
+        return;
+      }
+
+      if (!result.url) {
+        alert('Brak linku do płatności.');
+        return;
+      }
+
+      window.location.assign(String(result.url));
+    } catch (err) {
+      alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setPremiumCheckoutLoading(false);
+    }
+  };
+
+  const handleOpenStripePortal = async () => {
+    if (!currentParafia) return;
+    setPremiumPortalLoading(true);
+    try {
+      const res = await authFetch('/api/billing/stripe/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parafiaId: currentParafia.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || 'Nie udało się otworzyć panelu płatności.');
+        return;
+      }
+      if (!result.url) {
+        alert('Brak linku do panelu Stripe.');
+        return;
+      }
+      window.location.assign(String(result.url));
+    } catch (err) {
+      alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setPremiumPortalLoading(false);
     }
   };
 
@@ -6059,13 +6151,15 @@ export default function MinistranciApp() {
                 return (
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowPremiumModal(true); }}
-                    title={isPremium ? "Premium aktywne" : `${count}/${DARMOWY_LIMIT_MINISTRANTOW} ministrantów`}
+                    title={isPremium ? `Premium aktywne${premiumDaysLeft !== null ? `, zostało ${premiumDaysLeft} dni` : ''}` : `${count}/${DARMOWY_LIMIT_MINISTRANTOW} ministrantów`}
                     className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   >
                     {isPremium ? (
                       <div className="flex items-center gap-1.5">
                         <Star className="w-4 h-4 text-amber-500" />
-                        <span className="text-[10px] sm:text-xs font-semibold text-amber-500">Premium</span>
+                        <span className="text-[10px] sm:text-xs font-semibold text-amber-500">
+                          {premiumDaysLeft !== null ? `${premiumDaysLeft} dni` : 'Premium'}
+                        </span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5">
@@ -11781,7 +11875,24 @@ export default function MinistranciApp() {
                   <p className="text-sm text-amber-600/80 dark:text-amber-500/80 mt-1">
                     Nieograniczona liczba ministrantów
                   </p>
+                  {premiumDaysLeft !== null && (
+                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-300 mt-2">
+                      {premiumDaysLeft === 0 ? 'Koniec okresu: dzisiaj' : `Do końca okresu: ${premiumDaysLeft} dni`}
+                    </p>
+                  )}
+                  {subscription.premium_expires_at && !Number.isNaN(new Date(subscription.premium_expires_at).getTime()) && (
+                    <p className="text-xs text-amber-600/80 dark:text-amber-500/80 mt-1">
+                      Data końca: {new Date(subscription.premium_expires_at).toLocaleDateString('pl-PL')}
+                    </p>
+                  )}
                 </div>
+
+                {subscription.premium_source === 'stripe' && (
+                  <Button onClick={handleOpenStripePortal} disabled={premiumPortalLoading} className="w-full">
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    {premiumPortalLoading ? 'Otwieranie...' : 'Zarządzaj płatnością'}
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -11812,6 +11923,16 @@ export default function MinistranciApp() {
                   </p>
                   <p className="text-xs text-amber-600/70 dark:text-amber-500/60 mt-1">
                     Wszystkie funkcje dostępne w obu planach. Jedyna różnica to limit ministrantów.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Button onClick={handleStartStripeCheckout} disabled={premiumCheckoutLoading} className="w-full">
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    {premiumCheckoutLoading ? 'Przechodzę do płatności...' : 'Zapłać online za Premium (rok)'}
+                  </Button>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Po opłaceniu Stripe automatycznie aktywuje Premium na rok.
                   </p>
                 </div>
 

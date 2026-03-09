@@ -1284,14 +1284,29 @@ const KOLOR_KLASY: Record<string, { bg: string; text: string; hover: string; bor
 // ==================== MODLITWY ====================
 
 const MODLITWY = {
-  przed: `Panie Jezu Chryste, dziękuję Ci, że mogę służyć przy Twoim ołtarzu.
-Proszę Cię, pomóż mi pełnić tę służbę godnie i z wielką czcią.
-Niech moja posługa będzie wyrazem mojej miłości do Ciebie.
+  przed: `Oto za chwilę przystąpię do ołtarza Bożego,
+do Boga, który rozwesela młodość moją.
+
+Do świętej przystępuję służby.
+Chcę ją dobrze pełnić.
+
+Proszę Cię, Panie Jezu,
+o łaskę skupienia, aby moje myśli były przy Tobie,
+aby moje oczy były zwrócone na ołtarz,
+a serce moje oddane tylko Tobie.
+
 Amen.`,
 
-  po: `Panie Jezu, dziękuję Ci za możliwość uczestniczenia w świętej Mszy.
-Błogosław mojej służbie i pomóż mi być wiernym ministrantem.
-Niech to, czego doświadczyłem przy ołtarzu, owocuje w moim życiu.
+  po: `Boże, którego dobroć powołała mnie
+do służby przy Twoim ołtarzu,
+
+spraw, abym uświęcony uczestnictwem
+w Twoich tajemnicach,
+
+przez dzień dzisiejszy i całe moje życie
+szedł drogą zbawienia.
+
+Przez Chrystusa, Pana naszego.
 Amen.`,
 
   lacina: [
@@ -1324,6 +1339,41 @@ Amen.`,
     { k: 'Ite, missa est.', m: 'Deo gratias.', kPl: 'Idźcie, ofiara spełniona.', mPl: 'Bogu niech będą dzięki.' },
   ]
 };
+
+const PATRONOWIE_MINISTRANTOW = [
+  {
+    id: 'tarsycjusz',
+    nazwa: 'Św. Tarsycjusz',
+    tytul: 'Patron ministrantów i lektorów',
+    zdjecie: 'https://commons.wikimedia.org/wiki/Special:FilePath/Antony_Troncet_-_The_Martyrdom_of_Saint_Tarcisius_-_2012.86_-_Minneapolis_Institute_of_Arts.jpg',
+    opis: 'Św. Tarsycjusz jest jednym z najważniejszych patronów służby liturgicznej. Tradycja podaje, że jako młody chrześcijanin niósł Komunię Świętą do więźniów i oddał życie, broniąc Najświętszego Sakramentu. Dla ministrantów jest wzorem miłości do Eucharystii, odwagi w wierze i wierności Jezusowi nawet w trudnych sytuacjach.',
+    modlitwa: 'Święty Tarsycjuszu, naucz mnie kochać Jezusa obecnego w Eucharystii. Wyproś mi odwagę, czystość serca i wierność w służbie przy ołtarzu. Amen.',
+  },
+  {
+    id: 'dominik-savio',
+    nazwa: 'Św. Dominik Savio',
+    tytul: 'Patron młodych i ministrantów',
+    zdjecie: 'https://commons.wikimedia.org/wiki/Special:FilePath/Life_of_Dominic_Savio_%28page_6_crop%29.jpg',
+    opis: 'Św. Dominik Savio był uczniem św. Jana Bosko i od najmłodszych lat pragnął świętości w codzienności. Swoją drogę budował przez modlitwę, radość, posłuszeństwo i troskę o innych. Ministrantom przypomina, że świętość zaczyna się od małych, wiernie wykonywanych obowiązków: punktualności, skupienia i dobrego przykładu.',
+    modlitwa: 'Święty Dominiku Savio, pomóż mi być radosnym i wiernym ministrantem. Ucz mnie żyć blisko Boga na co dzień i służyć z czystym sercem. Amen.',
+  },
+  {
+    id: 'jan-berchmans',
+    nazwa: 'Św. Jan Berchmans',
+    tytul: 'Patron ministrantów i studentów',
+    zdjecie: 'https://commons.wikimedia.org/wiki/Special:FilePath/Jean_Berchmans_%281599-1621%29.jpg',
+    opis: 'Św. Jan Berchmans, jezuita, zasłynął z tego, że zwyczajne obowiązki wykonywał nadzwyczaj wiernie. Nie szukał wielkich rzeczy, ale codziennie dbał o porządek serca, modlitwę i wierność regule życia. Dla ministranta jest przykładem, że dojrzała służba rodzi się z systematyczności, pokory i odpowiedzialności.',
+    modlitwa: 'Święty Janie Berchmansie, uproś mi ducha wierności w małych rzeczach. Pomóż mi służyć spokojnie, sumiennie i z miłością do Boga. Amen.',
+  },
+  {
+    id: 'alojzy-gonzaga',
+    nazwa: 'Św. Alojzy Gonzaga',
+    tytul: 'Patron młodzieży i czystości serca',
+    zdjecie: 'https://commons.wikimedia.org/wiki/Special:FilePath/Saint_Aloysius_Gonzaga.jpg',
+    opis: 'Św. Alojzy Gonzaga pochodził z możnej rodziny, ale wybrał drogę służby Bogu i ludziom. Wyróżniał się modlitwą, skromnością i troską o chorych, którym pomagał aż do oddania własnego życia. Ministrantom pokazuje, że prawdziwa wielkość to czyste serce, dyscyplina wewnętrzna i gotowość do ofiary dla innych.',
+    modlitwa: 'Święty Alojzy Gonzago, wypraszaj mi czystość serca, opanowanie i wierność Jezusowi. Ucz mnie służby pełnej szacunku, ciszy i miłości. Amen.',
+  },
+] as const;
 
 // ==================== WSKAZÓWKI ====================
 
@@ -8541,7 +8591,7 @@ export default function MinistranciApp() {
               {/* Modlitwa przed Mszą */}
               <Accordion type="single" collapsible>
                 <AccordionItem value="przed" className="border-0">
-                  <AccordionTrigger className="rounded-xl bg-gradient-to-r from-amber-500/10 to-yellow-500/10 dark:from-amber-500/20 dark:to-yellow-500/20 border border-amber-200/50 dark:border-amber-700/50 px-4 py-3 hover:no-underline hover:from-amber-500/20 hover:to-yellow-500/20">
+                  <AccordionTrigger className="rounded-xl bg-gradient-to-r from-amber-500/10 to-yellow-500/10 dark:from-amber-500/20 dark:to-yellow-500/20 border border-amber-200/50 dark:border-amber-700/50 px-4 py-3 hover:no-underline hover:from-amber-500/20 hover:to-yellow-500/20 mt-2">
                     <div className="flex items-center gap-3">
                       <span className="text-xl">⛪</span>
                       <span className="font-bold text-amber-800 dark:text-amber-300">Modlitwa przed Mszą</span>
@@ -8610,6 +8660,42 @@ export default function MinistranciApp() {
                           <p className="whitespace-pre-line text-sm leading-relaxed text-gray-700 dark:text-gray-300 pr-8">{modlitwyTresc.po || MODLITWY.po}</p>
                         </div>
                       )}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+
+                <AccordionItem value="patronowie" className="border-0">
+                  <AccordionTrigger className="rounded-xl bg-gradient-to-r from-rose-500/10 to-fuchsia-500/10 dark:from-rose-500/20 dark:to-fuchsia-500/20 border border-rose-200/50 dark:border-rose-700/50 px-4 py-3 hover:no-underline hover:from-rose-500/20 hover:to-fuchsia-500/20 mt-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">🛡️</span>
+                      <span className="font-bold text-rose-800 dark:text-rose-300">Patronowie ministrantów</span>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-blue-200/30 dark:border-blue-700/30 p-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {PATRONOWIE_MINISTRANTOW.map((patron) => (
+                          <div key={patron.id} className="rounded-xl overflow-hidden border border-blue-100 dark:border-blue-900/40 bg-white dark:bg-gray-900 shadow-sm">
+                            <img
+                              src={patron.zdjecie}
+                              alt={patron.nazwa}
+                              loading="lazy"
+                              className="w-full h-52 object-contain bg-gray-100 dark:bg-gray-800 p-2"
+                            />
+                            <div className="p-4 space-y-3">
+                              <div>
+                                <h4 className="font-bold text-base text-gray-900 dark:text-gray-100">{patron.nazwa}</h4>
+                                <p className="text-xs text-blue-600 dark:text-blue-300 font-medium mt-0.5">{patron.tytul}</p>
+                              </div>
+                              <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">{patron.opis}</p>
+                              <div className="rounded-lg border border-indigo-200/70 dark:border-indigo-800/50 bg-indigo-50/70 dark:bg-indigo-900/20 px-3 py-2">
+                                <p className="text-[11px] uppercase tracking-wide font-semibold text-indigo-600 dark:text-indigo-300 mb-1">Krótka modlitwa</p>
+                                <p className="text-sm leading-relaxed text-indigo-900 dark:text-indigo-200">{patron.modlitwa}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>

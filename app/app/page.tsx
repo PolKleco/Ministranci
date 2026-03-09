@@ -147,6 +147,10 @@ const FULL_CONFIGURATION_PERMISSION_KEYS: ParishPermissionKey[] = PARISH_PERMISS
   (permission) => permission !== RANKING_APPROVAL_PERMISSION_KEY
 );
 const CLEAR_ASSIGN_MEMBER_VALUE = '__clear_assign_member__';
+const PRIEST_RANKING_INFO_DISMISSED_KEY_PREFIX = 'priest-ranking-info-dismissed';
+const PRIEST_MINISTRANCI_INFO_DISMISSED_KEY_PREFIX = 'priest-ministranci-info-dismissed';
+const PRIEST_WYDARZENIA_INFO_DISMISSED_KEY_PREFIX = 'priest-wydarzenia-info-dismissed';
+const PRIEST_POSLUGI_INFO_DISMISSED_KEY_PREFIX = 'priest-poslugi-info-dismissed';
 const buildFullConfigurationPermissions = (includeRankingApproval: boolean): ParishPermissionKey[] => (
   includeRankingApproval
     ? [...PARISH_PERMISSION_KEYS]
@@ -1647,6 +1651,14 @@ export default function MinistranciApp() {
   const [showIOSInstallBanner, setShowIOSInstallBanner] = useState(false);
   const [showAllZgloszenia, setShowAllZgloszenia] = useState(false);
   const [showAllSluzbyForMinistrant, setShowAllSluzbyForMinistrant] = useState(false);
+  const [showPriestRankingInfo, setShowPriestRankingInfo] = useState(false);
+  const [hidePriestRankingInfoPermanently, setHidePriestRankingInfoPermanently] = useState(false);
+  const [showPriestMinistranciInfo, setShowPriestMinistranciInfo] = useState(false);
+  const [hidePriestMinistranciInfoPermanently, setHidePriestMinistranciInfoPermanently] = useState(false);
+  const [showPriestWydarzeniaInfo, setShowPriestWydarzeniaInfo] = useState(false);
+  const [hidePriestWydarzeniaInfoPermanently, setHidePriestWydarzeniaInfoPermanently] = useState(false);
+  const [showPriestPoslugiInfo, setShowPriestPoslugiInfo] = useState(false);
+  const [hidePriestPoslugiInfoPermanently, setHidePriestPoslugiInfoPermanently] = useState(false);
 
   // ==================== STAN — TABLICA OGŁOSZEŃ ====================
   const [tablicaWatki, setTablicaWatki] = useState<TablicaWatek[]>([]);
@@ -1733,6 +1745,22 @@ export default function MinistranciApp() {
   const canUseMinistrantEvents = currentUser?.typ === 'ministrant' && !canManageEvents && !canManageFunctionTemplates;
   const canUseMinistrantPoslugi = currentUser?.typ === 'ministrant' && !canManagePoslugiCatalog;
   const canUseMinistrantModlitwy = currentUser?.typ === 'ministrant' && !canEditPrayers;
+  const priestRankingInfoStorageKey = useMemo(() => {
+    if (!currentUser?.id || !currentUser?.parafia_id) return null;
+    return `${PRIEST_RANKING_INFO_DISMISSED_KEY_PREFIX}:${currentUser.id}:${currentUser.parafia_id}`;
+  }, [currentUser?.id, currentUser?.parafia_id]);
+  const priestMinistranciInfoStorageKey = useMemo(() => {
+    if (!currentUser?.id || !currentUser?.parafia_id) return null;
+    return `${PRIEST_MINISTRANCI_INFO_DISMISSED_KEY_PREFIX}:${currentUser.id}:${currentUser.parafia_id}`;
+  }, [currentUser?.id, currentUser?.parafia_id]);
+  const priestWydarzeniaInfoStorageKey = useMemo(() => {
+    if (!currentUser?.id || !currentUser?.parafia_id) return null;
+    return `${PRIEST_WYDARZENIA_INFO_DISMISSED_KEY_PREFIX}:${currentUser.id}:${currentUser.parafia_id}`;
+  }, [currentUser?.id, currentUser?.parafia_id]);
+  const priestPoslugiInfoStorageKey = useMemo(() => {
+    if (!currentUser?.id || !currentUser?.parafia_id) return null;
+    return `${PRIEST_POSLUGI_INFO_DISMISSED_KEY_PREFIX}:${currentUser.id}:${currentUser.parafia_id}`;
+  }, [currentUser?.id, currentUser?.parafia_id]);
   const ensureRankingApprovalPermission = () => {
     if (canApproveRankingSubmissions) return true;
     alert('Nie masz uprawnień do zatwierdzania zgłoszeń.');
@@ -3300,6 +3328,58 @@ export default function MinistranciApp() {
         }
       });
   }, [currentUser?.parafia_id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !priestRankingInfoStorageKey) {
+      setHidePriestRankingInfoPermanently(false);
+      return;
+    }
+    setHidePriestRankingInfoPermanently(localStorage.getItem(priestRankingInfoStorageKey) === 'true');
+  }, [priestRankingInfoStorageKey]);
+
+  useEffect(() => {
+    const shouldShow = activeTab === 'ranking' && isPriestUser && canManageRanking && !hidePriestRankingInfoPermanently;
+    setShowPriestRankingInfo(shouldShow);
+  }, [activeTab, isPriestUser, canManageRanking, hidePriestRankingInfoPermanently]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !priestMinistranciInfoStorageKey) {
+      setHidePriestMinistranciInfoPermanently(false);
+      return;
+    }
+    setHidePriestMinistranciInfoPermanently(localStorage.getItem(priestMinistranciInfoStorageKey) === 'true');
+  }, [priestMinistranciInfoStorageKey]);
+
+  useEffect(() => {
+    const shouldShow = activeTab === 'ministranci' && isPriestUser && canManageMembers && !hidePriestMinistranciInfoPermanently;
+    setShowPriestMinistranciInfo(shouldShow);
+  }, [activeTab, isPriestUser, canManageMembers, hidePriestMinistranciInfoPermanently]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !priestWydarzeniaInfoStorageKey) {
+      setHidePriestWydarzeniaInfoPermanently(false);
+      return;
+    }
+    setHidePriestWydarzeniaInfoPermanently(localStorage.getItem(priestWydarzeniaInfoStorageKey) === 'true');
+  }, [priestWydarzeniaInfoStorageKey]);
+
+  useEffect(() => {
+    const shouldShow = activeTab === 'sluzby' && isPriestUser && (canManageEvents || canManageFunctionTemplates) && !hidePriestWydarzeniaInfoPermanently;
+    setShowPriestWydarzeniaInfo(shouldShow);
+  }, [activeTab, isPriestUser, canManageEvents, canManageFunctionTemplates, hidePriestWydarzeniaInfoPermanently]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !priestPoslugiInfoStorageKey) {
+      setHidePriestPoslugiInfoPermanently(false);
+      return;
+    }
+    setHidePriestPoslugiInfoPermanently(localStorage.getItem(priestPoslugiInfoStorageKey) === 'true');
+  }, [priestPoslugiInfoStorageKey]);
+
+  useEffect(() => {
+    const shouldShow = activeTab === 'poslugi' && isPriestUser && canManagePoslugiCatalog && !hidePriestPoslugiInfoPermanently;
+    setShowPriestPoslugiInfo(shouldShow);
+  }, [activeTab, isPriestUser, canManagePoslugiCatalog, hidePriestPoslugiInfoPermanently]);
 
   // Pokaż baner instalacji PWA na iOS Safari
   useEffect(() => {
@@ -4899,11 +4979,17 @@ export default function MinistranciApp() {
     setSelectedWatek(watek);
     loadWatekWiadomosci(watek.id);
     markWatekLocallyRead(watek.id);
-    const watekPowiadomienia = powiadomienia.filter(p => !p.przeczytane && p.odniesienie_id === watek.id);
-    watekPowiadomienia.forEach((p) => {
+    const ankietaDlaWatku = ankiety.find(a => a.watek_id === watek.id);
+    const powiadomieniaDoOznaczenia = powiadomienia.filter((p) => {
+      if (p.przeczytane) return false;
+      if (p.odniesienie_id === watek.id) return true;
+      if (ankietaDlaWatku && p.odniesienie_id === ankietaDlaWatku.id) return true;
+      return false;
+    });
+    powiadomieniaDoOznaczenia.forEach((p) => {
       markPowiadomienieRead(p.id);
     });
-  }, [loadWatekWiadomosci, markWatekLocallyRead, powiadomienia]);
+  }, [ankiety, loadWatekWiadomosci, markWatekLocallyRead, powiadomienia]);
 
   // ==================== PUSH NOTIFICATIONS ====================
   const registerPushSubscription = useCallback(async () => {
@@ -7082,6 +7168,45 @@ export default function MinistranciApp() {
           {/* Panel Ranking Służby */}
           <TabsContent value="ranking">
             <div className="space-y-6">
+              {showPriestRankingInfo && (
+                <Card className="border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
+                  <CardContent className="py-3 px-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <Trophy className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-amber-900 dark:text-amber-100 space-y-1">
+                          <p className="font-semibold">Po co jest ranking?</p>
+                          <p className="text-xs text-amber-800 dark:text-amber-200">
+                            Ranking zbiera punkty za obecność i zaangażowanie ministrantów. Pomaga motywować, doceniać regularność i sprawiedliwie prowadzić formację.
+                          </p>
+                          <p className="text-xs text-amber-800 dark:text-amber-200">
+                            W tym panelu możesz m.in. ustawiać punktację, zarządzać rangami i odznakami, zatwierdzać zgłoszenia obecności oraz podglądać statystyki parafii.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 sm:justify-end">
+                        <Button variant="ghost" size="sm" onClick={() => setShowPriestRankingInfo(false)}>
+                          Ukryj
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setShowPriestRankingInfo(false);
+                            setHidePriestRankingInfoPermanently(true);
+                            if (typeof window !== 'undefined' && priestRankingInfoStorageKey) {
+                              localStorage.setItem(priestRankingInfoStorageKey, 'true');
+                            }
+                          }}
+                        >
+                          Nie pokazuj więcej
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* === WIDOK MINISTRANTA === */}
               {canUseMinistrantRanking && (() => {
                 const myRanking = rankingData.find(r => r.ministrant_id === currentUser.id);
@@ -7472,6 +7597,45 @@ export default function MinistranciApp() {
           {/* Panel Wydarzenia */}
           <TabsContent value="sluzby">
             <div className="space-y-4">
+                  {showPriestWydarzeniaInfo && (
+                    <Card className="border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20">
+                      <CardContent className="py-3 px-4">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                          <div className="flex items-start gap-3">
+                            <Calendar className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                            <div className="text-sm text-emerald-900 dark:text-emerald-100 space-y-1">
+                              <p className="font-semibold">Po co jest panel Wydarzenia?</p>
+                              <p className="text-xs text-emerald-800 dark:text-emerald-200">
+                                To miejsce do planowania i koordynowania wszystkich wydarzeń liturgicznych w parafii.
+                              </p>
+                              <p className="text-xs text-emerald-800 dark:text-emerald-200">
+                                W tym panelu możesz m.in. dodawać i edytować wydarzenia, ustawiać funkcje liturgiczne, przypisywać ministrantów, śledzić akceptacje funkcji i zarządzać punktami dodatkowymi.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 sm:justify-end">
+                            <Button variant="ghost" size="sm" onClick={() => setShowPriestWydarzeniaInfo(false)}>
+                              Ukryj
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setShowPriestWydarzeniaInfo(false);
+                                setHidePriestWydarzeniaInfoPermanently(true);
+                                if (typeof window !== 'undefined' && priestWydarzeniaInfoStorageKey) {
+                                  localStorage.setItem(priestWydarzeniaInfoStorageKey, 'true');
+                                }
+                              }}
+                            >
+                              Nie pokazuj więcej
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
                   {canUseMinistrantEvents && (
                     <MinistrantWydarzeniaHeader
                       kolorLiturgiczny={dzisLiturgiczny?.kolor}
@@ -7535,6 +7699,7 @@ export default function MinistranciApp() {
                         const isMySluzba = isSluzbaAssignedToMe(sluzba);
                         const myFunkcje = getMyFunkcje(sluzba);
                         const needsAcceptance = hasUnacceptedFunkcje(sluzba);
+                        const shouldShowMinistrantView = canUseMinistrantEvents || (currentUser?.typ === 'ministrant' && isMySluzba);
 
                         return (
                           <Card key={sluzba.id} className={`overflow-hidden ${isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : 'border border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white via-white to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800/50'}`}>
@@ -7641,7 +7806,7 @@ export default function MinistranciApp() {
                               })()}
 
                               {/* Widok ministranta — tylko jego funkcje */}
-                              {canUseMinistrantEvents && (() => {
+                              {shouldShowMinistrantView && (() => {
                                 const dniDoWydarzenia = Math.ceil((new Date(sluzba.data).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
 
                                 return (
@@ -7678,7 +7843,7 @@ export default function MinistranciApp() {
                                             className="w-full mt-2"
                                           >
                                             <Check className="w-4 h-4 mr-1" />
-                                            Akceptuję wydarzenie
+                                            Akceptuj funkcję
                                           </Button>
                                         )}
                                       </>
@@ -7704,6 +7869,45 @@ export default function MinistranciApp() {
           {canManageMembers && (
             <TabsContent value="ministranci">
               <div className="space-y-4">
+                {showPriestMinistranciInfo && (
+                  <Card className="border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/20">
+                    <CardContent className="py-3 px-4">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <Users className="w-5 h-5 text-sky-600 dark:text-sky-400 mt-0.5 flex-shrink-0" />
+                          <div className="text-sm text-sky-900 dark:text-sky-100 space-y-1">
+                            <p className="font-semibold">Po co jest panel Ministranci?</p>
+                            <p className="text-xs text-sky-800 dark:text-sky-200">
+                              To miejsce do prowadzenia składu parafii i codziennej pracy z ministrantami.
+                            </p>
+                            <p className="text-xs text-sky-800 dark:text-sky-200">
+                              W tym panelu możesz m.in. zatwierdzać nowych ministrantów, przypisywać grupy, ustawiać grafik dyżurów, zarządzać posługami i wysyłać wiadomości mailowe.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 sm:justify-end">
+                          <Button variant="ghost" size="sm" onClick={() => setShowPriestMinistranciInfo(false)}>
+                            Ukryj
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setShowPriestMinistranciInfo(false);
+                              setHidePriestMinistranciInfoPermanently(true);
+                              if (typeof window !== 'undefined' && priestMinistranciInfoStorageKey) {
+                                localStorage.setItem(priestMinistranciInfoStorageKey, 'true');
+                              }
+                            }}
+                          >
+                            Nie pokazuj więcej
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length > 0 && (
                   <Button className="w-full py-5 text-base font-semibold bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:via-orange-600 hover:to-amber-700 text-white shadow-lg shadow-amber-500/20" onClick={() => setShowZatwierdzModal(true)}>
                     <UserCheck className="w-5 h-5 mr-2" />
@@ -7933,6 +8137,45 @@ export default function MinistranciApp() {
           {/* Panel Posługi — Gaming */}
           <TabsContent value="poslugi">
             <div className="space-y-4">
+              {showPriestPoslugiInfo && (
+                <Card className="border-fuchsia-200 dark:border-fuchsia-700 bg-fuchsia-50 dark:bg-fuchsia-900/20">
+                  <CardContent className="py-3 px-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <HandHelping className="w-5 h-5 text-fuchsia-600 dark:text-fuchsia-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-fuchsia-900 dark:text-fuchsia-100 space-y-1">
+                          <p className="font-semibold">Po co jest panel Posługi?</p>
+                          <p className="text-xs text-fuchsia-800 dark:text-fuchsia-200">
+                            To miejsce do budowania i porządkowania bazy posług liturgicznych w parafii.
+                          </p>
+                          <p className="text-xs text-fuchsia-800 dark:text-fuchsia-200">
+                            W tym panelu możesz m.in. dodawać i edytować posługi, uzupełniać opisy, zdjęcia i filmy, usuwać nieaktualne pozycje oraz nadawać uprawnienia admina.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 sm:justify-end">
+                        <Button variant="ghost" size="sm" onClick={() => setShowPriestPoslugiInfo(false)}>
+                          Ukryj
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setShowPriestPoslugiInfo(false);
+                            setHidePriestPoslugiInfoPermanently(true);
+                            if (typeof window !== 'undefined' && priestPoslugiInfoStorageKey) {
+                              localStorage.setItem(priestPoslugiInfoStorageKey, 'true');
+                            }
+                          }}
+                        >
+                          Nie pokazuj więcej
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {canUseMinistrantPoslugi && (() => {
                 const litG: Record<string, { gradient: string; shadow: string }> = {
                   zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },

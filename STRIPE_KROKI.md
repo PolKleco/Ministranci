@@ -15,8 +15,10 @@ W SQL Editor odpal cały plik:
 W Stripe Dashboard:
 1. `Product catalog` -> `Add product`
 2. Nazwa np. `Premium parafia`
-3. Cena cykliczna: `Yearly` (co 1 rok)
-4. Zapisz i skopiuj `price_id` (zaczyna się od `price_...`)
+3. Dodaj 2 ceny:
+   - `Recurring` -> `Yearly` (auto-odnowienie)
+   - `One-time` (jednorazowo za 1 rok)
+4. Zapisz i skopiuj oba `price_id` (zaczynają się od `price_...`)
 
 ## 4. Ustaw zmienne środowiskowe
 Dodaj do `.env.local`:
@@ -25,6 +27,7 @@ Dodaj do `.env.local`:
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PREMIUM_PRICE_ID=price_...
+STRIPE_PREMIUM_ONE_TIME_PRICE_ID=price_...
 NEXT_PUBLIC_APP_URL=https://twoja-domena.pl
 ```
 

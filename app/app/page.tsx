@@ -1761,6 +1761,7 @@ export default function MinistranciApp() {
   const [premiumCode, setPremiumCode] = useState('');
   const [subscription, setSubscription] = useState<PremiumSubscription | null>(null);
   const [premiumCheckoutLoading, setPremiumCheckoutLoading] = useState(false);
+  const [premiumOneTimeCheckoutLoading, setPremiumOneTimeCheckoutLoading] = useState(false);
   const [premiumPortalLoading, setPremiumPortalLoading] = useState(false);
 
   // Dark mode
@@ -3240,6 +3241,14 @@ export default function MinistranciApp() {
         premium_expires_at: typeof data.premium_expires_at === 'string' ? data.premium_expires_at : null,
       };
 
+      if (normalized.premium_expires_at) {
+        const premiumEndDate = new Date(normalized.premium_expires_at);
+        if (!Number.isNaN(premiumEndDate.getTime()) && premiumEndDate.getTime() <= Date.now()) {
+          setSubscription(null);
+          return;
+        }
+      }
+
       // Pobierz dane rabatu osobno jeśli jest
       if (normalized.rabat_id) {
         const { data: rabat } = await supabase
@@ -3328,6 +3337,32 @@ export default function MinistranciApp() {
       alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setPremiumCheckoutLoading(false);
+    }
+  };
+
+  const handleStartStripeOneTimeCheckout = async () => {
+    if (!currentParafia) return;
+    setPremiumOneTimeCheckoutLoading(true);
+    try {
+      const res = await authFetch('/api/billing/stripe/checkout-onetime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parafiaId: currentParafia.id }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || 'Nie udało się rozpocząć płatności jednorazowej.');
+        return;
+      }
+      if (!result.url) {
+        alert('Brak linku do płatności jednorazowej.');
+        return;
+      }
+      window.location.assign(String(result.url));
+    } catch (err) {
+      alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setPremiumOneTimeCheckoutLoading(false);
     }
   };
 
@@ -11890,7 +11925,18 @@ export default function MinistranciApp() {
                 {subscription.premium_source === 'stripe' && (
                   <Button onClick={handleOpenStripePortal} disabled={premiumPortalLoading} className="w-full">
                     <CreditCard className="w-4 h-4 mr-2" />
-                    {premiumPortalLoading ? 'Otwieranie...' : 'Zarządzaj płatnością'}
+                    {premiumPortalLoading ? 'Otwieranie...' : 'Zarządzaj płatnością (abonament)'}
+                  </Button>
+                )}
+                {subscription.premium_source !== 'stripe' && (
+                  <Button
+                    variant="outline"
+                    onClick={handleStartStripeOneTimeCheckout}
+                    disabled={premiumOneTimeCheckoutLoading}
+                    className="w-full"
+                  >
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    {premiumOneTimeCheckoutLoading ? 'Przechodzę do płatności...' : 'Odnów Premium na rok (jednorazowo)'}
                   </Button>
                 )}
               </div>
@@ -11932,7 +11978,22 @@ export default function MinistranciApp() {
                     {premiumCheckoutLoading ? 'Przechodzę do płatności...' : 'Zapłać online za Premium (rok)'}
                   </Button>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Po opłaceniu Stripe automatycznie aktywuje Premium na rok.
+                    Abonament odnawia się automatycznie co rok (karta/Apple Pay).
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleStartStripeOneTimeCheckout}
+                    disabled={premiumOneTimeCheckoutLoading}
+                    className="w-full"
+                  >
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    {premiumOneTimeCheckoutLoading ? 'Przechodzę do płatności...' : 'Zapłać jednorazowo za 1 rok (BLIK/online)'}
+                  </Button>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Wersja jednorazowa: brak auto-odnowienia, odnowisz ręcznie przed końcem okresu.
                   </p>
                 </div>
 

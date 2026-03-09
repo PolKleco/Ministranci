@@ -102,6 +102,51 @@ async function updateParafiaBilling(parafiaId: string, updates: Record<string, u
   }
 }
 
+async function getExtendedPremiumExpiry(parafiaId: string) {
+  const now = new Date();
+  const fallback = new Date(now);
+  fallback.setFullYear(fallback.getFullYear() + 1);
+
+  const { data, error } = await supabaseAdmin
+    .from('parafie')
+    .select('premium_expires_at')
+    .eq('id', parafiaId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (!isMissingColumnError(error)) {
+      console.error('Nie udalo sie pobrac premium_expires_at:', error);
+    }
+    return fallback.toISOString();
+  }
+
+  const currentRaw = typeof data?.premium_expires_at === 'string' ? data.premium_expires_at : null;
+  if (!currentRaw) return fallback.toISOString();
+
+  const currentDate = new Date(currentRaw);
+  if (Number.isNaN(currentDate.getTime()) || currentDate.getTime() <= now.getTime()) {
+    return fallback.toISOString();
+  }
+
+  const extended = new Date(currentDate);
+  extended.setFullYear(extended.getFullYear() + 1);
+  return extended.toISOString();
+}
+
+async function applyOneTimePremium(parafiaId: string, stripeCustomerId: string | null) {
+  const premiumExpiresAt = await getExtendedPremiumExpiry(parafiaId);
+  await updateParafiaBilling(parafiaId, {
+    tier: 'premium',
+    is_active: true,
+    premium_status: 'active',
+    premium_source: 'stripe_one_time',
+    premium_expires_at: premiumExpiresAt,
+    stripe_customer_id: stripeCustomerId,
+    stripe_subscription_id: null,
+  });
+}
+
 async function applySubscriptionState(subscription: StripeSubscription, hintedParafiaId?: string | null) {
   const parafiaId = await resolveParafiaId(subscription, hintedParafiaId);
   if (!parafiaId) {
@@ -127,6 +172,19 @@ async function applySubscriptionState(subscription: StripeSubscription, hintedPa
 
 async function fetchSubscriptionById(subscriptionId: string) {
   return stripeRequest<StripeSubscription>(`/subscriptions/${encodeURIComponent(subscriptionId)}`);
+}
+
+async function resolveParafiaIdBySessionObject(object: Record<string, unknown>) {
+  const fromClientRef = normalizeParafiaId(getObjectValue(object, 'client_reference_id'));
+  if (fromClientRef) return fromClientRef;
+
+  const fromMetadata = normalizeParafiaId(getNestedString(getObjectValue(object, 'metadata'), 'parafia_id'));
+  if (fromMetadata) return fromMetadata;
+
+  const customerId = normalizeParafiaId(getObjectValue(object, 'customer'));
+  if (!customerId) return null;
+
+  return findParafiaIdByColumn('stripe_customer_id', customerId);
 }
 
 function safeParseEvent(payload: string): StripeEvent | null {
@@ -158,15 +216,22 @@ export async function POST(request: NextRequest) {
     const object = event.data.object;
 
     if (event.type === 'checkout.session.completed') {
-      const hintedParafiaId =
-        normalizeParafiaId(getObjectValue(object, 'client_reference_id')) ||
-        normalizeParafiaId(getNestedString(getObjectValue(object, 'metadata'), 'parafia_id'));
+      const hintedParafiaId = await resolveParafiaIdBySessionObject(object);
       const subscriptionId = normalizeParafiaId(getObjectValue(object, 'subscription'));
+      const sessionMode = normalizeParafiaId(getObjectValue(object, 'mode'));
+      const customerId = normalizeParafiaId(getObjectValue(object, 'customer'));
+      const paymentStatus = normalizeParafiaId(getObjectValue(object, 'payment_status'));
+
+      if (sessionMode === 'payment' && paymentStatus === 'paid' && hintedParafiaId) {
+        await applyOneTimePremium(hintedParafiaId, customerId);
+      } else if (sessionMode === 'payment' && hintedParafiaId) {
+        console.warn('Webhook Stripe payment session bez statusu paid:', event.id);
+      }
 
       if (subscriptionId) {
         const subscription = await fetchSubscriptionById(subscriptionId);
         await applySubscriptionState(subscription, hintedParafiaId);
-      } else if (hintedParafiaId) {
+      } else if (hintedParafiaId && sessionMode !== 'payment') {
         await updateParafiaBilling(hintedParafiaId, {
           tier: 'premium',
           is_active: true,

@@ -191,6 +191,15 @@
   }
 }
 
+/* iOS Safari: prevent auto-zoom on auth inputs */
+@media (max-width: 768px) {
+  .auth-screen input,
+  .auth-screen textarea,
+  .auth-screen select {
+    font-size: 16px !important;
+  }
+}
+
 /* Tiptap editor styles */
 .tiptap-content {
   outline: none;

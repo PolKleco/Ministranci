@@ -5149,7 +5149,7 @@ export default function MinistranciApp() {
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden" style={{ background: 'linear-gradient(180deg, #09111d 0%, #0a1628 42%, #0d1a2c 100%)' }}>
+      <div className="auth-screen min-h-screen relative flex items-center justify-center p-4 overflow-hidden" style={{ background: 'linear-gradient(180deg, #09111d 0%, #0a1628 42%, #0d1a2c 100%)' }}>
         {/* Tło dekoracyjne */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full opacity-[0.12]" style={{ background: 'radial-gradient(circle, rgba(125,211,252,0.38) 0%, transparent 70%)' }} />

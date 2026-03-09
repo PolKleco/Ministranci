@@ -168,7 +168,8 @@ type AdminAction =
   | 'toggleOdznaka'
   | 'fetchRabaty'
   | 'createRabat'
-  | 'deleteRabat';
+  | 'deleteRabat'
+  | 'publishKsiadzPanelTemplate';
 
 
 // ==================== SUPABASE ====================
@@ -347,6 +348,10 @@ export default function AdminPanel() {
   const [showYoutubeInput, setShowYoutubeInput] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [embeddedPanel, setEmbeddedPanel] = useState<'none' | 'ksiadz' | 'ministrant'>('none');
+  const [previewPanelParafiaId, setPreviewPanelParafiaId] = useState('');
+  const [publishScope, setPublishScope] = useState<'all' | 'new' | 'specific'>('all');
+  const [publishTargetParafiaIds, setPublishTargetParafiaIds] = useState<string[]>([]);
 
   const adminRequest = useCallback(async <T,>(action: AdminAction, payload?: Record<string, unknown>) => {
     const { data: { session }, error: sessionError } = await supabaseAuth.auth.getSession();
@@ -657,7 +662,16 @@ export default function AdminPanel() {
 
   const loadWatki = useCallback(async (parafiaId?: string) => {
     const data = await adminRequest<TablicaWatek[]>('loadWatki', { parafiaId: parafiaId || null });
-    setWatki(data || []);
+    const rows = data || [];
+    const sorted = [...rows].sort((a, b) => {
+      const aIsAdminAnnouncement = a.kategoria === 'ogłoszenie' && (a.tytul || '').startsWith('[ADMIN]');
+      const bIsAdminAnnouncement = b.kategoria === 'ogłoszenie' && (b.tytul || '').startsWith('[ADMIN]');
+      if (aIsAdminAnnouncement !== bIsAdminAnnouncement) {
+        return aIsAdminAnnouncement ? -1 : 1;
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    setWatki(sorted);
   }, [adminRequest]);
 
   const loadPunktacja = useCallback(async (parafiaId?: string) => {
@@ -702,6 +716,47 @@ export default function AdminPanel() {
     }
   };
 
+  const togglePublishTargetParafia = (parafiaId: string) => {
+    setPublishTargetParafiaIds((prev) => (
+      prev.includes(parafiaId)
+        ? prev.filter((id) => id !== parafiaId)
+        : [...prev, parafiaId]
+    ));
+  };
+
+  const publishKsiadzPanelTemplate = async () => {
+    if (!previewPanelParafiaId) {
+      setScopeError('Wybierz parafie zrodlowa panelu ksiedza');
+      return;
+    }
+    if (publishScope === 'specific' && publishTargetParafiaIds.length === 0) {
+      setScopeError('Wybierz co najmniej jedna parafie docelowa');
+      return;
+    }
+
+    setActionLoading(true);
+    setScopeError('');
+    try {
+      const result = await adminRequest<{ affected: number }>('publishKsiadzPanelTemplate', {
+        sourceParafiaId: previewPanelParafiaId,
+        scope: publishScope,
+        targetParafiaIds: publishTargetParafiaIds,
+      });
+
+      if (publishScope === 'all') {
+        setSuccessMsg(`Opublikowano dla wszystkich parafii (${result?.affected ?? 0})`);
+      } else if (publishScope === 'new') {
+        setSuccessMsg('Opublikowano szablon dla nowych parafii');
+      } else {
+        setSuccessMsg(`Opublikowano dla wybranych parafii (${result?.affected ?? 0})`);
+      }
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udalo sie opublikowac zmian');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Load all data on auth
   useEffect(() => {
     if (isAuthenticated) {
@@ -728,6 +783,17 @@ export default function AdminPanel() {
       void loadOdznaki().catch(() => {});
     }
   }, [isAuthenticated, scope, selectedParafia, loadMembers, loadWatki, loadPunktacja, loadRangi, loadOdznaki]);
+
+  useEffect(() => {
+    if (parafie.length === 0) {
+      setPreviewPanelParafiaId('');
+      setPublishTargetParafiaIds([]);
+      return;
+    }
+    const ids = new Set(parafie.map((p) => p.id));
+    setPreviewPanelParafiaId((prev) => (prev && ids.has(prev) ? prev : parafie[0].id));
+    setPublishTargetParafiaIds((prev) => prev.filter((id) => ids.has(id)));
+  }, [parafie]);
 
   // ==================== SCOPE ====================
 
@@ -1661,6 +1727,127 @@ export default function AdminPanel() {
                     </CardContent>
                   </Card>
                 )}
+
+                <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-sm">Szybki Dostep</CardTitle>
+                    <CardDescription>Podglad panelu i publikacja zmian z panelu ksiedza.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4 pt-0">
+                    <div className="mb-3 space-y-1">
+                      <Label className="text-xs text-gray-500">Parafia zrodlowa (panel ksiedza)</Label>
+                      <Select value={previewPanelParafiaId} onValueChange={setPreviewPanelParafiaId}>
+                        <SelectTrigger className="bg-white dark:bg-gray-700">
+                          <SelectValue placeholder="Wybierz parafie" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {parafie.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.nazwa} — {p.miasto}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                      <Button
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                        onClick={() => setEmbeddedPanel('ksiadz')}
+                      >
+                        <Shield className="w-4 h-4 mr-1.5" />
+                        Panel księdza
+                      </Button>
+                      <Button
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => {
+                          setEmbeddedPanel('ministrant');
+                          setSuccessMsg('Panel ministranta podlaczymy w kolejnym kroku.');
+                        }}
+                      >
+                        <Users className="w-4 h-4 mr-1.5" />
+                        Panel ministranta
+                      </Button>
+                    </div>
+
+                    {embeddedPanel === 'ksiadz' && (
+                      <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-900">
+                        <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                          Podglad panelu księdza
+                        </div>
+                        {previewPanelParafiaId ? (
+                          <iframe
+                            src={`/app?preview_role=ksiadz&preview_parafia=${encodeURIComponent(previewPanelParafiaId)}&preview_embed=1`}
+                            title="Panel księdza"
+                            className="w-full h-[85vh] min-h-[640px] bg-white"
+                          />
+                        ) : (
+                          <div className="px-3 py-6 text-sm text-gray-500">Brak parafii do podgladu panelu księdza.</div>
+                        )}
+                      </div>
+                    )}
+
+                    {embeddedPanel === 'ksiadz' && (
+                      <div className="mt-4 space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ustawienia publikacji</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <Button
+                            variant={publishScope === 'all' ? 'default' : 'outline'}
+                            className={publishScope === 'all' ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}
+                            onClick={() => setPublishScope('all')}
+                          >
+                            Wszystkie
+                          </Button>
+                          <Button
+                            variant={publishScope === 'new' ? 'default' : 'outline'}
+                            className={publishScope === 'new' ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}
+                            onClick={() => setPublishScope('new')}
+                          >
+                            Tylko nowe
+                          </Button>
+                          <Button
+                            variant={publishScope === 'specific' ? 'default' : 'outline'}
+                            className={publishScope === 'specific' ? 'bg-amber-500 hover:bg-amber-600 text-white' : ''}
+                            onClick={() => setPublishScope('specific')}
+                          >
+                            Konkretne
+                          </Button>
+                        </div>
+
+                        {publishScope === 'specific' && (
+                          <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-2 max-h-44 overflow-y-auto space-y-1">
+                            {parafie.map((p) => {
+                              const selected = publishTargetParafiaIds.includes(p.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => togglePublishTargetParafia(p.id)}
+                                  className={`w-full text-left px-2 py-1.5 rounded-md text-sm transition-colors ${
+                                    selected
+                                      ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200'
+                                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                                  }`}
+                                >
+                                  {p.nazwa} — {p.miasto}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <Button
+                          onClick={publishKsiadzPanelTemplate}
+                          disabled={actionLoading}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                          {actionLoading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Send className="w-4 h-4 mr-1.5" />}
+                          Publikuj
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
                 {/* Banery powitalne — zwijany */}
                 <button

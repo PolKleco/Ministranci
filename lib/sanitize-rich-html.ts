@@ -62,6 +62,24 @@ function sanitizeStyle(styleValue: string) {
   return safeParts.join('; ');
 }
 
+function parseSafeWidth(raw: string | null): number | null {
+  if (!raw) return null;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return null;
+  if (num <= 0 || num > 4096) return null;
+  return Math.round(num);
+}
+
+function mergeStyleRule(styleValue: string, prop: string, value: string) {
+  const rules = styleValue
+    .split(';')
+    .map((rule) => rule.trim())
+    .filter(Boolean)
+    .filter((rule) => !rule.toLowerCase().startsWith(`${prop.toLowerCase()}:`));
+  rules.push(`${prop}: ${value}`);
+  return rules.join('; ');
+}
+
 export function sanitizeRichHtml(input: string): string {
   if (!input) return '';
   if (typeof window === 'undefined' || typeof DOMParser === 'undefined') return '';
@@ -132,6 +150,20 @@ export function sanitizeRichHtml(input: string): string {
           el.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
         }
         el.setAttribute('allowfullscreen', '');
+      }
+
+      // Keep image/video widths selected in the editor (S/M/L) after sanitization.
+      if (tag === 'img' || (tag === 'div' && el.hasAttribute('data-youtube-video'))) {
+        const safeWidth = parseSafeWidth(el.getAttribute('data-width'));
+        if (safeWidth) {
+          if (tag === 'img') {
+            el.setAttribute('width', String(safeWidth));
+          }
+          const currentStyle = el.getAttribute('style') || '';
+          const withWidth = mergeStyleRule(currentStyle, 'width', `${safeWidth}px`);
+          const withMaxWidth = mergeStyleRule(withWidth, 'max-width', '100%');
+          el.setAttribute('style', withMaxWidth);
+        }
       }
     }
 

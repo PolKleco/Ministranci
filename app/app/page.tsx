@@ -125,6 +125,55 @@ const buildWiadomoscReplyPayload = (body: string, replyToId: string | null) => (
 const truncateReplyPreview = (text: string, max = 140) => (
   text.length > max ? `${text.slice(0, max)}...` : text
 );
+const PARISH_ADMIN_ROLE = '__parafia_admin__';
+const PARISH_PERMISSION_PREFIX = '__perm__:';
+const LEGACY_RANKING_PERMISSION_TOKEN = `${PARISH_PERMISSION_PREFIX}manage_ranking`;
+const PARISH_PERMISSION_DEFINITIONS = [
+  { key: 'manage_news', label: 'Aktualności', description: 'Tworzenie i edycja ogłoszeń, dyskusji i ankiet' },
+  { key: 'manage_members', label: 'Ministranci', description: 'Zatwierdzanie kont, grupy, posługi, dyżury i usuwanie kont' },
+  { key: 'approve_ranking_submissions', label: 'Ranking: zgłoszenia', description: 'Zatwierdzanie i odrzucanie zgłoszeń obecności' },
+  { key: 'manage_ranking_settings', label: 'Ranking: ustawienia', description: 'Konfiguracja punktacji, rang, odznak i reset rankingu' },
+  { key: 'manage_events', label: 'Wydarzenia', description: 'Tworzenie i edycja wydarzeń oraz przypisywanie funkcji' },
+  { key: 'manage_function_templates', label: 'Funkcje liturgiczne', description: 'Tworzenie i edycja listy funkcji liturgicznych' },
+  { key: 'manage_poslugi_catalog', label: 'Baza posług', description: 'Dodawanie, edycja i usuwanie posług' },
+  { key: 'edit_prayers', label: 'Modlitwy', description: 'Edycja modlitw i odpowiedzi łacińskich' },
+  { key: 'manage_invites', label: 'Zaproszenia', description: 'Dostęp do kodu zaproszenia i plakatu QR' },
+  { key: 'manage_premium', label: 'Premium', description: 'Podgląd i zarządzanie pakietem Premium parafii' },
+] as const;
+type ParishPermissionKey = typeof PARISH_PERMISSION_DEFINITIONS[number]['key'];
+const PARISH_PERMISSION_KEYS: ParishPermissionKey[] = PARISH_PERMISSION_DEFINITIONS.map((permission) => permission.key);
+const RANKING_APPROVAL_PERMISSION_KEY: ParishPermissionKey = 'approve_ranking_submissions';
+const FULL_CONFIGURATION_PERMISSION_KEYS: ParishPermissionKey[] = PARISH_PERMISSION_KEYS.filter(
+  (permission) => permission !== RANKING_APPROVAL_PERMISSION_KEY
+);
+const CLEAR_ASSIGN_MEMBER_VALUE = '__clear_assign_member__';
+const buildFullConfigurationPermissions = (includeRankingApproval: boolean): ParishPermissionKey[] => (
+  includeRankingApproval
+    ? [...PARISH_PERMISSION_KEYS]
+    : [...FULL_CONFIGURATION_PERMISSION_KEYS]
+);
+const hasFullConfigurationPermissions = (permissions: ParishPermissionKey[]) => (
+  FULL_CONFIGURATION_PERMISSION_KEYS.every((permission) => permissions.includes(permission))
+);
+const fromParishPermissionToken = (token: string): ParishPermissionKey | null => {
+  if (!token.startsWith(PARISH_PERMISSION_PREFIX)) return null;
+  const key = token.slice(PARISH_PERMISSION_PREFIX.length) as ParishPermissionKey;
+  return PARISH_PERMISSION_KEYS.includes(key) ? key : null;
+};
+const normalizeMemberRoles = (roles: string[] | null | undefined) => Array.from(new Set((roles ?? []).filter(Boolean)));
+const hasParishAdminRole = (roles: string[] | null | undefined) => normalizeMemberRoles(roles).includes(PARISH_ADMIN_ROLE);
+const getAssignedPermissionKeys = (roles: string[] | null | undefined): ParishPermissionKey[] => {
+  const normalized = normalizeMemberRoles(roles);
+  if (hasParishAdminRole(normalized)) return [...PARISH_PERMISSION_KEYS];
+  const keys = normalized
+    .map((role) => fromParishPermissionToken(role))
+    .filter((key): key is ParishPermissionKey => key !== null);
+  if (normalized.includes(LEGACY_RANKING_PERMISSION_TOKEN)) {
+    keys.push('approve_ranking_submissions', 'manage_ranking_settings');
+  }
+  return Array.from(new Set(keys));
+};
+const getPoslugaRoles = (roles: string[] | null | undefined) => normalizeMemberRoles(roles).filter((role) => role !== PARISH_ADMIN_ROLE && !role.startsWith(PARISH_PERMISSION_PREFIX));
 
 // ==================== TYPY ====================
 
@@ -232,6 +281,49 @@ interface Posluga {
   zdjecia?: string[];
   youtube_url?: string;
 }
+
+type KsiadzPanelTemplate = {
+  parafia?: {
+    grupy?: GrupaConfig[] | null;
+    funkcje_config?: FunkcjaConfig[] | null;
+  };
+  poslugi?: Array<{
+    slug: string;
+    nazwa: string;
+    opis: string;
+    emoji: string;
+    kolor: string;
+    kolejnosc: number;
+    obrazek_url?: string | null;
+    dlugi_opis?: string | null;
+    zdjecia?: string[] | null;
+    youtube_url?: string | null;
+  }>;
+  punktacja?: Array<{
+    klucz: string;
+    wartosc: number;
+    opis: string;
+  }>;
+  rangi?: Array<{
+    nazwa: string;
+    min_pkt: number;
+    kolor: string;
+    kolejnosc: number;
+  }>;
+  odznaki?: Array<{
+    nazwa: string;
+    opis: string;
+    warunek_typ: string;
+    warunek_wartosc: number;
+    bonus_pkt: number;
+    aktywna: boolean;
+  }>;
+  modlitwy?: {
+    przed?: string;
+    po?: string;
+    lacina?: string;
+  };
+};
 
 // ==================== TYPY — RANKING SŁUŻBY ====================
 
@@ -644,6 +736,8 @@ interface KsiadzWydarzeniaHeaderProps {
   nazwaLiturgiczna?: string | null;
   onOpenFunkcjeConfig: () => void;
   onOpenAddWydarzenie: () => void;
+  showFunkcjeButton?: boolean;
+  showAddWydarzenieButton?: boolean;
 }
 
 function KsiadzWydarzeniaHeader({
@@ -651,6 +745,8 @@ function KsiadzWydarzeniaHeader({
   nazwaLiturgiczna,
   onOpenFunkcjeConfig,
   onOpenAddWydarzenie,
+  showFunkcjeButton = true,
+  showAddWydarzenieButton = true,
 }: KsiadzWydarzeniaHeaderProps) {
   const litBtn: Record<string, { gradient: string; hoverGradient: string; shadow: string }> = {
     zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', hoverGradient: 'hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', shadow: 'shadow-emerald-500/25' },
@@ -673,17 +769,21 @@ function KsiadzWydarzeniaHeader({
           <span className="text-lg opacity-15 select-none">✝</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-700 hover:via-sky-700 hover:to-blue-700 text-white shadow shadow-sky-500/20 transition-all duration-200"
-          onClick={onOpenFunkcjeConfig}>
-          <Settings className="w-4 h-4 mr-2" />
-          Funkcje ministrantów
-        </button>
-        <button className={`inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r ${lb.gradient} ${lb.hoverGradient} text-white shadow-lg ${lb.shadow} transition-all duration-200`}
-          onClick={onOpenAddWydarzenie}>
-          <Plus className="w-4 h-4 mr-2" />
-          Dodaj wydarzenie
-        </button>
+      <div className={`grid gap-2 ${showFunkcjeButton && showAddWydarzenieButton ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {showFunkcjeButton && (
+          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-700 hover:via-sky-700 hover:to-blue-700 text-white shadow shadow-sky-500/20 transition-all duration-200"
+            onClick={onOpenFunkcjeConfig}>
+            <Settings className="w-4 h-4 mr-2" />
+            Funkcje ministrantów
+          </button>
+        )}
+        {showAddWydarzenieButton && (
+          <button className={`inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r ${lb.gradient} ${lb.hoverGradient} text-white shadow-lg ${lb.shadow} transition-all duration-200`}
+            onClick={onOpenAddWydarzenie}>
+            <Plus className="w-4 h-4 mr-2" />
+            Dodaj wydarzenie
+          </button>
+        )}
       </div>
     </>
   );
@@ -1371,6 +1471,7 @@ export default function MinistranciApp() {
   // Stan aplikacji
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [isAdminPreviewMode, setIsAdminPreviewMode] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset-sent' | 'email-sent'>('login');
@@ -1452,6 +1553,14 @@ export default function MinistranciApp() {
   const [showGrupyEditModal, setShowGrupyEditModal] = useState(false);
   const [showPoslugaEditModal, setShowPoslugaEditModal] = useState(false);
   const [showAddPoslugaModal, setShowAddPoslugaModal] = useState(false);
+  const [showParishAdminsModal, setShowParishAdminsModal] = useState(false);
+  const [adminRoleSavingIds, setAdminRoleSavingIds] = useState<Set<string>>(new Set());
+  const [adminSearchMinistrant, setAdminSearchMinistrant] = useState('');
+  const [permissionsMemberId, setPermissionsMemberId] = useState('');
+  const [permissionsDraft, setPermissionsDraft] = useState<ParishPermissionKey[]>([]);
+  const [fullConfigAccessDraft, setFullConfigAccessDraft] = useState(false);
+  const [fullConfigWithRankingApprovalsDraft, setFullConfigWithRankingApprovalsDraft] = useState(false);
+  const [permissionAssignDraft, setPermissionAssignDraft] = useState<Partial<Record<ParishPermissionKey, string>>>({});
 
   // Dane
   const [sluzby, setSluzby] = useState<Sluzba[]>([]);
@@ -1490,6 +1599,8 @@ export default function MinistranciApp() {
   const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
   const [emailSelectedMinistranci, setEmailSelectedMinistranci] = useState<string[]>([]);
   const [emailSearchMinistrant, setEmailSearchMinistrant] = useState('');
+  const canEditPoslugaVisuals = !!isAdminPreviewMode;
+  const canEditPoslugaEmoji = canEditPoslugaVisuals;
 
   // ==================== STAN — RANKING SŁUŻBY ====================
   const [punktacjaConfig, setPunktacjaConfig] = useState<PunktacjaConfig[]>([]);
@@ -1587,14 +1698,76 @@ export default function MinistranciApp() {
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
+  const currentParafiaMember = useMemo(
+    () => members.find((m) => m.profile_id === currentUser?.id) ?? null,
+    [members, currentUser?.id]
+  );
+  const currentParafiaMemberRoles = useMemo(
+    () => normalizeMemberRoles(currentParafiaMember?.role),
+    [currentParafiaMember?.role]
+  );
+  const currentUserPermissionKeys = useMemo(
+    () => getAssignedPermissionKeys(currentParafiaMember?.role),
+    [currentParafiaMember?.role]
+  );
+  const isPriestUser = currentUser?.typ === 'ksiadz';
+  const isLegacyParishAdmin = hasParishAdminRole(currentParafiaMember?.role);
+  const hasLegacyRankingPermission = currentParafiaMemberRoles.includes(LEGACY_RANKING_PERMISSION_TOKEN);
+  const hasPriestPermission = (permission: ParishPermissionKey) => (
+    isPriestUser || isLegacyParishAdmin || currentUserPermissionKeys.includes(permission)
+  );
+  const canManageNews = hasPriestPermission('manage_news');
+  const canManageMembers = hasPriestPermission('manage_members');
+  const canApproveRankingSubmissions = hasLegacyRankingPermission || hasPriestPermission('approve_ranking_submissions');
+  const canManageRankingSettings = hasLegacyRankingPermission || hasPriestPermission('manage_ranking_settings');
+  const canManageRanking = canApproveRankingSubmissions || canManageRankingSettings;
+  const canManageEvents = hasPriestPermission('manage_events');
+  const canManageFunctionTemplates = hasPriestPermission('manage_function_templates');
+  const canManagePoslugiCatalog = hasPriestPermission('manage_poslugi_catalog');
+  const canEditPrayers = hasPriestPermission('edit_prayers');
+  const canManageInvites = hasPriestPermission('manage_invites');
+  const canManagePremium = hasPriestPermission('manage_premium');
+  const isRegularMinistrant = currentUser?.typ === 'ministrant';
+  const canUseMinistrantTablica = currentUser?.typ === 'ministrant' && !canManageNews;
+  const canUseMinistrantRanking = currentUser?.typ === 'ministrant' && !canManageRanking;
+  const canUseMinistrantEvents = currentUser?.typ === 'ministrant' && !canManageEvents && !canManageFunctionTemplates;
+  const canUseMinistrantPoslugi = currentUser?.typ === 'ministrant' && !canManagePoslugiCatalog;
+  const canUseMinistrantModlitwy = currentUser?.typ === 'ministrant' && !canEditPrayers;
+  const ensureRankingApprovalPermission = () => {
+    if (canApproveRankingSubmissions) return true;
+    alert('Nie masz uprawnień do zatwierdzania zgłoszeń.');
+    return false;
+  };
+  const ensureRankingSettingsPermission = () => {
+    if (canManageRankingSettings) return true;
+    alert('Nie masz uprawnień do konfiguracji rankingu.');
+    return false;
+  };
 
   const authFetch = useCallback(async (input: string, init: RequestInit = {}) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const headers = new Headers(init.headers || {});
-    if (session?.access_token) {
-      headers.set('Authorization', `Bearer ${session.access_token}`);
+    const getAccessToken = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) return session.access_token;
+      const refreshed = await supabase.auth.refreshSession();
+      return refreshed.data.session?.access_token || null;
+    };
+
+    const baseHeaders = new Headers(init.headers || {});
+    let accessToken = await getAccessToken();
+    if (accessToken) {
+      baseHeaders.set('Authorization', `Bearer ${accessToken}`);
     }
-    return fetch(input, { ...init, headers });
+
+    let response = await fetch(input, { ...init, headers: baseHeaders });
+    if (response.status !== 401) return response;
+
+    accessToken = await getAccessToken();
+    if (!accessToken) return response;
+
+    const retryHeaders = new Headers(init.headers || {});
+    retryHeaders.set('Authorization', `Bearer ${accessToken}`);
+    response = await fetch(input, { ...init, headers: retryHeaders });
+    return response;
   }, []);
 
   useEffect(() => {
@@ -1631,7 +1804,7 @@ export default function MinistranciApp() {
     const dyskusje = tablicaWatki.filter((w) => {
       if (w.kategoria !== 'dyskusja') return false;
       if (w.archiwum_data && new Date(w.archiwum_data) <= now) return false;
-      if (w.grupa_docelowa === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
+      if (w.grupa_docelowa === 'ksieza' && !canManageNews) return false;
       if (w.grupa_docelowa === 'ministranci' && currentUser.typ !== 'ministrant') return false;
       return true;
     });
@@ -1655,7 +1828,7 @@ export default function MinistranciApp() {
     );
 
     setWatekUnreadCounts(Object.fromEntries(entries));
-  }, [currentUser?.id, currentUser?.typ, tablicaWatki, watekLastReadMap]);
+  }, [currentUser?.id, currentUser?.typ, canManageNews, tablicaWatki, watekLastReadMap]);
 
   useEffect(() => {
     if (activeTab !== 'tablica' || selectedWatek) return;
@@ -1854,12 +2027,27 @@ export default function MinistranciApp() {
         .single();
 
       if (profile) {
-        setCurrentUser(profile as Profile);
+        const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+          .split(',')
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean);
+        const canPreviewRole = !!profile.email && adminEmails.includes(profile.email.toLowerCase());
+        const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        const previewRole = params?.get('preview_role');
+        const previewParafia = params?.get('preview_parafia');
+        const previewSession = canPreviewRole && previewParafia && (previewRole === 'ksiadz' || previewRole === 'ministrant');
+
+        const effectiveProfile: Profile = previewSession
+          ? { ...(profile as Profile), typ: previewRole, parafia_id: previewParafia }
+          : (profile as Profile);
+
+        setIsAdminPreviewMode(Boolean(previewSession));
+        setCurrentUser(effectiveProfile);
         // Sprawdź czy profil wymaga uzupełnienia (użytkownik OAuth z typ='nowy')
-        if (profile.typ === 'nowy' || !profile.imie) {
+        if (effectiveProfile.typ === 'nowy' || !effectiveProfile.imie) {
           setProfileCompletionForm({
-            imie: profile.imie || '',
-            nazwisko: profile.nazwisko || '',
+            imie: effectiveProfile.imie || '',
+            nazwisko: effectiveProfile.nazwisko || '',
             typ: 'ministrant',
           });
           setShowProfileCompletion(true);
@@ -1867,6 +2055,7 @@ export default function MinistranciApp() {
       }
     } catch {
       // Błąd sieci / sesji — nie blokuj ekranu
+      setIsAdminPreviewMode(false);
     }
     setLoading(false);
   }, []);
@@ -1897,7 +2086,7 @@ export default function MinistranciApp() {
       .select('*')
       .eq('parafia_id', currentUser.parafia_id);
 
-    if (membersData) setMembers(membersData.map(m => ({ ...m, role: m.role ?? [] })) as Member[]);
+    if (membersData) setMembers(membersData.map(m => ({ ...m, role: normalizeMemberRoles(m.role) })) as Member[]);
   }, [currentUser?.parafia_id]);
 
   const loadSluzby = useCallback(async () => {
@@ -2398,6 +2587,7 @@ export default function MinistranciApp() {
 
   const zatwierdzObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean }) => {
     if (!currentUser) throw new Error('Brak danych użytkownika');
+    if (!canApproveRankingSubmissions) throw new Error('Brak uprawnień do zatwierdzania zgłoszeń');
 
     const obecnosc = obecnosci.find(o => o.id === obecnoscId);
     if (!obecnosc) throw new Error('Nie znaleziono zgłoszenia');
@@ -2485,6 +2675,7 @@ export default function MinistranciApp() {
   };
 
   const dodajPunktyRecznie = async () => {
+    if (!ensureRankingSettingsPermission()) return;
     if (!selectedMember || !currentUser?.parafia_id) return;
     const pkt = parseInt(dodajPunktyForm.punkty);
     if (!pkt || pkt === 0) return;
@@ -2521,6 +2712,7 @@ export default function MinistranciApp() {
 
   const odrzucObecnosc = async (obecnoscId: string) => {
     if (!currentUser) throw new Error('Brak danych użytkownika');
+    if (!canApproveRankingSubmissions) throw new Error('Brak uprawnień do odrzucania zgłoszeń');
     const { error } = await supabase.from('obecnosci').update({
       status: 'odrzucona',
       zatwierdzona_przez: currentUser.id,
@@ -2530,6 +2722,7 @@ export default function MinistranciApp() {
   };
 
   const handleApproveObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean }) => {
+    if (!ensureRankingApprovalPermission()) return;
     if (bulkApprovingObecnosci || approvingObecnosciIds.has(obecnoscId)) return;
     setApprovingObecnosciIds((prev) => {
       const next = new Set(prev);
@@ -2551,6 +2744,7 @@ export default function MinistranciApp() {
   };
 
   const handleRejectObecnosc = async (obecnoscId: string) => {
+    if (!ensureRankingApprovalPermission()) return;
     if (rejectingObecnosciIds.has(obecnoscId)) return;
     setRejectingObecnosciIds((prev) => {
       const next = new Set(prev);
@@ -2571,6 +2765,7 @@ export default function MinistranciApp() {
   };
 
   const zatwierdzWszystkie = async () => {
+    if (!ensureRankingApprovalPermission()) return;
     if (bulkApprovingObecnosci || pendingObecnosci.length === 0) return;
     setBulkApprovingObecnosci(true);
     try {
@@ -2777,6 +2972,7 @@ export default function MinistranciApp() {
     return map[dzisLiturgiczny?.kolor || 'zielony'] || map.zielony;
   }, [dzisLiturgiczny?.kolor]);
   const savePunktacjaDraft = async () => {
+    if (!ensureRankingSettingsPermission()) return;
     const pending = punktacjaConfig
       .filter((p) => punktacjaDraft[p.id] !== undefined && Number(punktacjaDraft[p.id]) !== Number(p.wartosc))
       .map((p) => ({ id: p.id, wartosc: Number(punktacjaDraft[p.id]) }));
@@ -2809,6 +3005,7 @@ export default function MinistranciApp() {
   };
 
   const handleResetPunktacja = async () => {
+    if (!ensureRankingSettingsPermission()) return;
     if (!currentUser?.parafia_id) return;
     const pid = currentUser.parafia_id;
     // Usuń obecności i kary
@@ -2834,16 +3031,19 @@ export default function MinistranciApp() {
   };
 
   const updateRanga = async (id: string, nazwa: string, min_pkt: number) => {
+    if (!ensureRankingSettingsPermission()) return;
     await supabase.from('rangi_config').update({ nazwa, min_pkt }).eq('id', id);
     loadRankingData();
   };
 
   const updateRangaKolor = async (id: string, kolor: string) => {
+    if (!ensureRankingSettingsPermission()) return;
     await supabase.from('rangi_config').update({ kolor }).eq('id', id);
     loadRankingData();
   };
 
   const addRanga = async () => {
+    if (!ensureRankingSettingsPermission()) return;
     if (!currentParafia) return;
     const maxKolejnosc = rangiConfig.reduce((max, r) => Math.max(max, r.kolejnosc), 0);
     await supabase.from('rangi_config').insert({
@@ -2857,11 +3057,13 @@ export default function MinistranciApp() {
   };
 
   const deleteRanga = async (id: string) => {
+    if (!ensureRankingSettingsPermission()) return;
     await supabase.from('rangi_config').delete().eq('id', id);
     loadRankingData();
   };
 
   const addPunktacja = async (klucz: string, wartosc: number, opis: string) => {
+    if (!ensureRankingSettingsPermission()) return;
     if (!currentParafia) return;
     await supabase.from('punktacja_config').insert({
       parafia_id: currentParafia.id,
@@ -2873,6 +3075,7 @@ export default function MinistranciApp() {
   };
 
   const updateConfigOpis = async (klucz: string, opis: string) => {
+    if (!ensureRankingSettingsPermission()) return;
     const entry = punktacjaConfig.find(p => p.klucz === klucz);
     if (entry) {
       await supabase.from('punktacja_config').update({ opis }).eq('id', entry.id);
@@ -2881,16 +3084,19 @@ export default function MinistranciApp() {
   };
 
   const deletePunktacja = async (id: string) => {
+    if (!ensureRankingSettingsPermission()) return;
     await supabase.from('punktacja_config').delete().eq('id', id);
     loadRankingData();
   };
 
   const updateOdznaka = async (id: string, updates: Partial<OdznakaConfig>) => {
+    if (!ensureRankingSettingsPermission()) return;
     await supabase.from('odznaki_config').update(updates).eq('id', id);
     loadRankingData();
   };
 
   const addOdznaka = async () => {
+    if (!ensureRankingSettingsPermission()) return;
     if (!currentParafia) return;
     await supabase.from('odznaki_config').insert({
       parafia_id: currentParafia.id,
@@ -2905,11 +3111,13 @@ export default function MinistranciApp() {
   };
 
   const deleteOdznaka = async (id: string) => {
+    if (!ensureRankingSettingsPermission()) return;
     await supabase.from('odznaki_config').delete().eq('id', id);
     loadRankingData();
   };
 
   const initRankingConfig = async () => {
+    if (!ensureRankingSettingsPermission()) return;
     if (!currentParafia) return;
     const { error } = await supabase.rpc('init_ranking_config', { p_parafia_id: currentParafia.id });
     if (error) {
@@ -2997,6 +3205,7 @@ export default function MinistranciApp() {
         loadProfile(session.user.id);
       } else {
         setCurrentUser(null);
+        setIsAdminPreviewMode(false);
         setCurrentParafia(null);
         setMembers([]);
         setSluzby([]);
@@ -3118,14 +3327,14 @@ export default function MinistranciApp() {
 
   // Polling co 30s żeby wykryć zatwierdzone zgłoszenia w tle
   useEffect(() => {
-    if (!currentUser?.parafia_id || currentUser.typ !== 'ministrant') return;
+    if (!currentUser?.parafia_id || !isRegularMinistrant) return;
     const interval = setInterval(() => loadRankingData(), 30000);
     return () => clearInterval(interval);
-  }, [currentUser?.parafia_id, currentUser?.typ, loadRankingData]);
+  }, [currentUser?.parafia_id, isRegularMinistrant, loadRankingData]);
 
   // Wykryj nowo zatwierdzone zgłoszenia i pokaż celebrację
   useEffect(() => {
-    if (currentUser?.typ !== 'ministrant' || obecnosci.length === 0) {
+    if (!isRegularMinistrant || obecnosci.length === 0) {
       prevObecnosciRef.current = obecnosci;
       return;
     }
@@ -3143,7 +3352,7 @@ export default function MinistranciApp() {
       }
     }
     prevObecnosciRef.current = obecnosci;
-  }, [obecnosci, currentUser?.typ, currentUser?.id, rankingData]);
+  }, [obecnosci, isRegularMinistrant, currentUser?.id, rankingData]);
 
   // Inicjalizacja Tiptap edytora przy otwarciu modala
   const editorInitialized = useRef(false);
@@ -3465,6 +3674,88 @@ export default function MinistranciApp() {
       .from('profiles')
       .update({ parafia_id: newParafia.id })
       .eq('id', currentUser.id);
+
+    // Zastosuj opublikowany szablon panelu ksiedza dla nowych parafii (jesli istnieje)
+    try {
+      const { data: templateRow } = await supabase
+        .from('app_config')
+        .select('wartosc')
+        .eq('klucz', 'ksiadz_panel_template_default')
+        .maybeSingle();
+
+      if (templateRow?.wartosc) {
+        const parsed = JSON.parse(templateRow.wartosc) as KsiadzPanelTemplate;
+
+        if (parsed.parafia) {
+          await supabase
+            .from('parafie')
+            .update({
+              grupy: parsed.parafia.grupy ?? null,
+              funkcje_config: parsed.parafia.funkcje_config ?? null,
+            })
+            .eq('id', newParafia.id);
+        }
+
+        const replaceRows = async (table: 'poslugi' | 'punktacja_config' | 'rangi_config' | 'odznaki_config', rows: Record<string, unknown>[]) => {
+          await supabase.from(table).delete().eq('parafia_id', newParafia.id);
+          if (rows.length > 0) {
+            await supabase.from(table).insert(rows);
+          }
+        };
+
+        await replaceRows('poslugi', (parsed.poslugi || []).map((row, index) => ({
+          id: crypto.randomUUID(),
+          parafia_id: newParafia.id,
+          slug: row.slug || `posluga_${index + 1}`,
+          nazwa: row.nazwa || `Posluga ${index + 1}`,
+          opis: row.opis || '',
+          emoji: row.emoji || '⭐',
+          kolor: row.kolor || 'gray',
+          kolejnosc: Number.isFinite(Number(row.kolejnosc)) ? Number(row.kolejnosc) : index,
+          obrazek_url: row.obrazek_url || null,
+          dlugi_opis: row.dlugi_opis || '',
+          zdjecia: row.zdjecia || [],
+          youtube_url: row.youtube_url || '',
+        })));
+
+        await replaceRows('punktacja_config', (parsed.punktacja || []).map((row) => ({
+          id: crypto.randomUUID(),
+          parafia_id: newParafia.id,
+          klucz: row.klucz,
+          wartosc: Number.isFinite(Number(row.wartosc)) ? Number(row.wartosc) : 0,
+          opis: row.opis || '',
+        })));
+
+        await replaceRows('rangi_config', (parsed.rangi || []).map((row, index) => ({
+          id: crypto.randomUUID(),
+          parafia_id: newParafia.id,
+          nazwa: row.nazwa || `Ranga ${index + 1}`,
+          min_pkt: Number.isFinite(Number(row.min_pkt)) ? Number(row.min_pkt) : 0,
+          kolor: row.kolor || 'gray',
+          kolejnosc: Number.isFinite(Number(row.kolejnosc)) ? Number(row.kolejnosc) : index,
+        })));
+
+        await replaceRows('odznaki_config', (parsed.odznaki || []).map((row, index) => ({
+          id: crypto.randomUUID(),
+          parafia_id: newParafia.id,
+          nazwa: row.nazwa || `Odznaka ${index + 1}`,
+          opis: row.opis || '',
+          warunek_typ: row.warunek_typ || 'obecnosci',
+          warunek_wartosc: Number.isFinite(Number(row.warunek_wartosc)) ? Number(row.warunek_wartosc) : 0,
+          bonus_pkt: Number.isFinite(Number(row.bonus_pkt)) ? Number(row.bonus_pkt) : 0,
+          aktywna: Boolean(row.aktywna),
+        })));
+
+        const modlitwyRows = [
+          { klucz: `modlitwa_przed_${newParafia.id}`, wartosc: parsed.modlitwy?.przed || '' },
+          { klucz: `modlitwa_po_${newParafia.id}`, wartosc: parsed.modlitwy?.po || '' },
+          { klucz: `modlitwa_lacina_${newParafia.id}`, wartosc: parsed.modlitwy?.lacina || '' },
+        ];
+        await supabase.from('app_config').upsert(modlitwyRows, { onConflict: 'klucz' });
+      }
+    } catch (templateError) {
+      console.error('Blad zastosowania szablonu ksiedza dla nowej parafii:', templateError);
+    }
 
     // Aktywuj kod rabatowy jeśli podano
     if (parafiaKodRabatowy.trim()) {
@@ -3832,7 +4123,7 @@ export default function MinistranciApp() {
 
     const { error } = await supabase
       .from('parafia_members')
-      .update({ role: selectedMember.role })
+      .update({ role: normalizeMemberRoles(selectedMember.role) })
       .eq('id', selectedMember.id);
 
     if (error) {
@@ -3843,6 +4134,173 @@ export default function MinistranciApp() {
     await loadParafiaData();
     setShowPoslugiModal(false);
     setSelectedMember(null);
+  };
+
+  useEffect(() => {
+    if (!permissionsMemberId) {
+      setFullConfigAccessDraft(false);
+      setFullConfigWithRankingApprovalsDraft(false);
+      return;
+    }
+
+    const hasFullConfig = hasFullConfigurationPermissions(permissionsDraft);
+    setFullConfigAccessDraft(hasFullConfig);
+    setFullConfigWithRankingApprovalsDraft(
+      hasFullConfig && permissionsDraft.includes(RANKING_APPROVAL_PERMISSION_KEY)
+    );
+  }, [permissionsMemberId, permissionsDraft]);
+
+  const handleSelectPermissionsMember = (member: Member) => {
+    setPermissionsMemberId(member.id);
+    setPermissionsDraft(getAssignedPermissionKeys(member.role));
+    setAdminSearchMinistrant('');
+  };
+
+  const handleToggleFullConfigAccessDraft = (checked: boolean) => {
+    if (checked) {
+      setPermissionsDraft(buildFullConfigurationPermissions(fullConfigWithRankingApprovalsDraft));
+      return;
+    }
+    setPermissionsDraft([]);
+  };
+
+  const handleToggleFullConfigRankingApprovalsDraft = (checked: boolean) => {
+    setFullConfigWithRankingApprovalsDraft(checked);
+    if (!fullConfigAccessDraft) return;
+    setPermissionsDraft(buildFullConfigurationPermissions(checked));
+  };
+
+  const saveMemberPermissions = async (memberId: string, permissions: ParishPermissionKey[]) => {
+    if (!currentUser?.parafia_id) {
+      alert('Brak aktywnej parafii.');
+      return false;
+    }
+    if (!memberId) {
+      alert('Wybierz ministranta.');
+      return false;
+    }
+
+    const uniquePermissions = Array.from(new Set(permissions));
+
+    setAdminRoleSavingIds((prev) => {
+      const next = new Set(prev);
+      next.add(memberId);
+      return next;
+    });
+
+    try {
+      const res = await authFetch('/api/parafia/admin-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId,
+          parafiaId: currentUser.parafia_id,
+          permissions: uniquePermissions,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      const applyMemberRolesToState = (nextRolesInput: string[] | null | undefined) => {
+        const nextRoles = normalizeMemberRoles(nextRolesInput);
+        const nextPermissionKeys = getAssignedPermissionKeys(nextRoles);
+        setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, role: nextRoles } : m)));
+        if (selectedMember?.id === memberId) {
+          setSelectedMember((prev) => (prev ? { ...prev, role: nextRoles } : prev));
+        }
+        if (permissionsMemberId === memberId) {
+          setPermissionsDraft(nextPermissionKeys);
+        }
+      };
+
+      if (!res.ok || !result?.ok) {
+        // Fallback: gdy token auth nie dotrze do endpointu, spróbuj bezpośredniego zapisu przez Supabase.
+        if (res.status === 401 || res.status === 403) {
+          const targetMember = members.find((m) => m.id === memberId);
+          const currentRoles = normalizeMemberRoles(targetMember?.role);
+          const baseRoles = currentRoles.filter(
+            (role) => role !== PARISH_ADMIN_ROLE && !role.startsWith(PARISH_PERMISSION_PREFIX)
+          );
+          const permissionRoles = uniquePermissions.map((permission) => `${PARISH_PERMISSION_PREFIX}${permission}`);
+          const directRolesPayload = normalizeMemberRoles([...baseRoles, ...permissionRoles]);
+
+          const { data: directUpdated, error: directError } = await supabase
+            .from('parafia_members')
+            .update({ role: directRolesPayload })
+            .eq('id', memberId)
+            .eq('parafia_id', currentUser.parafia_id)
+            .select('id, role')
+            .single();
+
+          if (!directError && directUpdated) {
+            applyMemberRolesToState(directUpdated.role);
+            return true;
+          }
+        }
+
+        alert('Nie udało się zapisać uprawnień: ' + (result?.error || 'Błąd serwera'));
+        return false;
+      }
+
+      applyMemberRolesToState(result.member?.role);
+      return true;
+    } finally {
+      setAdminRoleSavingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(memberId);
+        return next;
+      });
+    }
+  };
+
+  const handleSaveMemberPermissions = async () => {
+    if (!permissionsMemberId) {
+      alert('Wybierz ministranta.');
+      return;
+    }
+    const ok = await saveMemberPermissions(permissionsMemberId, permissionsDraft);
+    if (ok) alert('Uprawnienia zostały zapisane.');
+  };
+
+  const handleRemoveFullConfigAccessForMember = async (member: Member) => {
+    const currentPermissions = getAssignedPermissionKeys(member.role);
+    const nextPermissions = currentPermissions.filter(
+      (permission) => permission !== RANKING_APPROVAL_PERMISSION_KEY && !FULL_CONFIGURATION_PERMISSION_KEYS.includes(permission)
+    );
+    const ok = await saveMemberPermissions(member.id, nextPermissions);
+    if (ok) {
+      if (permissionsMemberId === member.id) {
+        setPermissionsMemberId('');
+        setPermissionsDraft([]);
+        setFullConfigAccessDraft(false);
+        setFullConfigWithRankingApprovalsDraft(false);
+      }
+      alert(`Usunięto pełny dostęp: ${member.imie} ${member.nazwisko || ''}`.trim());
+    }
+  };
+
+  const handleAssignPermissionForPermissionCard = async (permission: ParishPermissionKey) => {
+    const memberId = permissionAssignDraft[permission];
+    if (!memberId) {
+      alert('Wybierz ministranta do przypisania.');
+      return;
+    }
+    const member = members.find((m) => m.id === memberId);
+    if (!member) {
+      alert('Nie znaleziono ministranta.');
+      return;
+    }
+    const currentPermissions = getAssignedPermissionKeys(member.role);
+    if (currentPermissions.includes(permission)) {
+      alert('Ten ministrant ma już to uprawnienie.');
+      return;
+    }
+    const ok = await saveMemberPermissions(memberId, [...currentPermissions, permission]);
+    if (!ok) return;
+    setPermissionAssignDraft((prev) => ({ ...prev, [permission]: '' }));
+  };
+
+  const handleRemovePermissionForPermissionCard = async (permission: ParishPermissionKey, member: Member) => {
+    const nextPermissions = getAssignedPermissionKeys(member.role).filter((item) => item !== permission);
+    await saveMemberPermissions(member.id, nextPermissions);
   };
 
   const handleUpdateGrupa = async (grupa: GrupaType) => {
@@ -3997,7 +4455,7 @@ export default function MinistranciApp() {
     const tempId = crypto.randomUUID();
 
     let obrazekUrl: string | undefined;
-    if (newPoslugaFile) {
+    if (canEditPoslugaVisuals && newPoslugaFile) {
       const url = await uploadPoslugaImage(newPoslugaFile, tempId);
       if (url) obrazekUrl = url;
     }
@@ -4006,6 +4464,7 @@ export default function MinistranciApp() {
     if (newGalleryFiles.length > 0) {
       zdjeciaUrls = await uploadPoslugaGalleryImages(newGalleryFiles, tempId);
     }
+    const emojiToSave = canEditPoslugaEmoji ? newPoslugaForm.emoji : '⭐';
 
     const { error } = await supabase.from('poslugi').insert({
       id: tempId,
@@ -4013,7 +4472,7 @@ export default function MinistranciApp() {
       slug,
       nazwa: newPoslugaForm.nazwa,
       opis: newPoslugaForm.opis,
-      emoji: newPoslugaForm.emoji,
+      emoji: emojiToSave,
       kolor: newPoslugaForm.kolor,
       obrazek_url: obrazekUrl || null,
       kolejnosc: poslugi.length,
@@ -4042,7 +4501,7 @@ export default function MinistranciApp() {
 
     let obrazekUrl = editingPosluga.obrazek_url;
 
-    if (editPoslugaFile) {
+    if (canEditPoslugaVisuals && editPoslugaFile) {
       if (editingPosluga.obrazek_url) {
         await deletePoslugaImage(editingPosluga.obrazek_url);
       }
@@ -4055,13 +4514,14 @@ export default function MinistranciApp() {
       const newUrls = await uploadPoslugaGalleryImages(editGalleryFiles, editingPosluga.id);
       zdjeciaUrls = [...zdjeciaUrls, ...newUrls];
     }
+    const emojiToSave = canEditPoslugaEmoji ? editingPosluga.emoji : (poslugi.find((p) => p.id === editingPosluga.id)?.emoji || editingPosluga.emoji);
 
     const { error } = await supabase
       .from('poslugi')
       .update({
         nazwa: editingPosluga.nazwa,
         opis: editingPosluga.opis,
-        emoji: editingPosluga.emoji,
+        emoji: emojiToSave,
         kolor: editingPosluga.kolor,
         obrazek_url: obrazekUrl || null,
         dlugi_opis: poslugaEditor?.getHTML() || editingPosluga.dlugi_opis || '',
@@ -4557,11 +5017,11 @@ export default function MinistranciApp() {
     return tablicaWatki.filter(w => {
       if (!w.archiwum_data || new Date(w.archiwum_data) > now) return false;
       const gd = w.grupa_docelowa;
-      if (gd === 'ksieza' && currentUser?.typ !== 'ksiadz') return false;
+      if (gd === 'ksieza' && !canManageNews) return false;
       if (gd === 'ministranci' && currentUser?.typ !== 'ministrant') return false;
       return true;
     });
-  }, [tablicaWatki, currentUser?.typ]);
+  }, [tablicaWatki, currentUser?.typ, canManageNews]);
 
   // ==================== RENDERY ====================
 
@@ -5369,8 +5829,7 @@ export default function MinistranciApp() {
 
   // ==================== EKRAN OCZEKIWANIA NA ZATWIERDZENIE ====================
 
-  const currentMember = members.find(m => m.profile_id === currentUser.id);
-  if (currentUser.typ === 'ministrant' && currentMember && currentMember.zatwierdzony === false) {
+  if (currentUser.typ === 'ministrant' && currentParafiaMember && currentParafiaMember.zatwierdzony === false) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
         <div className="max-w-md w-full">
@@ -5456,7 +5915,7 @@ export default function MinistranciApp() {
               </button>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-              {currentUser.typ === 'ksiadz' && (() => {
+              {canManagePremium && (() => {
                 const count = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length;
                 const isPremium = !!subscription;
                 return (
@@ -5526,7 +5985,7 @@ export default function MinistranciApp() {
           </div>
 
           {/* Linia 2: kod zaproszenia + kopiuj + QR */}
-          {currentUser.typ === 'ksiadz' && currentParafia && (
+          {canManageInvites && currentParafia && (
             <div className="flex items-center justify-center gap-1.5 md:gap-2 mt-1.5 pt-1.5 border-t border-gray-100 dark:border-gray-800">
               <span className="text-xs text-gray-500 dark:text-gray-400">Kod zaproszenia:</span>
               <code className="text-xs md:text-sm font-bold bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded tracking-wider">
@@ -5672,7 +6131,7 @@ export default function MinistranciApp() {
                 </span>
               )}
             </TabsTrigger>
-            {currentUser.typ === 'ksiadz' && (
+            {canManageMembers && (
               <TabsTrigger value="ministranci" className={`${tc} relative`}>
                 <Users className="w-4 h-4 sm:mr-2" />
                 Ministranci
@@ -5687,7 +6146,7 @@ export default function MinistranciApp() {
             <TabsTrigger value="ranking" className={`${tc} relative`}>
               <Trophy className="w-4 h-4 sm:mr-2" />
               Ranking
-              {currentUser.typ === 'ksiadz' && obecnosci.filter(o => o.status === 'oczekuje').length > 0 && (
+              {canApproveRankingSubmissions && obecnosci.filter(o => o.status === 'oczekuje').length > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                   {obecnosci.filter(o => o.status === 'oczekuje').length}
                 </span>
@@ -5733,7 +6192,7 @@ export default function MinistranciApp() {
                 </div>
               ) : (
                 <>
-                  {currentUser.typ === 'ministrant' && (() => {
+                  {canUseMinistrantTablica && (() => {
                     const litGradient: Record<string, { gradient: string; shadow: string; subtitle: string }> = {
                       zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20', subtitle: 'text-emerald-200' },
                       bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100' },
@@ -5770,7 +6229,7 @@ export default function MinistranciApp() {
                       </>
                     );
                   })()}
-                  {currentUser.typ === 'ksiadz' && (
+                  {canManageNews && (
                     <div className="flex gap-1.5 sm:gap-2 flex-wrap">
                       <Button size="sm" variant="outline" className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-400 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300 dark:hover:bg-amber-900/40" onClick={() => setShowNewAnkietaModal(true)}>
                         Dodaj ankietę
@@ -5881,7 +6340,7 @@ export default function MinistranciApp() {
                               Termin przeniesienia do archiwum: {selectedWatek.archiwum_data ? new Date(selectedWatek.archiwum_data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) : 'bez terminu'}
                             </p>
                           </div>
-                          {currentUser.typ === 'ksiadz' && watekAnkieta && (
+                          {canManageNews && watekAnkieta && (
                             <div className="flex flex-col gap-1.5 shrink-0">
                               <Button
                                 variant="outline"
@@ -5921,7 +6380,7 @@ export default function MinistranciApp() {
                               <BarChart3 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                               {editingAnkietaId === watekAnkieta.id ? 'Edycja ankiety' : watekAnkieta.pytanie}
                             </CardTitle>
-                            {currentUser.typ === 'ksiadz' && editingAnkietaId !== watekAnkieta.id && (
+                            {canManageNews && editingAnkietaId !== watekAnkieta.id && (
                               <Button variant="ghost" size="sm" title="Edytuj ankietę" className="text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400" onClick={() => startEditAnkieta(watekAnkieta)}>
                                 <Pencil className="w-4 h-4" />
                               </Button>
@@ -5937,7 +6396,7 @@ export default function MinistranciApp() {
                         <CardContent className="space-y-2">
 
                           {/* === TRYB EDYCJI KSIĘDZA === */}
-                          {currentUser.typ === 'ksiadz' && editingAnkietaId === watekAnkieta.id && (
+                          {canManageNews && editingAnkietaId === watekAnkieta.id && (
                             <div className="space-y-4">
                               <div>
                                 <Label>Pytanie</Label>
@@ -6031,7 +6490,7 @@ export default function MinistranciApp() {
                           )}
 
                           {/* === WIDOK MINISTRANTA === */}
-                          {currentUser.typ === 'ministrant' && (() => {
+                          {canUseMinistrantTablica && (() => {
                             const juzOdpowiedzial = mojeOdpowiedzi.length > 0;
                             const pokazWyniki = juzOdpowiedzial && !watekAnkieta.wyniki_ukryte;
                             const totalMinistranci = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length;
@@ -6109,7 +6568,7 @@ export default function MinistranciApp() {
                           })()}
 
                           {/* === WIDOK KSIĘDZA — wyniki (gdy nie edytuje) === */}
-                          {currentUser.typ === 'ksiadz' && editingAnkietaId !== watekAnkieta.id && (() => {
+                          {canManageNews && editingAnkietaId !== watekAnkieta.id && (() => {
                             const totalMinistranci = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length;
                             const respondenci = new Set(wszystkieOdpowiedzi.map(o => o.respondent_id));
                             const brakOdpowiedzi = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false && !respondenci.has(m.profile_id));
@@ -6307,7 +6766,7 @@ export default function MinistranciApp() {
                 const now = new Date();
                 const aktywneWatki = tablicaWatki.filter(w => {
                   const gd = w.grupa_docelowa;
-                  if (gd === 'ksieza' && currentUser.typ !== 'ksiadz') return false;
+                  if (gd === 'ksieza' && !canManageNews) return false;
                   if (gd === 'ministranci' && currentUser.typ !== 'ministrant') return false;
                   if (w.archiwum_data && new Date(w.archiwum_data) <= now) return false;
                   return true;
@@ -6315,6 +6774,12 @@ export default function MinistranciApp() {
                 const filtrowaneWatki = aktywneWatki.filter((w) => (
                   tablicaCategoryFilter === 'wszystkie' || w.kategoria === tablicaCategoryFilter
                 ));
+                const uporzadkowaneWatki = tablicaCategoryFilter === 'ogłoszenie'
+                  ? [
+                      ...filtrowaneWatki.filter((w) => w.kategoria === 'ogłoszenie' && w.tytul?.startsWith('[ADMIN]')),
+                      ...filtrowaneWatki.filter((w) => !(w.kategoria === 'ogłoszenie' && w.tytul?.startsWith('[ADMIN]'))),
+                    ]
+                  : filtrowaneWatki;
 
                 return (
                 <div className="space-y-3">
@@ -6340,18 +6805,18 @@ export default function MinistranciApp() {
                       );
                     })}
                   </div>
-                  {filtrowaneWatki.length === 0 ? (
+                  {uporzadkowaneWatki.length === 0 ? (
                     <Card>
                       <CardContent className="py-12 text-center">
                         <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                         <p className="text-gray-500 dark:text-gray-400">
                           {tablicaCategoryFilter === 'wszystkie' ? 'Brak aktualności' : 'Brak wpisów dla wybranego filtra'}
                         </p>
-                        {currentUser.typ === 'ksiadz' && tablicaCategoryFilter === 'wszystkie' && <p className="text-sm text-gray-400 mt-1">Utwórz pierwszy wątek lub ankietę!</p>}
+                        {canManageNews && tablicaCategoryFilter === 'wszystkie' && <p className="text-sm text-gray-400 mt-1">Utwórz pierwszy wątek lub ankietę!</p>}
                       </CardContent>
                     </Card>
                   ) : (
-                    filtrowaneWatki.map(watek => {
+                    uporzadkowaneWatki.map(watek => {
                       const watekAnkieta = ankiety.find(a => a.watek_id === watek.id);
                       const autorWatku = members.find(m => m.profile_id === watek.autor_id);
                       const mojaOdp = watekAnkieta ? ankietyOdpowiedzi.some(o => o.ankieta_id === watekAnkieta.id && o.respondent_id === currentUser.id) : false;
@@ -6361,7 +6826,7 @@ export default function MinistranciApp() {
                           key={watek.id}
                           className={`cursor-pointer hover:shadow-md transition-shadow ${watek.kategoria === 'ankieta' ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : watek.kategoria === 'ogłoszenie' ? 'border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20' : watek.przypiety ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20' : ''}`}
                           onClick={() => {
-                            if (watek.kategoria === 'ogłoszenie' && currentUser.typ === 'ksiadz') {
+                            if (watek.kategoria === 'ogłoszenie' && canManageNews) {
                               setPreviewOgloszenie(watek);
                               return;
                             }
@@ -6402,7 +6867,7 @@ export default function MinistranciApp() {
                               </div>
                               <div className="flex flex-col items-end gap-1">
                                 {/* Ankiety — oryginalne przyciski bez zmian */}
-                                {currentUser.typ === 'ksiadz' && watekAnkieta && (
+                                {canManageNews && watekAnkieta && (
                                   <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
                                     <div className="flex items-center gap-1">
                                       <Button
@@ -6437,7 +6902,7 @@ export default function MinistranciApp() {
                                   </div>
                                 )}
                                 {/* Ogłoszenia */}
-                                {currentUser.typ === 'ksiadz' && !watekAnkieta && watek.kategoria === 'ogłoszenie' && (
+                                {canManageNews && !watekAnkieta && watek.kategoria === 'ogłoszenie' && (
                                   <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
                                     {watek.tytul?.startsWith('[ADMIN]') ? (
                                       <>
@@ -6512,7 +6977,7 @@ export default function MinistranciApp() {
                                   </div>
                                 )}
                                 {/* Dyskusje */}
-                                {currentUser.typ === 'ksiadz' && !watekAnkieta && watek.kategoria === 'dyskusja' && (
+                                {canManageNews && !watekAnkieta && watek.kategoria === 'dyskusja' && (
                                   <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
                                     <div className="flex items-center gap-1">
                                       <Button
@@ -6558,10 +7023,10 @@ export default function MinistranciApp() {
                                     </Button>
                                   </div>
                                 )}
-                                {currentUser.typ === 'ministrant' && watekAnkieta && !mojaOdp && watekAnkieta.aktywna && (
+                                {canUseMinistrantTablica && watekAnkieta && !mojaOdp && watekAnkieta.aktywna && (
                                   <Badge variant="destructive" className="text-xs animate-pulse">Odpowiedz!</Badge>
                                 )}
-                                {currentUser.typ === 'ministrant' && watekAnkieta && mojaOdp && (
+                                {canUseMinistrantTablica && watekAnkieta && mojaOdp && (
                                   <CheckCircle className="w-5 h-5 text-green-500" />
                                 )}
                               </div>
@@ -6570,7 +7035,7 @@ export default function MinistranciApp() {
                               const opcje = ankietyOpcje.filter(o => o.ankieta_id === watekAnkieta.id).sort((a, b) => a.kolejnosc - b.kolejnosc);
                               const odpowiedzi = ankietyOdpowiedzi.filter(o => o.ankieta_id === watekAnkieta.id);
                               const unikatoweOsoby = new Set(odpowiedzi.map(o => o.respondent_id)).size;
-                              const pokazWyniki = currentUser.typ === 'ksiadz' || (!watekAnkieta.wyniki_ukryte && mojaOdp);
+                              const pokazWyniki = canManageNews || (!watekAnkieta.wyniki_ukryte && mojaOdp);
                               return pokazWyniki ? (
                                 <div className="flex items-center gap-3 flex-wrap mt-2">
                                   {opcje.map(opcja => {
@@ -6616,7 +7081,7 @@ export default function MinistranciApp() {
           <TabsContent value="ranking">
             <div className="space-y-6">
               {/* === WIDOK MINISTRANTA === */}
-              {currentUser.typ === 'ministrant' && (() => {
+              {canUseMinistrantRanking && (() => {
                 const myRanking = rankingData.find(r => r.ministrant_id === currentUser.id);
                 const totalPkt = myRanking ? Number(myRanking.total_pkt) : 0;
                 const currentRanga = getRanga(totalPkt);
@@ -6932,58 +7397,62 @@ export default function MinistranciApp() {
               })()}
 
               {/* === WIDOK KSIĘDZA === */}
-              {currentUser.typ === 'ksiadz' && (
+              {canManageRanking && (
                 <div className="space-y-6">
-                  <RankingSettingsPanel
-                    showRankingSettings={showRankingSettings}
-                    onToggleShowRankingSettings={() => setShowRankingSettings(!showRankingSettings)}
-                    onOpenResetPunktacja={() => setShowResetPunktacjaModal(true)}
-                    punktacjaConfig={punktacjaConfig}
-                    rangiConfig={rangiConfig}
-                    odznakiConfig={odznakiConfig}
-                    rankingSettingsTab={rankingSettingsTab}
-                    onChangeRankingSettingsTab={setRankingSettingsTab}
-                    onInitRankingConfig={initRankingConfig}
-                    punktacjaDraftDirty={punktacjaDraftDirty}
-                    punktacjaSaving={punktacjaSaving}
-                    onSavePunktacjaDraft={savePunktacjaDraft}
-                    onMutatePunktacjaConfig={setPunktacjaConfig}
-                    onUpdateConfigOpis={updateConfigOpis}
-                    getPunktacjaValue={getPunktacjaValue}
-                    onSetPunktacjaDraftValue={(id, value) => setPunktacjaDraft((prev) => ({ ...prev, [id]: value }))}
-                    onDeletePunktacja={deletePunktacja}
-                    showNewPunktacjaForm={showNewPunktacjaForm}
-                    onShowNewPunktacjaForm={setShowNewPunktacjaForm}
-                    newPunktacjaForm={newPunktacjaForm}
-                    onMutateNewPunktacjaForm={setNewPunktacjaForm}
-                    onAddPunktacja={addPunktacja}
-                    onMutateRangiConfig={setRangiConfig}
-                    onUpdateRangaKolor={updateRangaKolor}
-                    onUpdateRanga={updateRanga}
-                    onDeleteRanga={deleteRanga}
-                    onAddRanga={addRanga}
-                    editingOdznakaId={editingOdznakaId}
-                    onSetEditingOdznakaId={setEditingOdznakaId}
-                    onMutateOdznakiConfig={setOdznakiConfig}
-                    onUpdateOdznaka={updateOdznaka}
-                    onReloadRankingData={loadRankingData}
-                    onDeleteOdznaka={deleteOdznaka}
-                    onAddOdznaka={addOdznaka}
-                    limitDniConfig={limitDniConfig}
-                    getConfigValue={getConfigValue}
-                  />
+                  {canManageRankingSettings && (
+                    <RankingSettingsPanel
+                      showRankingSettings={showRankingSettings}
+                      onToggleShowRankingSettings={() => setShowRankingSettings(!showRankingSettings)}
+                      onOpenResetPunktacja={() => setShowResetPunktacjaModal(true)}
+                      punktacjaConfig={punktacjaConfig}
+                      rangiConfig={rangiConfig}
+                      odznakiConfig={odznakiConfig}
+                      rankingSettingsTab={rankingSettingsTab}
+                      onChangeRankingSettingsTab={setRankingSettingsTab}
+                      onInitRankingConfig={initRankingConfig}
+                      punktacjaDraftDirty={punktacjaDraftDirty}
+                      punktacjaSaving={punktacjaSaving}
+                      onSavePunktacjaDraft={savePunktacjaDraft}
+                      onMutatePunktacjaConfig={setPunktacjaConfig}
+                      onUpdateConfigOpis={updateConfigOpis}
+                      getPunktacjaValue={getPunktacjaValue}
+                      onSetPunktacjaDraftValue={(id, value) => setPunktacjaDraft((prev) => ({ ...prev, [id]: value }))}
+                      onDeletePunktacja={deletePunktacja}
+                      showNewPunktacjaForm={showNewPunktacjaForm}
+                      onShowNewPunktacjaForm={setShowNewPunktacjaForm}
+                      newPunktacjaForm={newPunktacjaForm}
+                      onMutateNewPunktacjaForm={setNewPunktacjaForm}
+                      onAddPunktacja={addPunktacja}
+                      onMutateRangiConfig={setRangiConfig}
+                      onUpdateRangaKolor={updateRangaKolor}
+                      onUpdateRanga={updateRanga}
+                      onDeleteRanga={deleteRanga}
+                      onAddRanga={addRanga}
+                      editingOdznakaId={editingOdznakaId}
+                      onSetEditingOdznakaId={setEditingOdznakaId}
+                      onMutateOdznakiConfig={setOdznakiConfig}
+                      onUpdateOdznaka={updateOdznaka}
+                      onReloadRankingData={loadRankingData}
+                      onDeleteOdznaka={deleteOdznaka}
+                      onAddOdznaka={addOdznaka}
+                      limitDniConfig={limitDniConfig}
+                      getConfigValue={getConfigValue}
+                    />
+                  )}
 
-                  <PendingObecnosciCard
-                    pendingObecnosci={pendingObecnosci}
-                    memberByProfileId={memberByProfileId}
-                    approvedDyzuryKeySet={approvedDyzuryKeySet}
-                    approvingObecnosciIds={approvingObecnosciIds}
-                    rejectingObecnosciIds={rejectingObecnosciIds}
-                    bulkApprovingObecnosci={bulkApprovingObecnosci}
-                    onApprove={(id) => { void handleApproveObecnosc(id); }}
-                    onReject={(id) => { void handleRejectObecnosc(id); }}
-                    onApproveAll={() => { void zatwierdzWszystkie(); }}
-                  />
+                  {canApproveRankingSubmissions && (
+                    <PendingObecnosciCard
+                      pendingObecnosci={pendingObecnosci}
+                      memberByProfileId={memberByProfileId}
+                      approvedDyzuryKeySet={approvedDyzuryKeySet}
+                      approvingObecnosciIds={approvingObecnosciIds}
+                      rejectingObecnosciIds={rejectingObecnosciIds}
+                      bulkApprovingObecnosci={bulkApprovingObecnosci}
+                      onApprove={(id) => { void handleApproveObecnosc(id); }}
+                      onReject={(id) => { void handleRejectObecnosc(id); }}
+                      onApproveAll={() => { void zatwierdzWszystkie(); }}
+                    />
+                  )}
 
                   <RankingParafiiCard
                     rankingData={rankingData}
@@ -7001,13 +7470,13 @@ export default function MinistranciApp() {
           {/* Panel Wydarzenia */}
           <TabsContent value="sluzby">
             <div className="space-y-4">
-                  {currentUser.typ === 'ministrant' && (
+                  {canUseMinistrantEvents && (
                     <MinistrantWydarzeniaHeader
                       kolorLiturgiczny={dzisLiturgiczny?.kolor}
                       onOpenZglosModal={() => setShowZglosModal(true)}
                     />
                   )}
-                  {currentUser.typ === 'ksiadz' && (
+                  {(canManageEvents || canManageFunctionTemplates) && (
                     <KsiadzWydarzeniaHeader
                       kolorLiturgiczny={dzisLiturgiczny?.kolor}
                       nazwaLiturgiczna={dzisLiturgiczny?.nazwa}
@@ -7018,20 +7487,22 @@ export default function MinistranciApp() {
                         setSluzbaEkstraPunkty(null);
                         setShowSluzbaModal(true);
                       }}
+                      showFunkcjeButton={canManageFunctionTemplates}
+                      showAddWydarzenieButton={canManageEvents}
                     />
                   )}
 
                   {(() => {
-                    const assignedCount = currentUser.typ === 'ministrant'
+                    const assignedCount = canUseMinistrantEvents
                       ? sluzby.filter((s) => isSluzbaAssignedToMe(s)).length
                       : sluzby.length;
-                    const visibleSluzby = currentUser.typ === 'ministrant' && !showAllSluzbyForMinistrant
+                    const visibleSluzby = canUseMinistrantEvents && !showAllSluzbyForMinistrant
                       ? sluzby.filter((s) => isSluzbaAssignedToMe(s))
                       : sluzby;
 
                     return (
                       <>
-                        {currentUser.typ === 'ministrant' && sluzby.length > 0 && (
+                        {canUseMinistrantEvents && sluzby.length > 0 && (
                           <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-gray-900 px-3 py-2">
                             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                               Pokazano <strong>{visibleSluzby.length}</strong> z <strong>{sluzby.length}</strong> wydarzeń
@@ -7052,7 +7523,7 @@ export default function MinistranciApp() {
                           {visibleSluzby.length === 0 ? (
                             <Card>
                               <CardContent className="py-8 text-center text-gray-500 dark:text-gray-400">
-                                {currentUser.typ === 'ministrant'
+                                {canUseMinistrantEvents
                                   ? 'Nie masz obecnie przypisanych wydarzeń.'
                                   : 'Brak zaplanowanych wydarzeń'}
                               </CardContent>
@@ -7065,7 +7536,7 @@ export default function MinistranciApp() {
 
                         return (
                           <Card key={sluzba.id} className={`overflow-hidden ${isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : 'border border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white via-white to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800/50'}`}>
-                            {currentUser.typ === 'ksiadz' && (() => {
+                            {canManageEvents && (() => {
                               const cg: Record<string, string> = { zielony: 'from-teal-500 to-emerald-500', bialy: 'from-amber-400 to-yellow-400', czerwony: 'from-red-500 to-rose-500', fioletowy: 'from-purple-600 to-violet-500', rozowy: 'from-pink-400 to-rose-400' };
                               return <div className={`h-1.5 bg-gradient-to-r ${cg[dzisLiturgiczny?.kolor || 'zielony'] || cg.zielony}`} />;
                             })()}
@@ -7089,7 +7560,7 @@ export default function MinistranciApp() {
                                     {sluzba.godzina}
                                   </CardDescription>
                                 </div>
-                                {currentUser.typ === 'ksiadz' && (
+                                {canManageEvents && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -7104,7 +7575,7 @@ export default function MinistranciApp() {
                             </CardHeader>
                             <CardContent>
                               {/* Widok księdza — pełna lista funkcji */}
-                              {currentUser.typ === 'ksiadz' && (() => {
+                              {canManageEvents && (() => {
                                 const hours = parseGodziny(sluzba.godzina);
                                 const hasPerHour = hours.length > 1 && sluzba.funkcje.some(f => f.godzina);
                                 if (hasPerHour) {
@@ -7168,7 +7639,7 @@ export default function MinistranciApp() {
                               })()}
 
                               {/* Widok ministranta — tylko jego funkcje */}
-                              {currentUser.typ === 'ministrant' && (() => {
+                              {canUseMinistrantEvents && (() => {
                                 const dniDoWydarzenia = Math.ceil((new Date(sluzba.data).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
 
                                 return (
@@ -7228,7 +7699,7 @@ export default function MinistranciApp() {
           </TabsContent>
 
           {/* Panel Ministranci (tylko ksiądz) */}
-          {currentUser.typ === 'ksiadz' && (
+          {canManageMembers && (
             <TabsContent value="ministranci">
               <div className="space-y-4">
                 {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length > 0 && (
@@ -7322,31 +7793,56 @@ export default function MinistranciApp() {
                                 <div className="min-w-0">
                                   <p className="font-semibold">{member.imie}</p>
                                   {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
-                                  <p className="text-xs text-gray-500 dark:text-gray-400">{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt <button onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setDodajPunktyForm({ punkty: '', powod: '' }); setShowDodajPunktyModal(true); }} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"><Plus className="w-3 h-3" /></button></p>
-                                  {(member.role || []).length > 0 && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt
+                                    {canManageRankingSettings && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedMember(member);
+                                          setDodajPunktyForm({ punkty: '', powod: '' });
+                                          setShowDodajPunktyModal(true);
+                                        }}
+                                        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </p>
+                                  {(getAssignedPermissionKeys(member.role).length > 0 || getPoslugaRoles(member.role).length > 0) && (
                                     <div className="mt-2">
                                       {(() => {
-                                        const roles = member.role || [];
-                                        const firstRole = roles[0];
-                                        const firstPosluga = poslugi.find(p => p.slug === firstRole);
+                                        const rolePoslugi = getPoslugaRoles(member.role);
+                                        const assignedPermissions = getAssignedPermissionKeys(member.role);
+                                        const firstRole = rolePoslugi[0];
+                                        const firstPosluga = poslugi.find((p) => p.slug === firstRole);
                                         return (
                                           <div className="flex flex-wrap gap-1 items-center">
-                                            <Badge variant="outline" className="flex items-center gap-1">
-                                              {firstPosluga?.obrazek_url ? (
-                                                <img src={firstPosluga.obrazek_url} alt={firstPosluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
-                                              ) : firstPosluga?.emoji} {firstPosluga?.nazwa}
-                                            </Badge>
-                                            {roles.length > 1 && (
+                                            {assignedPermissions.length > 0 && (
+                                              <Badge variant="outline" className="flex items-center gap-1 border-indigo-300 text-indigo-700 dark:border-indigo-700 dark:text-indigo-300">
+                                                <Shield className="w-3 h-3" />
+                                                Uprawnienia: {assignedPermissions.length}
+                                              </Badge>
+                                            )}
+                                            {firstPosluga && (
+                                              <Badge variant="outline" className="flex items-center gap-1">
+                                                {firstPosluga.obrazek_url ? (
+                                                  <img src={firstPosluga.obrazek_url} alt={firstPosluga.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
+                                                ) : firstPosluga.emoji} {firstPosluga.nazwa}
+                                              </Badge>
+                                            )}
+                                            {rolePoslugi.length > 1 && (
                                               <details className="inline">
-                                                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 list-none">+{roles.length - 1} więcej</summary>
+                                                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 list-none">+{rolePoslugi.length - 1} więcej</summary>
                                                 <div className="flex flex-wrap gap-1 mt-1">
-                                                  {roles.slice(1).map(r => {
-                                                    const posluga = poslugi.find(p => p.slug === r);
+                                                  {rolePoslugi.slice(1).map((r) => {
+                                                    const posluga = poslugi.find((p) => p.slug === r);
+                                                    if (!posluga) return null;
                                                     return (
                                                       <Badge key={r} variant="outline" className="flex items-center gap-1">
-                                                        {posluga?.obrazek_url ? (
-                                                          <img src={posluga.obrazek_url} alt={posluga?.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
-                                                        ) : posluga?.emoji} {posluga?.nazwa}
+                                                        {posluga.obrazek_url ? (
+                                                          <img src={posluga.obrazek_url} alt={posluga.nazwa} className="w-4 h-4 rounded-full object-cover inline" />
+                                                        ) : posluga.emoji} {posluga.nazwa}
                                                       </Badge>
                                                     );
                                                   })}
@@ -7435,7 +7931,7 @@ export default function MinistranciApp() {
           {/* Panel Posługi — Gaming */}
           <TabsContent value="poslugi">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (() => {
+              {canUseMinistrantPoslugi && (() => {
                 const litG: Record<string, { gradient: string; shadow: string }> = {
                   zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
                   bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
@@ -7457,16 +7953,27 @@ export default function MinistranciApp() {
                   </div>
                 );
               })()}
-              {currentUser.typ === 'ksiadz' && (
+              {(canManagePoslugiCatalog || isPriestUser) && (
                 <div className="flex gap-2 flex-wrap">
-                  <Button size="sm" onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }}>
-                    <Plus className="w-4 h-4 mr-1" />
-                    Dodaj posługę
-                  </Button>
+                  {canManagePoslugiCatalog && (
+                    <Button size="sm" onClick={() => { if (poslugaEditor) poslugaEditor.commands.clearContent(); setShowAddPoslugaModal(true); }}>
+                      <Plus className="w-4 h-4 mr-1" />
+                      Dodaj posługę
+                    </Button>
+                  )}
+                  {isPriestUser && (
+                    <Button size="sm" variant="outline" onClick={() => setShowParishAdminsModal(true)}>
+                      <Shield className="w-4 h-4 mr-1" />
+                      Nadaj admina
+                      <span className="ml-1 rounded-full bg-indigo-100 dark:bg-indigo-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+                        {members.filter((m) => m.typ === 'ministrant' && m.zatwierdzony !== false && getAssignedPermissionKeys(m.role).length > 0).length}
+                      </span>
+                    </Button>
+                  )}
                 </div>
               )}
 
-              {currentUser.typ === 'ksiadz' && (
+              {canManagePoslugiCatalog && (
                 <div className="rounded-xl bg-pink-50 dark:bg-pink-900/10 border border-pink-200/50 dark:border-pink-800/30 px-4 py-3">
                   <p className="text-sm text-pink-700 dark:text-pink-300">
                     Posługi można przypisywać ministrantom w panelu &quot;Ministranci&quot;
@@ -7504,7 +8011,7 @@ export default function MinistranciApp() {
                               </div>
                             )}
                           </div>
-                          {currentUser.typ === 'ksiadz' && (
+                          {canManagePoslugiCatalog && (
                             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                               <Button
                                 size="sm"
@@ -7590,7 +8097,7 @@ export default function MinistranciApp() {
           {/* Panel Kalendarz Liturgiczny */}
           <TabsContent value="kalendarz">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (() => {
+              {canUseMinistrantModlitwy && (() => {
                 const litG: Record<string, { gradient: string; shadow: string }> = {
                   zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
                   bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
@@ -7764,7 +8271,7 @@ export default function MinistranciApp() {
           {/* Panel Modlitwy — Gaming */}
           <TabsContent value="modlitwy">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (() => {
+              {canUseMinistrantModlitwy && (() => {
                 const litG: Record<string, { gradient: string; shadow: string }> = {
                   zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
                   bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
@@ -7813,7 +8320,7 @@ export default function MinistranciApp() {
                         </div>
                       ) : (
                         <div className="relative">
-                          {currentUser.typ === 'ksiadz' && (
+                          {canEditPrayers && (
                             <Button size="sm" variant="ghost" className="absolute top-0 right-0 h-7 w-7 p-0 text-amber-400 hover:text-amber-600" onClick={() => { setModlitwaEditText(modlitwyTresc.przed || MODLITWY.przed); setEditingModlitwa('przed'); }}>
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
@@ -7850,7 +8357,7 @@ export default function MinistranciApp() {
                         </div>
                       ) : (
                         <div className="relative">
-                          {currentUser.typ === 'ksiadz' && (
+                          {canEditPrayers && (
                             <Button size="sm" variant="ghost" className="absolute top-0 right-0 h-7 w-7 p-0 text-emerald-400 hover:text-emerald-600" onClick={() => { setModlitwaEditText(modlitwyTresc.po || MODLITWY.po); setEditingModlitwa('po'); }}>
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
@@ -7871,7 +8378,7 @@ export default function MinistranciApp() {
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="mt-2 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-indigo-200/30 dark:border-indigo-700/30 p-4 space-y-3">
-                      {currentUser.typ === 'ksiadz' && (
+                      {canEditPrayers && (
                         <div className="flex justify-end">
                           <Button size="sm" variant={editingLacinaMode ? 'default' : 'outline'} className={editingLacinaMode ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : ''} onClick={() => { setEditingLacinaMode(!editingLacinaMode); setEditingLacinaIdx(null); }}>
                             <Pencil className="w-3 h-3 mr-1" />{editingLacinaMode ? 'Gotowe' : 'Edytuj'}
@@ -7962,7 +8469,7 @@ export default function MinistranciApp() {
           {/* Panel Wskazówki — Gaming */}
           <TabsContent value="wskazowki">
             <div className="space-y-4">
-              {currentUser.typ === 'ministrant' && (() => {
+              {isRegularMinistrant && (() => {
                 const litG: Record<string, { gradient: string; shadow: string }> = {
                   zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', shadow: 'shadow-emerald-500/20' },
                   bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
@@ -8436,7 +8943,7 @@ export default function MinistranciApp() {
               );
             })()}
 
-            {currentUser?.typ === 'ksiadz' && (
+            {canManageFunctionTemplates && (
               <Button
                 type="button"
                 variant="outline"
@@ -8750,6 +9257,367 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal adminów parafii */}
+      <Dialog
+        open={showParishAdminsModal}
+        onOpenChange={(open) => {
+          setShowParishAdminsModal(open);
+          if (!open) {
+            setAdminSearchMinistrant('');
+            setPermissionsMemberId('');
+            setPermissionsDraft([]);
+            setFullConfigAccessDraft(false);
+            setFullConfigWithRankingApprovalsDraft(false);
+            setPermissionAssignDraft({});
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Zarządzaj uprawnieniami administratora</DialogTitle>
+            <DialogDescription>
+              Wybierz ministranta i zaznacz dokładnie, które działania księdza ma mieć odblokowane.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {(() => {
+              const adminCandidates = members.filter((m) => m.typ === 'ministrant' && m.zatwierdzony !== false);
+              const assignedAdmins = adminCandidates.filter((m) => getAssignedPermissionKeys(m.role).length > 0);
+              const selectedPermissionsMember = members.find((m) => m.id === permissionsMemberId) || null;
+              const search = adminSearchMinistrant.trim().toLowerCase();
+              const searchedCandidates = search
+                ? adminCandidates.filter((m) => `${m.imie} ${m.nazwisko || ''}`.toLowerCase().includes(search))
+                : [];
+              const fullConfigMembers = adminCandidates.filter((member) => (
+                hasFullConfigurationPermissions(getAssignedPermissionKeys(member.role))
+              ));
+              const isSaving = permissionsMemberId ? adminRoleSavingIds.has(permissionsMemberId) : false;
+              const canEditFullConfig = Boolean(selectedPermissionsMember);
+
+              return (
+                <>
+                  <div className="rounded-md bg-indigo-600 text-white px-3 py-1.5 text-sm font-semibold text-center">
+                    Pełne uprawnienia admina
+                  </div>
+                  <div className="rounded-md border border-indigo-200 dark:border-indigo-700 bg-indigo-50/60 dark:bg-indigo-900/20 p-2.5 space-y-2">
+                    <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
+                      Wybrany ministrant: {selectedPermissionsMember ? `${selectedPermissionsMember.imie} ${selectedPermissionsMember.nazwisko || ''}` : 'brak'}
+                    </p>
+                    {!selectedPermissionsMember && (
+                      <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80">
+                        Wyszukaj ministranta poniżej, aby nadać pełny dostęp.
+                      </p>
+                    )}
+
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
+                      <Input
+                        placeholder="Wyszukaj ministranta po imieniu lub nazwisku..."
+                        value={adminSearchMinistrant}
+                        onChange={(e) => setAdminSearchMinistrant(e.target.value)}
+                        className="pl-9 pr-9 border-indigo-200 dark:border-indigo-700 bg-white/80 dark:bg-indigo-950/20"
+                      />
+                      {adminSearchMinistrant && (
+                        <button
+                          type="button"
+                          onClick={() => setAdminSearchMinistrant('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-400 hover:text-indigo-600"
+                          aria-label="Wyczyść wyszukiwanie"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {search && searchedCandidates.length === 0 && (
+                      <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80">Brak wyników dla podanej frazy.</p>
+                    )}
+
+                    {searchedCandidates.length > 0 && (
+                      <div className="space-y-1 max-h-36 overflow-y-auto rounded-md border border-indigo-200 dark:border-indigo-700 bg-white/70 dark:bg-indigo-950/20 p-1.5">
+                        {searchedCandidates.map((member) => {
+                          const selected = member.id === permissionsMemberId;
+                          const assignedCount = getAssignedPermissionKeys(member.role).length;
+                          return (
+                            <button
+                              key={`search-${member.id}`}
+                              type="button"
+                              className={`w-full text-left rounded-md border px-2.5 py-2 transition-colors ${selected ? 'border-indigo-500 bg-indigo-100/80 dark:bg-indigo-900/40' : 'border-transparent hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20'}`}
+                              onClick={() => handleSelectPermissionsMember(member)}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-200 truncate">{member.imie} {member.nazwisko || ''}</p>
+                                  <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/80">
+                                    {assignedCount > 0 ? `${assignedCount} ${assignedCount === 1 ? 'uprawnienie' : 'uprawnień'}` : 'Brak uprawnień delegowanych'}
+                                  </p>
+                                </div>
+                                {selected && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-300 shrink-0" />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <label className={`flex items-start gap-2 ${canEditFullConfig ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={fullConfigAccessDraft}
+                        onChange={(e) => handleToggleFullConfigAccessDraft(e.target.checked)}
+                        disabled={!canEditFullConfig}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-indigo-800 dark:text-indigo-200">Pełny dostęp do konfiguracji</span>
+                        <span className="block text-xs text-indigo-700/80 dark:text-indigo-300/80">
+                          Nadaje wszystkie uprawnienia księdza. Domyślnie bez zatwierdzania zgłoszeń.
+                        </span>
+                      </span>
+                    </label>
+
+                    <label className={`flex items-start gap-2 ${!fullConfigAccessDraft || !canEditFullConfig ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={fullConfigWithRankingApprovalsDraft}
+                        onChange={(e) => handleToggleFullConfigRankingApprovalsDraft(e.target.checked)}
+                        disabled={!fullConfigAccessDraft || !canEditFullConfig}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-indigo-800 dark:text-indigo-200">z zatwierdzaniem zgłoszeń do punktacji</span>
+                        <span className="block text-xs text-indigo-700/80 dark:text-indigo-300/80">
+                          Jeśli zaznaczone, ministrant dostaje też prawo zatwierdzania zgłoszeń.
+                        </span>
+                      </span>
+                    </label>
+
+                    <div className="rounded-md border border-indigo-200/80 dark:border-indigo-700/80 bg-white/60 dark:bg-indigo-950/20 p-2 space-y-1.5">
+                      <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                        Kto ma pełny dostęp ({fullConfigMembers.length})
+                      </p>
+                      {fullConfigMembers.length === 0 ? (
+                        <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80">Nikt jeszcze nie ma pełnego dostępu.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {fullConfigMembers.map((member) => {
+                            const memberPermissions = getAssignedPermissionKeys(member.role);
+                            const hasRankingApproval = memberPermissions.includes(RANKING_APPROVAL_PERMISSION_KEY);
+                            const removing = adminRoleSavingIds.has(member.id);
+                            return (
+                              <div
+                                key={`full-config-${member.id}`}
+                                className="flex items-center justify-between gap-2 rounded-md border border-indigo-200 dark:border-indigo-700 bg-indigo-50/70 dark:bg-indigo-900/30 px-2 py-1.5"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectPermissionsMember(member)}
+                                  className="min-w-0 text-left"
+                                >
+                                  <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 truncate">
+                                    {member.imie} {member.nazwisko || ''}
+                                  </p>
+                                  <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/80">
+                                    {hasRankingApproval ? 'z zatwierdzaniem zgłoszeń' : 'bez zatwierdzania zgłoszeń'}
+                                  </p>
+                                </button>
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/30 shrink-0"
+                                  disabled={removing}
+                                  onClick={() => handleRemoveFullConfigAccessForMember(member)}
+                                  title="Usuń pełny dostęp"
+                                  aria-label={`Usuń pełny dostęp dla ${member.imie} ${member.nazwisko || ''}`}
+                                >
+                                  {removing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <Button
+                      onClick={handleSaveMemberPermissions}
+                      disabled={isSaving || !canEditFullConfig}
+                      className="w-full"
+                    >
+                      {isSaving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Zapisywanie...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          Zapisz uprawnienia
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="rounded-md bg-gradient-to-r from-emerald-600 to-green-600 text-white px-3 py-1.5 text-sm font-semibold text-center">
+                    Ograniczone uprawnienia admina
+                  </div>
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <p className="text-sm font-semibold">Wszystkie uprawnienia i przypisani ministranci</p>
+                    <div className="space-y-3">
+                      {PARISH_PERMISSION_DEFINITIONS.map((permission) => {
+                        const assignedMembers = adminCandidates.filter((member) => (
+                          getAssignedPermissionKeys(member.role).includes(permission.key)
+                        ));
+                        const availableMembers = adminCandidates.filter((member) => (
+                          !assignedMembers.some((assigned) => assigned.id === member.id)
+                        ));
+                        const selectedAssignMemberId = permissionAssignDraft[permission.key] || '';
+                        const assignLoading = selectedAssignMemberId ? adminRoleSavingIds.has(selectedAssignMemberId) : false;
+                        return (
+                          <div key={permission.key} className="rounded-lg border p-3 bg-gray-50/60 dark:bg-gray-900/30">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{permission.label}</p>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{permission.description}</p>
+                              </div>
+                              <span className="rounded-full bg-indigo-100 dark:bg-indigo-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 shrink-0">
+                                {assignedMembers.length}
+                              </span>
+                            </div>
+
+                            {assignedMembers.length === 0 ? (
+                              <p className="text-xs text-gray-400 mt-1.5">Brak przypisanych ministrantów</p>
+                            ) : (
+                              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                {assignedMembers.map((member) => {
+                                  const removing = adminRoleSavingIds.has(member.id);
+                                  return (
+                                    <div
+                                      key={`${permission.key}-${member.id}`}
+                                      className="rounded-lg border border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-900/30 px-2.5 py-2"
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSelectPermissionsMember(member)}
+                                          className="flex items-center gap-1.5 text-left min-w-0"
+                                        >
+                                          <Shield className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-300 shrink-0" />
+                                          <span className="text-xs font-semibold text-indigo-800 dark:text-indigo-200 truncate">
+                                            {member.imie} {member.nazwisko || ''}
+                                          </span>
+                                        </button>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 px-2 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/30"
+                                          disabled={removing}
+                                          onClick={() => handleRemovePermissionForPermissionCard(permission.key, member)}
+                                        >
+                                          {removing ? '...' : 'Usuń'}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            <div className="mt-2.5 flex flex-col sm:flex-row gap-2">
+                              <Select
+                                value={selectedAssignMemberId || CLEAR_ASSIGN_MEMBER_VALUE}
+                                onValueChange={(value) => setPermissionAssignDraft((prev) => ({
+                                  ...prev,
+                                  [permission.key]: value === CLEAR_ASSIGN_MEMBER_VALUE ? '' : value,
+                                }))}
+                              >
+                                <SelectTrigger className="h-8 text-xs sm:flex-1">
+                                  <SelectValue placeholder={availableMembers.length > 0 ? 'Wybierz ministranta do przypisania' : 'Wszyscy przypisani'} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={CLEAR_ASSIGN_MEMBER_VALUE}>
+                                    Wybierz
+                                  </SelectItem>
+                                  {availableMembers.map((member) => (
+                                    <SelectItem key={`${permission.key}-option-${member.id}`} value={member.id}>
+                                      {member.imie} {member.nazwisko || ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-8 border border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
+                                disabled={!selectedAssignMemberId || assignLoading}
+                                onClick={() => handleAssignPermissionForPermissionCard(permission.key)}
+                              >
+                                {assignLoading ? 'Trwa...' : 'Przypisz admina'}
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <p className="text-sm font-semibold">Aktualnie przypisani administratorzy</p>
+                    {assignedAdmins.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Brak przypisanych administratorów.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {assignedAdmins.map((member) => {
+                          const selected = member.id === permissionsMemberId;
+                          const assignedPermissions = getAssignedPermissionKeys(member.role);
+                          return (
+                            <button
+                              key={member.id}
+                              type="button"
+                              onClick={() => handleSelectPermissionsMember(member)}
+                              className={`w-full text-left rounded-lg border p-2.5 transition-colors ${selected ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-200' : 'hover:bg-gray-50 dark:hover:bg-gray-900'}`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <Shield className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="text-xs font-semibold truncate">{member.imie} {member.nazwisko || ''}</span>
+                                  </div>
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {assignedPermissions.map((permissionKey) => {
+                                      const permission = PARISH_PERMISSION_DEFINITIONS.find((item) => item.key === permissionKey);
+                                      if (!permission) return null;
+                                      return (
+                                        <span
+                                          key={permissionKey}
+                                          className="rounded-full bg-indigo-100 dark:bg-indigo-900/40 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300"
+                                        >
+                                          {permission.label}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <span className="rounded-full bg-indigo-100 dark:bg-indigo-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 shrink-0">
+                                  {assignedPermissions.length}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                </>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal posług */}
       <Dialog open={showPoslugiModal} onOpenChange={(open) => {
         setShowPoslugiModal(open);
@@ -8772,11 +9640,11 @@ export default function MinistranciApp() {
                     checked={(selectedMember?.role || []).includes(posluga.slug)}
                     onChange={(e) => {
                       if (!selectedMember) return;
-                      const currentRole = selectedMember.role || [];
+                      const currentRole = normalizeMemberRoles(selectedMember.role);
                       const newRole = e.target.checked
                         ? [...currentRole, posluga.slug]
                         : currentRole.filter(r => r !== posluga.slug);
-                      setSelectedMember({ ...selectedMember, role: newRole });
+                      setSelectedMember({ ...selectedMember, role: normalizeMemberRoles(newRole) });
                     }}
                     className="mt-1"
                   />
@@ -9109,14 +9977,16 @@ export default function MinistranciApp() {
                   onChange={(e) => setEditingPosluga({ ...editingPosluga, opis: e.target.value })}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Emoji</Label>
-                  <Input
-                    value={editingPosluga.emoji}
-                    onChange={(e) => setEditingPosluga({ ...editingPosluga, emoji: e.target.value })}
-                  />
-                </div>
+              <div className={`grid gap-3 ${canEditPoslugaEmoji ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {canEditPoslugaEmoji && (
+                  <div>
+                    <Label>Emoji</Label>
+                    <Input
+                      value={editingPosluga.emoji}
+                      onChange={(e) => setEditingPosluga({ ...editingPosluga, emoji: e.target.value })}
+                    />
+                  </div>
+                )}
                 <div>
                   <Label>Kolor</Label>
                   <Select value={editingPosluga.kolor} onValueChange={(v) => setEditingPosluga({ ...editingPosluga, kolor: v })}>
@@ -9131,34 +10001,36 @@ export default function MinistranciApp() {
                   </Select>
                 </div>
               </div>
-              <div>
-                <Label>Własny obrazek (zamiast emoji)</Label>
-                <div className="flex items-center gap-3 mt-1">
-                  {(editPoslugaPreview || editingPosluga.obrazek_url) && (
-                    <img src={editPoslugaPreview || editingPosluga.obrazek_url} alt={editingPosluga.nazwa} className="w-12 h-12 rounded-full object-cover border" />
-                  )}
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      setEditPoslugaFile(file);
-                      setEditPoslugaPreview(URL.createObjectURL(file));
-                    }}
-                  />
-                  {(editPoslugaPreview || editingPosluga.obrazek_url) && (
-                    <Button variant="ghost" size="sm" onClick={() => {
-                      setEditPoslugaFile(null);
-                      setEditPoslugaPreview('');
-                      setEditingPosluga({ ...editingPosluga, obrazek_url: undefined });
-                    }}>
-                      Usuń
-                    </Button>
-                  )}
+              {canEditPoslugaVisuals && (
+                <div>
+                  <Label>Własny obrazek (zamiast emoji)</Label>
+                  <div className="flex items-center gap-3 mt-1">
+                    {(editPoslugaPreview || editingPosluga.obrazek_url) && (
+                      <img src={editPoslugaPreview || editingPosluga.obrazek_url} alt={editingPosluga.nazwa} className="w-12 h-12 rounded-full object-cover border" />
+                    )}
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setEditPoslugaFile(file);
+                        setEditPoslugaPreview(URL.createObjectURL(file));
+                      }}
+                    />
+                    {(editPoslugaPreview || editingPosluga.obrazek_url) && (
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        setEditPoslugaFile(null);
+                        setEditPoslugaPreview('');
+                        setEditingPosluga({ ...editingPosluga, obrazek_url: undefined });
+                      }}>
+                        Usuń
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
-              </div>
+              )}
 
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-3">Karta szczegółów</h3>
@@ -9294,15 +10166,17 @@ export default function MinistranciApp() {
                 placeholder="Krótki opis posługi"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Emoji</Label>
-                <Input
-                  value={newPoslugaForm.emoji}
-                  onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, emoji: e.target.value })}
-                  placeholder="⭐"
-                />
-              </div>
+            <div className={`grid gap-3 ${canEditPoslugaEmoji ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {canEditPoslugaEmoji && (
+                <div>
+                  <Label>Emoji</Label>
+                  <Input
+                    value={newPoslugaForm.emoji}
+                    onChange={(e) => setNewPoslugaForm({ ...newPoslugaForm, emoji: e.target.value })}
+                    placeholder="⭐"
+                  />
+                </div>
+              )}
               <div>
                 <Label>Kolor</Label>
                 <Select value={newPoslugaForm.kolor} onValueChange={(v) => setNewPoslugaForm({ ...newPoslugaForm, kolor: v })}>
@@ -9317,33 +10191,35 @@ export default function MinistranciApp() {
                 </Select>
               </div>
             </div>
-            <div>
-              <Label>Własny obrazek (zamiast emoji)</Label>
-              <div className="flex items-center gap-3 mt-1">
-                {newPoslugaPreview && (
-                  <img src={newPoslugaPreview} alt="podgląd" className="w-12 h-12 rounded-full object-cover border" />
-                )}
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    setNewPoslugaFile(file);
-                    setNewPoslugaPreview(URL.createObjectURL(file));
-                  }}
-                />
-                {newPoslugaPreview && (
-                  <Button variant="ghost" size="sm" onClick={() => {
-                    setNewPoslugaFile(null);
-                    setNewPoslugaPreview('');
-                  }}>
-                    Usuń
-                  </Button>
-                )}
+            {canEditPoslugaVisuals && (
+              <div>
+                <Label>Własny obrazek (zamiast emoji)</Label>
+                <div className="flex items-center gap-3 mt-1">
+                  {newPoslugaPreview && (
+                    <img src={newPoslugaPreview} alt="podgląd" className="w-12 h-12 rounded-full object-cover border" />
+                  )}
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setNewPoslugaFile(file);
+                      setNewPoslugaPreview(URL.createObjectURL(file));
+                    }}
+                  />
+                  {newPoslugaPreview && (
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setNewPoslugaFile(null);
+                      setNewPoslugaPreview('');
+                    }}>
+                      Usuń
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
               </div>
-              <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
-            </div>
+            )}
 
             <div className="border-t pt-4">
               <h3 className="font-semibold mb-3">Karta szczegółów</h3>
@@ -9738,7 +10614,7 @@ export default function MinistranciApp() {
                 }}
               />
             </div>
-            {currentUser?.typ === 'ksiadz' && (
+            {canManageNews && (
               <div>
                 <Label className="mb-2 block">Grupa docelowa</Label>
                 <div className="flex flex-wrap gap-2">
@@ -10552,7 +11428,7 @@ export default function MinistranciApp() {
 
       {/* Modal Premium */}
       <Dialog open={showPremiumModal} onOpenChange={setShowPremiumModal}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Ticket className="w-5 h-5 text-amber-500" />

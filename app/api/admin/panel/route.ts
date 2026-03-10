@@ -105,6 +105,15 @@ function asStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean);
 }
 
+function normalizeFunkcjaKey(value: string) {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function toFunkcjaId(value: string) {
+  const base = value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-ząćęłńóśźż0-9_]/gi, '');
+  return base || 'funkcja';
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
@@ -469,7 +478,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'targetParafiaIds are required for specific scope' }, { status: 400 });
         }
 
-        const [{ data: sourceParafia, error: sourceParafiaError }, poslugiRes, punktacjaRes, rangiRes, odznakiRes, modlitwyRes] = await Promise.all([
+        const [{ data: sourceParafia, error: sourceParafiaError }, poslugiRes, punktacjaRes, rangiRes, odznakiRes, modlitwyRes, sluzbyRes] = await Promise.all([
           supabaseAdmin.from('parafie').select('grupy, funkcje_config').eq('id', sourceParafiaId).single(),
           supabaseAdmin
             .from('poslugi')
@@ -499,11 +508,72 @@ export async function POST(request: NextRequest) {
               `modlitwa_po_${sourceParafiaId}`,
               `modlitwa_lacina_${sourceParafiaId}`,
             ]),
+          supabaseAdmin
+            .from('sluzby')
+            .select('id')
+            .eq('parafia_id', sourceParafiaId),
         ]);
 
-        const sourceError = sourceParafiaError || poslugiRes.error || punktacjaRes.error || rangiRes.error || odznakiRes.error || modlitwyRes.error;
+        const sourceError = sourceParafiaError || poslugiRes.error || punktacjaRes.error || rangiRes.error || odznakiRes.error || modlitwyRes.error || sluzbyRes.error;
         if (sourceError) return NextResponse.json({ error: sourceError.message }, { status: 500 });
         if (!sourceParafia) return NextResponse.json({ error: 'Source parish not found' }, { status: 404 });
+
+        const sourceFunkcjeConfigRaw = Array.isArray(sourceParafia.funkcje_config)
+          ? sourceParafia.funkcje_config.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+          : [];
+        const sourceSluzbyIds = (sluzbyRes.data || []).map((row) => asString(row.id)).filter(Boolean);
+        let sourceEventFunctionTypes: string[] = [];
+        if (sourceSluzbyIds.length > 0) {
+          const { data: funkcjeRows, error: funkcjeError } = await supabaseAdmin
+            .from('funkcje')
+            .select('typ')
+            .in('sluzba_id', sourceSluzbyIds);
+          if (funkcjeError) return NextResponse.json({ error: funkcjeError.message }, { status: 500 });
+          sourceEventFunctionTypes = Array.from(new Set((funkcjeRows || []).map((row) => asString(row.typ)).filter(Boolean)));
+        }
+
+        const existingNameKeys = new Set(
+          sourceFunkcjeConfigRaw
+            .map((row) => normalizeFunkcjaKey(asString(row.nazwa)))
+            .filter(Boolean)
+        );
+        const existingIds = new Set(
+          sourceFunkcjeConfigRaw
+            .map((row) => asString(row.id))
+            .filter(Boolean)
+        );
+
+        const recoveredFunkcjeConfig = sourceEventFunctionTypes
+          .filter((name) => !existingNameKeys.has(normalizeFunkcjaKey(name)))
+          .map((nazwa) => {
+            const baseId = toFunkcjaId(nazwa);
+            let nextId = baseId;
+            let suffix = 2;
+            while (existingIds.has(nextId)) {
+              nextId = `${baseId}_${suffix}`;
+              suffix += 1;
+            }
+            existingIds.add(nextId);
+            existingNameKeys.add(normalizeFunkcjaKey(nazwa));
+            return {
+              id: nextId,
+              nazwa,
+              opis: '',
+              emoji: '⭐',
+              kolor: 'gray',
+            };
+          });
+
+        const mergedFunkcjeConfig = [...sourceFunkcjeConfigRaw, ...recoveredFunkcjeConfig];
+        if (recoveredFunkcjeConfig.length > 0) {
+          const { error: syncSourceFunkcjeError } = await supabaseAdmin
+            .from('parafie')
+            .update({ funkcje_config: mergedFunkcjeConfig })
+            .eq('id', sourceParafiaId);
+          if (syncSourceFunkcjeError) {
+            return NextResponse.json({ error: syncSourceFunkcjeError.message }, { status: 500 });
+          }
+        }
 
         const modlitwyRows = modlitwyRes.data || [];
         const getModlitwa = (key: string) => modlitwyRows.find((row) => row.klucz === key)?.wartosc || '';
@@ -511,7 +581,7 @@ export async function POST(request: NextRequest) {
         const template: KsiadzTemplate = {
           parafia: {
             grupy: sourceParafia.grupy ?? null,
-            funkcje_config: sourceParafia.funkcje_config ?? null,
+            funkcje_config: mergedFunkcjeConfig,
           },
           poslugi: (poslugiRes.data || []).map((row) => ({
             slug: asString(row.slug),

@@ -8543,9 +8543,53 @@ export default function MinistranciApp() {
                                 const hours = parseGodziny(sluzba.godzina);
                                 const hasPerHour = hours.length > 1 && sluzba.funkcje.some(f => f.godzina);
                                 const isActiveSluzba = sluzba.status === 'zaplanowana';
+                                const litColor = dzisLiturgiczny?.kolor || 'zielony';
                                 const availableMinistranci = members.filter(
                                   (m) => m.typ === 'ministrant' && m.zatwierdzony !== false
                                 );
+                                const litFunkcjaStyle: Record<string, { row: string; label: string; selectTrigger: string; hourBox: string; hourTitle: string; singleBox: string }> = {
+                                  zielony: {
+                                    row: 'border-emerald-200/90 dark:border-emerald-800/45 bg-gradient-to-r from-white via-emerald-50/80 to-teal-50/70 dark:from-gray-800 dark:via-emerald-950/28 dark:to-teal-950/22',
+                                    label: 'text-emerald-900 dark:text-emerald-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-emerald-200 dark:border-emerald-800/60',
+                                    hourBox: 'bg-emerald-50/75 dark:bg-emerald-900/16 border-emerald-200/85 dark:border-emerald-800/45',
+                                    hourTitle: 'text-emerald-700 dark:text-emerald-300',
+                                    singleBox: 'border-emerald-200/80 dark:border-emerald-800/40 bg-emerald-50/45 dark:bg-emerald-900/14',
+                                  },
+                                  bialy: {
+                                    row: 'border-amber-200/90 dark:border-amber-800/45 bg-gradient-to-r from-white via-amber-50/80 to-yellow-50/75 dark:from-gray-800 dark:via-amber-950/26 dark:to-yellow-950/22',
+                                    label: 'text-amber-900 dark:text-amber-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-amber-200 dark:border-amber-800/60',
+                                    hourBox: 'bg-amber-50/75 dark:bg-amber-900/16 border-amber-200/85 dark:border-amber-800/45',
+                                    hourTitle: 'text-amber-700 dark:text-amber-300',
+                                    singleBox: 'border-amber-200/80 dark:border-amber-800/40 bg-amber-50/45 dark:bg-amber-900/14',
+                                  },
+                                  czerwony: {
+                                    row: 'border-rose-200/90 dark:border-rose-800/45 bg-gradient-to-r from-white via-rose-50/80 to-red-50/75 dark:from-gray-800 dark:via-rose-950/26 dark:to-red-950/22',
+                                    label: 'text-rose-900 dark:text-rose-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-rose-200 dark:border-rose-800/60',
+                                    hourBox: 'bg-rose-50/75 dark:bg-rose-900/16 border-rose-200/85 dark:border-rose-800/45',
+                                    hourTitle: 'text-rose-700 dark:text-rose-300',
+                                    singleBox: 'border-rose-200/80 dark:border-rose-800/40 bg-rose-50/45 dark:bg-rose-900/14',
+                                  },
+                                  fioletowy: {
+                                    row: 'border-violet-200/90 dark:border-violet-800/45 bg-gradient-to-r from-white via-violet-50/80 to-purple-50/75 dark:from-gray-800 dark:via-violet-950/26 dark:to-purple-950/22',
+                                    label: 'text-violet-900 dark:text-violet-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-violet-200 dark:border-violet-800/60',
+                                    hourBox: 'bg-violet-50/75 dark:bg-violet-900/16 border-violet-200/85 dark:border-violet-800/45',
+                                    hourTitle: 'text-violet-700 dark:text-violet-300',
+                                    singleBox: 'border-violet-200/80 dark:border-violet-800/40 bg-violet-50/45 dark:bg-violet-900/14',
+                                  },
+                                  rozowy: {
+                                    row: 'border-pink-200/90 dark:border-pink-800/45 bg-gradient-to-r from-white via-pink-50/80 to-rose-50/75 dark:from-gray-800 dark:via-pink-950/26 dark:to-rose-950/22',
+                                    label: 'text-pink-900 dark:text-pink-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-pink-200 dark:border-pink-800/60',
+                                    hourBox: 'bg-pink-50/75 dark:bg-pink-900/16 border-pink-200/85 dark:border-pink-800/45',
+                                    hourTitle: 'text-pink-700 dark:text-pink-300',
+                                    singleBox: 'border-pink-200/80 dark:border-pink-800/40 bg-pink-50/45 dark:bg-pink-900/14',
+                                  },
+                                };
+                                const litStyle = litFunkcjaStyle[litColor] || litFunkcjaStyle.zielony;
                                 const getFunkcjaOrderIndex = (typ: string) => {
                                   const idx = FUNKCJE_TYPES.findIndex((item) => item === typ);
                                   return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
@@ -8564,9 +8608,9 @@ export default function MinistranciApp() {
                                   const saving = sluzbaInlineSavingIds.has(funkcja.id);
 
                                   return (
-                                    <div key={funkcja.id} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm">
+                                    <div key={funkcja.id} className={`flex flex-col sm:flex-row sm:items-center gap-2 p-2.5 rounded-md border shadow-sm ${litStyle.row}`}>
                                       <div className="sm:w-44 shrink-0 flex items-center gap-2">
-                                        <span className="font-semibold text-sm text-gray-700 dark:text-gray-200">{label}:</span>
+                                        <span className={`font-semibold text-sm ${litStyle.label}`}>{label}:</span>
                                         {!isActiveSluzba && (
                                           <Badge variant="secondary" className="text-[10px]">Zakończone</Badge>
                                         )}
@@ -8578,7 +8622,7 @@ export default function MinistranciApp() {
                                             onValueChange={(v) => { void handleInlineFunkcjaAssignment(sluzba.id, funkcja, v); }}
                                             disabled={!isActiveSluzba || saving}
                                           >
-                                            <SelectTrigger className="w-full min-w-0 h-9">
+                                            <SelectTrigger className={`w-full min-w-0 h-9 ${litStyle.selectTrigger}`}>
                                               <SelectValue placeholder="--" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -8624,8 +8668,8 @@ export default function MinistranciApp() {
                                         if (hourFunkcje.length === 0) return null;
                                         const typCounter: Record<string, number> = {};
                                         return (
-                                          <div key={h} className="rounded-lg bg-indigo-50/50 dark:bg-indigo-900/10 p-2.5 border border-indigo-100 dark:border-indigo-800/30">
-                                            <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" />{h}</p>
+                                          <div key={h} className={`rounded-lg p-2.5 border ${litStyle.hourBox}`}>
+                                            <p className={`text-xs font-bold mb-1.5 flex items-center gap-1 ${litStyle.hourTitle}`}><Clock className="w-3 h-3" />{h}</p>
                                             <div className="space-y-1">
                                               {hourFunkcje.map((funkcja) => {
                                                 typCounter[funkcja.typ] = (typCounter[funkcja.typ] || 0) + 1;
@@ -8644,7 +8688,7 @@ export default function MinistranciApp() {
                                 const singleHourFunkcje = sortFunkcje(sluzba.funkcje.filter(f => f.aktywna));
                                 const singleTypCounter: Record<string, number> = {};
                                 return (
-                                  <div className="space-y-1.5">
+                                  <div className={`space-y-1.5 rounded-lg border p-2 ${litStyle.singleBox}`}>
                                     {singleHourFunkcje.map((funkcja) => {
                                       singleTypCounter[funkcja.typ] = (singleTypCounter[funkcja.typ] || 0) + 1;
                                       const slot = singleTypCounter[funkcja.typ];

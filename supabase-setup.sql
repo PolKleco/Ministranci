@@ -22,7 +22,7 @@ create table parafie (
   miasto text not null,
   adres text default '',
   admin_id uuid references profiles(id) not null,
-  admin_email text not null,
+  admin_email text unique not null,
   kod_zaproszenia text unique not null,
   created_at timestamptz default now()
 );
@@ -236,6 +236,38 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- =============================================
+-- TRIGGER: synchronizacja profilu do członkostw parafii
+-- =============================================
+
+create or replace function public.sync_profile_to_parafia_members()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.parafia_members
+  set
+    imie = new.imie,
+    nazwisko = new.nazwisko,
+    email = new.email
+  where profile_id = new.id;
+
+  return new;
+end;
+$$;
+
+create trigger on_profile_updated_sync_member_data
+  after update of imie, nazwisko, email on public.profiles
+  for each row
+  when (
+    old.imie is distinct from new.imie
+    or old.nazwisko is distinct from new.nazwisko
+    or old.email is distinct from new.email
+  )
+  execute function public.sync_profile_to_parafia_members();
 
 
 -- =============================================
@@ -672,15 +704,85 @@ alter table ankiety_odpowiedzi enable row level security;
 alter table tablica_przeczytane enable row level security;
 alter table powiadomienia enable row level security;
 
+-- helper: prawdziwy ksiadz parafii lub admin w aktywnym trybie wejscia jako ksiadz
+create or replace function public.can_manage_parafia_as_ksiadz(p_parafia_id uuid)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_has_access boolean := false;
+begin
+  if auth.uid() is null or p_parafia_id is null then
+    return false;
+  end if;
+
+  select exists (
+    select 1
+    from public.parafie p
+    where p.id = p_parafia_id
+      and p.admin_id = auth.uid()
+  )
+  into v_has_access;
+
+  if v_has_access then
+    return true;
+  end if;
+
+  begin
+    execute $query$
+      select exists (
+        select 1
+        from public.admin_impersonation_sessions s
+        where s.admin_user_id = auth.uid()
+          and s.target_parafia_id = $1
+          and s.impersonated_typ = 'ksiadz'
+          and s.ended_at is null
+      )
+    $query$
+    into v_has_access
+    using p_parafia_id;
+  exception
+    when undefined_table then
+      return false;
+  end;
+
+  return coalesce(v_has_access, false);
+end;
+$$;
+
+-- RLS override: zarzadzanie parafia/members takze dla aktywnej sesji wejscia admina jako ksiadz
+drop policy if exists "Admin can update member profiles" on profiles;
+create policy "Admin can update member profiles" on profiles for update using (
+  exists (
+    select 1
+    from parafia_members pm
+    where pm.profile_id = profiles.id
+      and public.can_manage_parafia_as_ksiadz(pm.parafia_id)
+  )
+);
+
+drop policy if exists "Admin can update members" on parafia_members;
+create policy "Admin can update members" on parafia_members for update using (
+  public.can_manage_parafia_as_ksiadz(parafia_members.parafia_id)
+);
+
+drop policy if exists "Admin can delete members" on parafia_members;
+create policy "Admin can delete members" on parafia_members for delete using (
+  public.can_manage_parafia_as_ksiadz(parafia_members.parafia_id)
+);
+
 -- tablica_watki: członkowie parafii czytają, ksiądz tworzy wszystko, ministrant tylko dyskusje
 create policy "Watki viewable by parish members" on tablica_watki
   for select using (
     exists (select 1 from parafia_members where parafia_members.parafia_id = tablica_watki.parafia_id and parafia_members.profile_id = auth.uid())
-    or exists (select 1 from parafie where parafie.id = tablica_watki.parafia_id and parafie.admin_id = auth.uid())
+    or public.can_manage_parafia_as_ksiadz(tablica_watki.parafia_id)
   );
 create policy "Ksiadz can insert any watek" on tablica_watki
   for insert with check (
-    exists (select 1 from parafie where parafie.id = tablica_watki.parafia_id and parafie.admin_id = auth.uid())
+    public.can_manage_parafia_as_ksiadz(tablica_watki.parafia_id)
   );
 create policy "Ministrant can insert dyskusja" on tablica_watki
   for insert with check (
@@ -689,11 +791,11 @@ create policy "Ministrant can insert dyskusja" on tablica_watki
 create policy "Autor or admin can update watek" on tablica_watki
   for update using (
     auth.uid() = autor_id
-    or exists (select 1 from parafie where parafie.id = tablica_watki.parafia_id and parafie.admin_id = auth.uid())
+    or public.can_manage_parafia_as_ksiadz(tablica_watki.parafia_id)
   );
 create policy "Admin can delete watek" on tablica_watki
   for delete using (
-    exists (select 1 from parafie where parafie.id = tablica_watki.parafia_id and parafie.admin_id = auth.uid())
+    public.can_manage_parafia_as_ksiadz(tablica_watki.parafia_id)
   );
 
 -- tablica_wiadomosci: członkowie czytają, zalogowani piszą (jeśli wątek otwarty)
@@ -705,9 +807,10 @@ create policy "Wiadomosci viewable by parish members" on tablica_wiadomosci
       where tw.id = tablica_wiadomosci.watek_id and pm.profile_id = auth.uid()
     )
     or exists (
-      select 1 from tablica_watki tw
-      join parafie p on p.id = tw.parafia_id
-      where tw.id = tablica_wiadomosci.watek_id and p.admin_id = auth.uid()
+      select 1
+      from tablica_watki tw
+      where tw.id = tablica_wiadomosci.watek_id
+        and public.can_manage_parafia_as_ksiadz(tw.parafia_id)
     )
   );
 create policy "Members can insert wiadomosci" on tablica_wiadomosci
@@ -718,9 +821,10 @@ create policy "Autor or admin can delete wiadomosc" on tablica_wiadomosci
   for delete using (
     auth.uid() = autor_id
     or exists (
-      select 1 from tablica_watki tw
-      join parafie p on p.id = tw.parafia_id
-      where tw.id = tablica_wiadomosci.watek_id and p.admin_id = auth.uid()
+      select 1
+      from tablica_watki tw
+      where tw.id = tablica_wiadomosci.watek_id
+        and public.can_manage_parafia_as_ksiadz(tw.parafia_id)
     )
   );
 
@@ -728,15 +832,15 @@ create policy "Autor or admin can delete wiadomosc" on tablica_wiadomosci
 create policy "Ankiety viewable by parish members" on ankiety
   for select using (
     exists (select 1 from parafia_members where parafia_members.parafia_id = ankiety.parafia_id and parafia_members.profile_id = auth.uid())
-    or exists (select 1 from parafie where parafie.id = ankiety.parafia_id and parafie.admin_id = auth.uid())
+    or public.can_manage_parafia_as_ksiadz(ankiety.parafia_id)
   );
 create policy "Admin can insert ankiety" on ankiety
   for insert with check (
-    exists (select 1 from parafie where parafie.id = ankiety.parafia_id and parafie.admin_id = auth.uid())
+    public.can_manage_parafia_as_ksiadz(ankiety.parafia_id)
   );
 create policy "Admin can update ankiety" on ankiety
   for update using (
-    exists (select 1 from parafie where parafie.id = ankiety.parafia_id and parafie.admin_id = auth.uid())
+    public.can_manage_parafia_as_ksiadz(ankiety.parafia_id)
   );
 
 -- ankiety_opcje: członkowie czytają, admin edytuje
@@ -746,8 +850,8 @@ create policy "Admin can insert opcje" on ankiety_opcje
   for insert with check (
     exists (
       select 1 from ankiety a
-      join parafie p on p.id = a.parafia_id
-      where a.id = ankiety_opcje.ankieta_id and p.admin_id = auth.uid()
+      where a.id = ankiety_opcje.ankieta_id
+        and public.can_manage_parafia_as_ksiadz(a.parafia_id)
     )
   );
 
@@ -758,8 +862,8 @@ create policy "Admin sees all odpowiedzi" on ankiety_odpowiedzi
   for select using (
     exists (
       select 1 from ankiety a
-      join parafie p on p.id = a.parafia_id
-      where a.id = ankiety_odpowiedzi.ankieta_id and p.admin_id = auth.uid()
+      where a.id = ankiety_odpowiedzi.ankieta_id
+        and public.can_manage_parafia_as_ksiadz(a.parafia_id)
     )
   );
 create policy "Respondent can insert odpowiedz" on ankiety_odpowiedzi
@@ -780,7 +884,7 @@ create policy "User sees own powiadomienia" on powiadomienia
   for select using (auth.uid() = odbiorca_id);
 create policy "Admin can insert powiadomienia" on powiadomienia
   for insert with check (
-    exists (select 1 from parafie where parafie.id = powiadomienia.parafia_id and parafie.admin_id = auth.uid())
+    public.can_manage_parafia_as_ksiadz(powiadomienia.parafia_id)
   );
 create policy "User can update own powiadomienia" on powiadomienia
   for update using (auth.uid() = odbiorca_id);
@@ -1071,3 +1175,30 @@ create policy "Ksiadz can manage szablony" on szablony_wydarzen
   for all using (
     exists (select 1 from parafie where parafie.id = szablony_wydarzen.parafia_id and parafie.admin_id = auth.uid())
   );
+
+-- =============================================
+-- ADMIN: WEJSCIE DO PANELU PARAFII (IMPERSONACJA)
+-- =============================================
+
+create table if not exists admin_impersonation_sessions (
+  id uuid primary key default gen_random_uuid(),
+  admin_user_id uuid not null references profiles(id) on delete cascade,
+  admin_email text not null,
+  target_parafia_id uuid not null references parafie(id) on delete cascade,
+  impersonated_typ text not null check (impersonated_typ in ('ksiadz', 'ministrant')),
+  previous_typ text not null check (previous_typ in ('ksiadz', 'ministrant', 'nowy')),
+  previous_parafia_id uuid references parafie(id) on delete set null,
+  previous_member_data jsonb,
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  ended_reason text
+);
+
+create unique index if not exists admin_impersonation_one_active_per_admin_idx
+  on admin_impersonation_sessions (admin_user_id)
+  where ended_at is null;
+
+create index if not exists admin_impersonation_target_parafia_idx
+  on admin_impersonation_sessions (target_parafia_id, started_at desc);
+
+alter table admin_impersonation_sessions enable row level security;

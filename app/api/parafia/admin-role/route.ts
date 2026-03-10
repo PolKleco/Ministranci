@@ -44,6 +44,66 @@ async function getAuthUser(request: NextRequest) {
   return data.user;
 }
 
+function isMissingImpersonationSchema(error: { message?: string } | null) {
+  const message = error?.message || '';
+  return (
+    message.includes('admin_impersonation_sessions') &&
+    (message.includes('does not exist') || message.includes("Could not find the table"))
+  );
+}
+
+async function canManageParafia(parafiaId: string, authUserId: string) {
+  const { data: parafia, error: parafiaError } = await supabaseAdmin
+    .from('parafie')
+    .select('id, admin_id')
+    .eq('id', parafiaId)
+    .maybeSingle();
+
+  if (parafiaError || !parafia) {
+    return { ok: false as const, status: 404 as const, error: 'Parafia nie istnieje' };
+  }
+
+  if (parafia.admin_id === authUserId) {
+    return { ok: true as const, parafia };
+  }
+
+  const { data: impersonationSession, error: impersonationError } = await supabaseAdmin
+    .from('admin_impersonation_sessions')
+    .select('id')
+    .eq('admin_user_id', authUserId)
+    .eq('target_parafia_id', parafiaId)
+    .eq('impersonated_typ', 'ksiadz')
+    .is('ended_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (impersonationError) {
+    if (isMissingImpersonationSchema(impersonationError)) {
+      return {
+        ok: false as const,
+        status: 403 as const,
+        error: 'Tylko ksiądz zarządzający parafią może nadawać uprawnienia',
+      };
+    }
+    return {
+      ok: false as const,
+      status: 500 as const,
+      error: impersonationError.message || 'Błąd sprawdzania uprawnień',
+    };
+  }
+
+  if (!impersonationSession) {
+    return {
+      ok: false as const,
+      status: 403 as const,
+      error: 'Tylko ksiądz zarządzający parafią może nadawać uprawnienia',
+    };
+  }
+
+  return { ok: true as const, parafia };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
@@ -69,19 +129,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'memberId i parafiaId są wymagane' }, { status: 400 });
     }
 
-    const { data: parafia, error: parafiaError } = await supabaseAdmin
-      .from('parafie')
-      .select('id, admin_id')
-      .eq('id', parafiaId)
-      .single();
-
-    if (parafiaError || !parafia) {
-      return NextResponse.json({ error: 'Parafia nie istnieje' }, { status: 404 });
-    }
-
-    const requesterIsPriestAdmin = parafia.admin_id === authUser.id;
-    if (!requesterIsPriestAdmin) {
-      return NextResponse.json({ error: 'Tylko ksiądz zarządzający parafią może nadawać uprawnienia' }, { status: 403 });
+    const access = await canManageParafia(parafiaId, authUser.id);
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const { data: targetMember, error: targetError } = await supabaseAdmin

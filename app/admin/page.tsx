@@ -142,6 +142,16 @@ interface Stats {
   watki: number;
 }
 
+type AdminImpersonationRole = 'ksiadz' | 'ministrant';
+
+type AdminImpersonationSession = {
+  id: string;
+  target_parafia_id: string;
+  target_parafia_nazwa: string | null;
+  impersonated_typ: AdminImpersonationRole;
+  started_at: string;
+};
+
 type RenderAttributes = Record<string, string | number | null | undefined>;
 type AppConfigRow = { klucz: string; wartosc: string };
 type AdminAction =
@@ -342,6 +352,8 @@ export default function AdminPanel() {
   // Status
   const [actionLoading, setActionLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [impersonationLoading, setImpersonationLoading] = useState(false);
+  const [impersonationSession, setImpersonationSession] = useState<AdminImpersonationSession | null>(null);
 
   // Tiptap state
   const [isUploadingInline, setIsUploadingInline] = useState(false);
@@ -374,6 +386,78 @@ export default function AdminPanel() {
     }
     return (result?.data as T) ?? (undefined as T);
   }, []);
+
+  const getAdminAccessToken = useCallback(async () => {
+    const { data: { session }, error: sessionError } = await supabaseAuth.auth.getSession();
+    if (sessionError || !session?.access_token) {
+      throw new Error('Brak aktywnej sesji. Zaloguj się ponownie.');
+    }
+    return session.access_token;
+  }, []);
+
+  const fetchImpersonationStatus = useCallback(async () => {
+    const accessToken = await getAdminAccessToken();
+    const res = await fetch('/api/admin/impersonation/status', {
+      method: 'GET',
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || !result?.ok) {
+      throw new Error(result?.error || 'Nie udało się sprawdzić statusu wejścia do parafii');
+    }
+    setImpersonationSession((result.active ? result.session : null) as AdminImpersonationSession | null);
+  }, [getAdminAccessToken]);
+
+  const startImpersonation = useCallback(async (parafiaId: string, role: AdminImpersonationRole) => {
+    setImpersonationLoading(true);
+    setScopeError('');
+    try {
+      const accessToken = await getAdminAccessToken();
+      const res = await fetch('/api/admin/impersonation/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ parafiaId, role }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) {
+        throw new Error(result?.error || 'Nie udało się uruchomić trybu wejścia do parafii');
+      }
+
+      const redirectUrl = typeof result?.redirectUrl === 'string' && result.redirectUrl
+        ? result.redirectUrl
+        : '/app?admin_impersonation=1';
+      window.location.assign(redirectUrl);
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udało się uruchomić wejścia do parafii');
+    } finally {
+      setImpersonationLoading(false);
+    }
+  }, [getAdminAccessToken]);
+
+  const stopImpersonation = useCallback(async () => {
+    setImpersonationLoading(true);
+    setScopeError('');
+    try {
+      const accessToken = await getAdminAccessToken();
+      const res = await fetch('/api/admin/impersonation/stop', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) {
+        throw new Error(result?.error || 'Nie udało się zakończyć wejścia do parafii');
+      }
+      setImpersonationSession(null);
+      setSuccessMsg('Zakończono wejście do parafii');
+    } catch (err) {
+      setScopeError(err instanceof Error ? err.message : 'Nie udało się zakończyć wejścia do parafii');
+    } finally {
+      setImpersonationLoading(false);
+    }
+  }, [getAdminAccessToken]);
 
   const verifyAdminAccess = useCallback(async (accessToken?: string): Promise<{ ok: boolean; error?: string }> => {
     let token = accessToken;
@@ -541,6 +625,7 @@ export default function AdminPanel() {
       }
       if (event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
+        setImpersonationSession(null);
         return;
       }
       if (session && event === 'SIGNED_IN') {
@@ -550,7 +635,6 @@ export default function AdminPanel() {
           if (!access.ok) {
             const reason = access.error === 'Forbidden' ? 'Brak uprawnień administratora dla tego konta' : `Odmowa logowania admina: ${access.error || 'nieznany błąd'}`;
             setAuthError(reason);
-            await supabaseAuth.auth.signOut();
           }
         })();
       }
@@ -565,6 +649,14 @@ export default function AdminPanel() {
       return () => clearTimeout(t);
     }
   }, [successMsg]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setImpersonationSession(null);
+      return;
+    }
+    void fetchImpersonationStatus().catch(() => {});
+  }, [isAuthenticated, fetchImpersonationStatus]);
 
   // ==================== AUTH ====================
 
@@ -589,7 +681,7 @@ export default function AdminPanel() {
 
     const access = await verifyAdminAccess(data.session?.access_token);
     if (!access.ok) {
-      await supabaseAuth.auth.signOut();
+      setIsAuthenticated(false);
       const reason = access.error === 'Forbidden' ? 'Brak uprawnień administratora dla tego konta' : `Odmowa logowania admina: ${access.error || 'nieznany błąd'}`;
       setAuthError(reason);
       setAuthLoading(false);
@@ -605,6 +697,7 @@ export default function AdminPanel() {
   const handleLogout = async () => {
     await supabaseAuth.auth.signOut();
     setIsAuthenticated(false);
+    setImpersonationSession(null);
   };
 
   const handleForgotPassword = async () => {
@@ -1496,10 +1589,31 @@ export default function AdminPanel() {
             </div>
           </div>
 
+          {impersonationSession && (
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3">
+              <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs sm:text-sm text-amber-900 dark:text-amber-100">
+                  Tryb wejścia aktywny: <span className="font-semibold">{impersonationSession.impersonated_typ === 'ksiadz' ? 'Ksiądz' : 'Ministrant'}</span>
+                  {' '}w parafii <span className="font-semibold">{impersonationSession.target_parafia_nazwa || impersonationSession.target_parafia_id}</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={stopImpersonation}
+                  disabled={impersonationLoading}
+                  className="border-amber-400 text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:text-amber-200 dark:hover:bg-amber-900/30"
+                >
+                  {impersonationLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <X className="w-4 h-4 mr-1" />}
+                  Zakończ wejście
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Parafia selector */}
           {scope === 'parafia' && (
             <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex-1 flex items-center gap-2">
                   <Input
                     value={kodParafii}
@@ -1520,6 +1634,28 @@ export default function AdminPanel() {
                 )}
                 {scopeError && <span className="text-red-500 text-sm">{scopeError}</span>}
               </div>
+              {selectedParafia && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                    onClick={() => startImpersonation(selectedParafia.id, 'ksiadz')}
+                    disabled={impersonationLoading}
+                  >
+                    {impersonationLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Shield className="w-4 h-4 mr-1" />}
+                    Wejdź jako ksiądz
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={() => startImpersonation(selectedParafia.id, 'ministrant')}
+                    disabled={impersonationLoading}
+                  >
+                    {impersonationLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Users className="w-4 h-4 mr-1" />}
+                    Wejdź jako ministrant
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </header>
@@ -1800,6 +1936,25 @@ export default function AdminPanel() {
                       >
                         <Users className="w-4 h-4 mr-1.5" />
                         Panel ministranta
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => previewPanelParafiaId && startImpersonation(previewPanelParafiaId, 'ksiadz')}
+                        disabled={!previewPanelParafiaId || impersonationLoading}
+                      >
+                        {impersonationLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Shield className="w-4 h-4 mr-1" />}
+                        Wejdź do /app jako ksiądz
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => previewPanelParafiaId && startImpersonation(previewPanelParafiaId, 'ministrant')}
+                        disabled={!previewPanelParafiaId || impersonationLoading}
+                      >
+                        {impersonationLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Users className="w-4 h-4 mr-1" />}
+                        Wejdź do /app jako ministrant
                       </Button>
                     </div>
 

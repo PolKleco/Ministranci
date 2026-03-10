@@ -25,6 +25,54 @@ function isMissingColumnError(error: { message?: string } | null) {
   );
 }
 
+function isMissingImpersonationSchema(error: { message?: string } | null) {
+  const message = error?.message || '';
+  return (
+    message.includes('admin_impersonation_sessions') &&
+    (message.includes('does not exist') || message.includes("Could not find the table"))
+  );
+}
+
+async function canManageParafiaPremium(parafiaId: string, userId: string) {
+  const { data: parish, error: parishError } = await supabaseAdmin
+    .from('parafie')
+    .select('id, admin_id')
+    .eq('id', parafiaId)
+    .maybeSingle();
+
+  if (parishError || !parish) {
+    return { ok: false as const, status: 404 as const, reason: 'Parish not found' };
+  }
+
+  if (parish.admin_id === userId) {
+    return { ok: true as const, parish };
+  }
+
+  const { data: impersonationSession, error: impersonationError } = await supabaseAdmin
+    .from('admin_impersonation_sessions')
+    .select('id')
+    .eq('admin_user_id', userId)
+    .eq('target_parafia_id', parafiaId)
+    .eq('impersonated_typ', 'ksiadz')
+    .is('ended_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (impersonationError) {
+    if (!isMissingImpersonationSchema(impersonationError)) {
+      return { ok: false as const, status: 500 as const, reason: impersonationError.message };
+    }
+    return { ok: false as const, status: 403 as const, reason: 'Forbidden' };
+  }
+
+  if (!impersonationSession) {
+    return { ok: false as const, status: 403 as const, reason: 'Forbidden' };
+  }
+
+  return { ok: true as const, parish };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const authUser = await getAuthUser(request);
@@ -40,17 +88,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing code or parafiaId' }, { status: 400 });
     }
 
-    // Priest/admin only for this parish
-    const { data: parish, error: parishError } = await supabaseAdmin
-      .from('parafie')
-      .select('id, admin_id')
-      .eq('id', normalizedParafiaId)
-      .single();
-    if (parishError || !parish) {
-      return NextResponse.json({ error: 'Parish not found' }, { status: 404 });
-    }
-    if (parish.admin_id !== authUser.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const access = await canManageParafiaPremium(normalizedParafiaId, authUser.id);
+    if (!access.ok) {
+      return NextResponse.json({ error: access.reason }, { status: access.status });
     }
 
     const { data: rabat, error: rabatError } = await supabaseAdmin
@@ -102,15 +142,13 @@ export async function POST(request: NextRequest) {
         premium_source: 'kod_rabatowy',
         premium_expires_at: premiumExpiresAt.toISOString(),
       })
-      .eq('id', normalizedParafiaId)
-      .eq('admin_id', authUser.id);
+      .eq('id', normalizedParafiaId);
 
     if (updateParafiaError && isMissingColumnError(updateParafiaError)) {
       const fallback = await supabaseAdmin
         .from('parafie')
         .update({ tier: 'premium', rabat_id: selectedCode.id })
-        .eq('id', normalizedParafiaId)
-        .eq('admin_id', authUser.id);
+        .eq('id', normalizedParafiaId);
       updateParafiaError = fallback.error;
     }
 

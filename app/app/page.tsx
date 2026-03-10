@@ -58,6 +58,10 @@ import { sanitizeRichHtml } from '@/lib/sanitize-rich-html';
 
 // ==================== LIMITY ====================
 const DARMOWY_LIMIT_MINISTRANTOW = 5;
+const ADMIN_PREVIEW_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+  .split(',')
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -497,6 +501,14 @@ interface PremiumSubscription {
     kod: string;
     procent_znizki: number | null;
   } | null;
+}
+
+interface AdminImpersonationSession {
+  id: string;
+  target_parafia_id: string;
+  target_parafia_nazwa: string | null;
+  impersonated_typ: 'ksiadz' | 'ministrant';
+  started_at: string;
 }
 
 interface PendingObecnosciCardProps {
@@ -1529,6 +1541,8 @@ export default function MinistranciApp() {
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [isAdminPreviewMode, setIsAdminPreviewMode] = useState(false);
+  const [adminImpersonationSession, setAdminImpersonationSession] = useState<AdminImpersonationSession | null>(null);
+  const [adminImpersonationStopping, setAdminImpersonationStopping] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset-sent' | 'email-sent'>('login');
@@ -1656,7 +1670,7 @@ export default function MinistranciApp() {
   const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
   const [emailSelectedMinistranci, setEmailSelectedMinistranci] = useState<string[]>([]);
   const [emailSearchMinistrant, setEmailSearchMinistrant] = useState('');
-  const canEditPoslugaVisuals = !!isAdminPreviewMode;
+  const canEditPoslugaVisuals = !!isAdminPreviewMode || !!adminImpersonationSession;
   const canEditPoslugaEmoji = canEditPoslugaVisuals;
 
   // ==================== STAN — RANKING SŁUŻBY ====================
@@ -1701,6 +1715,10 @@ export default function MinistranciApp() {
   const [editingOdznakaId, setEditingOdznakaId] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ punkty: number; total: number } | null>(null);
   const prevObecnosciRef = useRef<Obecnosc[]>([]);
+  const authAccessTokenRef = useRef<string | null>(null);
+  const impersonationAutoExitSentRef = useRef(false);
+  const [sluzbaInlineSavingIds, setSluzbaInlineSavingIds] = useState<Set<string>>(new Set());
+  const [deletingSluzbaIds, setDeletingSluzbaIds] = useState<Set<string>>(new Set());
   const [showIOSInstallBanner, setShowIOSInstallBanner] = useState(false);
   const [showAllZgloszenia, setShowAllZgloszenia] = useState(false);
   const [showAllSluzbyForMinistrant, setShowAllSluzbyForMinistrant] = useState(false);
@@ -1861,6 +1879,77 @@ export default function MinistranciApp() {
     response = await fetch(input, { ...init, headers: retryHeaders });
     return response;
   }, []);
+
+  const canUseAdminImpersonation = !!currentUser?.email && ADMIN_PREVIEW_EMAILS.includes(currentUser.email.toLowerCase());
+
+  const loadAdminImpersonationStatus = useCallback(async () => {
+    if (!canUseAdminImpersonation) {
+      setAdminImpersonationSession(null);
+      return;
+    }
+    try {
+      const res = await authFetch('/api/admin/impersonation/status', { method: 'GET' });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) {
+        setAdminImpersonationSession(null);
+        return;
+      }
+      setAdminImpersonationSession((result.active ? result.session : null) as AdminImpersonationSession | null);
+    } catch {
+      setAdminImpersonationSession(null);
+    }
+  }, [authFetch, canUseAdminImpersonation]);
+
+  const stopAdminImpersonationSession = useCallback(async () => {
+    if (!adminImpersonationSession) return true;
+    try {
+      const res = await authFetch('/api/admin/impersonation/stop', { method: 'POST' });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) {
+        return false;
+      }
+      setAdminImpersonationSession(null);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [adminImpersonationSession, authFetch]);
+
+  const stopAdminImpersonationKeepalive = useCallback(() => {
+    if (!adminImpersonationSession || impersonationAutoExitSentRef.current) return;
+    const accessToken = authAccessTokenRef.current;
+    if (!accessToken) return;
+
+    impersonationAutoExitSentRef.current = true;
+    void fetch('/api/admin/impersonation/stop', {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    }).catch(() => {
+      // Zamknięcie karty / przeładowanie — ignorujemy błędy best-effort.
+    });
+  }, [adminImpersonationSession]);
+
+  const handleStopAdminImpersonation = useCallback(async () => {
+    if (adminImpersonationStopping) return;
+    setAdminImpersonationStopping(true);
+    try {
+      const stopped = await stopAdminImpersonationSession();
+      if (!stopped) {
+        alert('Nie udało się zakończyć trybu admina.');
+        return;
+      }
+      window.location.assign('/admin');
+    } catch (err) {
+      alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setAdminImpersonationStopping(false);
+    }
+  }, [adminImpersonationStopping, stopAdminImpersonationSession]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !currentUser?.id) {
@@ -2119,11 +2208,7 @@ export default function MinistranciApp() {
         .single();
 
       if (profile) {
-        const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
-          .split(',')
-          .map((email) => email.trim().toLowerCase())
-          .filter(Boolean);
-        const canPreviewRole = !!profile.email && adminEmails.includes(profile.email.toLowerCase());
+        const canPreviewRole = !!profile.email && ADMIN_PREVIEW_EMAILS.includes(profile.email.toLowerCase());
         const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
         const previewRole = params?.get('preview_role');
         const previewParafia = params?.get('preview_parafia');
@@ -2928,19 +3013,6 @@ export default function MinistranciApp() {
       return;
     }
 
-    // Zaktualizuj też w tabeli members
-    if (currentUser.parafia_id) {
-      await supabase
-        .from('parafia_members')
-        .update({
-          imie: editProfilForm.imie.trim(),
-          nazwisko: editProfilForm.nazwisko.trim(),
-          email: editProfilForm.email.trim(),
-        })
-        .eq('profile_id', currentUser.id)
-        .eq('parafia_id', currentUser.parafia_id);
-    }
-
     setCurrentUser({
       ...currentUser,
       imie: editProfilForm.imie.trim(),
@@ -3396,6 +3468,7 @@ export default function MinistranciApp() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      authAccessTokenRef.current = session?.access_token || null;
       if (session) {
         loadProfile(session.user.id);
       } else {
@@ -3406,11 +3479,13 @@ export default function MinistranciApp() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      authAccessTokenRef.current = session?.access_token || null;
       if (session) {
         loadProfile(session.user.id);
       } else {
         setCurrentUser(null);
         setIsAdminPreviewMode(false);
+        setAdminImpersonationSession(null);
         setCurrentParafia(null);
         setMembers([]);
         setSluzby([]);
@@ -3421,6 +3496,34 @@ export default function MinistranciApp() {
 
     return () => subscription.unsubscribe();
   }, [loadProfile]);
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      setAdminImpersonationSession(null);
+      return;
+    }
+    void loadAdminImpersonationStatus();
+  }, [currentUser?.id, loadAdminImpersonationStatus]);
+
+  useEffect(() => {
+    impersonationAutoExitSentRef.current = false;
+  }, [adminImpersonationSession?.id]);
+
+  useEffect(() => {
+    if (!adminImpersonationSession) return;
+
+    const handlePageExit = () => {
+      stopAdminImpersonationKeepalive();
+    };
+
+    window.addEventListener('pagehide', handlePageExit);
+    window.addEventListener('beforeunload', handlePageExit);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageExit);
+      window.removeEventListener('beforeunload', handlePageExit);
+    };
+  }, [adminImpersonationSession, stopAdminImpersonationKeepalive]);
 
   // Auto-fill join code from URL param (QR code link)
   useEffect(() => {
@@ -3642,6 +3745,20 @@ export default function MinistranciApp() {
     return emailRegex.test(email);
   };
 
+  const shouldShowChangedEmailLoginHint = async (loginEmail: string): Promise<boolean> => {
+    try {
+      const response = await fetch('/api/auth/login-email-hint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail }),
+      });
+      const result = await response.json().catch(() => ({}));
+      return Boolean(response.ok && result?.ok && result?.showChangedEmailHint);
+    } catch {
+      return false;
+    }
+  };
+
   const handleAuth = async () => {
     const errors: typeof authErrors = {};
 
@@ -3673,10 +3790,18 @@ export default function MinistranciApp() {
     setAuthLoading(true);
 
     if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const loginEmail = email.trim().toLowerCase();
+      const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
       if (error) {
         if (error.message.includes('Invalid login credentials')) {
-          setAuthErrors({ general: 'Nieprawidłowy e-mail lub hasło. Spróbuj ponownie.' });
+          const changedEmailHint = await shouldShowChangedEmailLoginHint(loginEmail);
+          if (changedEmailHint) {
+            setAuthErrors({
+              general: 'Ten adres e-mail został zmieniony w aplikacji. Do logowania użyj adresu podanego podczas rejestracji.',
+            });
+          } else {
+            setAuthErrors({ general: 'Nieprawidłowy e-mail lub hasło. Spróbuj ponownie.' });
+          }
         } else {
           setAuthErrors({ general: 'Błąd logowania. Spróbuj ponownie później.' });
         }
@@ -3821,6 +3946,12 @@ export default function MinistranciApp() {
   };
 
   const handleLogout = async () => {
+    if (adminImpersonationSession) {
+      const stopped = await stopAdminImpersonationSession();
+      if (!stopped) {
+        stopAdminImpersonationKeepalive();
+      }
+    }
     await supabase.auth.signOut();
     setCurrentUser(null);
     setShowProfileCompletion(false);
@@ -3896,6 +4027,24 @@ export default function MinistranciApp() {
       return;
     }
 
+    const normalizedAdminEmail = currentUser.email.trim().toLowerCase();
+
+    // Szybka walidacja po stronie klienta (twarda blokada jest też w SQL triggerze)
+    const { count: existingParafiaCount, error: checkParafiaError } = await supabase
+      .from('parafie')
+      .select('id', { count: 'exact', head: true })
+      .eq('admin_email', normalizedAdminEmail);
+
+    if (checkParafiaError) {
+      alert('Nie udało się sprawdzić parafii dla tego emaila. Spróbuj ponownie.');
+      return;
+    }
+
+    if ((existingParafiaCount ?? 0) > 0) {
+      alert('Ten email ma już przypisaną parafię.');
+      return;
+    }
+
     // Utwórz parafię
     const { data: newParafia, error: parafiaError } = await supabase
       .from('parafie')
@@ -3904,13 +4053,19 @@ export default function MinistranciApp() {
         miasto: parafiaMiasto,
         adres: parafiaAdres,
         admin_id: currentUser.id,
-        admin_email: currentUser.email,
+        admin_email: normalizedAdminEmail,
         kod_zaproszenia: generateInviteCode()
       })
       .select()
       .single();
 
     if (parafiaError || !newParafia) {
+      const duplicateAdminEmailError = parafiaError?.code === '23505'
+        && (parafiaError.message || '').toLowerCase().includes('ma juz parafie');
+      if (duplicateAdminEmailError) {
+        alert('Ten email ma już przypisaną parafię.');
+        return;
+      }
       alert('Błąd tworzenia parafii!');
       return;
     }
@@ -4348,17 +4503,104 @@ export default function MinistranciApp() {
     setShowSluzbaModal(true);
   };
 
-  const handleDeleteSluzba = async () => {
-    if (!selectedSluzba) return;
+  const deleteSluzbaById = useCallback(async (sluzbaId: string): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser?.parafia_id) {
+      return { ok: false, error: 'Brak parafii użytkownika. Odśwież stronę i spróbuj ponownie.' };
+    }
 
-    await supabase
+    const { data: directDeletedRows, error: directDeleteError } = await supabase
       .from('sluzby')
       .delete()
-      .eq('id', selectedSluzba.id);
+      .eq('id', sluzbaId)
+      .eq('parafia_id', currentUser.parafia_id)
+      .select('id');
 
-    await loadSluzby();
-    setShowSluzbaModal(false);
-    setSelectedSluzba(null);
+    if (!directDeleteError && Array.isArray(directDeletedRows) && directDeletedRows.length > 0) {
+      return { ok: true };
+    }
+
+    const response = await authFetch('/api/parafia/sluzby-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sluzbaId,
+        parafiaId: currentUser.parafia_id,
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.ok) {
+      const fallbackError = typeof result?.error === 'string' ? result.error : 'Nie udało się usunąć wydarzenia.';
+      if (directDeleteError) {
+        return { ok: false, error: `${fallbackError} (${directDeleteError.message})` };
+      }
+      return { ok: false, error: fallbackError };
+    }
+
+    return { ok: true };
+  }, [authFetch, currentUser?.parafia_id]);
+
+  const handleDeleteSluzba = async () => {
+    if (!selectedSluzba) return;
+    const sluzbaId = selectedSluzba.id;
+
+    if (deletingSluzbaIds.has(sluzbaId)) return;
+
+    setDeletingSluzbaIds((prev) => {
+      const next = new Set(prev);
+      next.add(sluzbaId);
+      return next;
+    });
+
+    try {
+      const deletion = await deleteSluzbaById(sluzbaId);
+      if (!deletion.ok) {
+        alert(deletion.error || 'Nie udało się usunąć wydarzenia.');
+        return;
+      }
+
+      await loadSluzby();
+      setShowSluzbaModal(false);
+      setSelectedSluzba(null);
+    } finally {
+      setDeletingSluzbaIds((prev) => {
+        const next = new Set(prev);
+        next.delete(sluzbaId);
+        return next;
+      });
+    }
+  };
+
+  const handleDeleteSluzbaFromList = async (sluzba: Sluzba) => {
+    if (!confirm('Czy na pewno chcesz usunąć to wydarzenie?')) return;
+    if (deletingSluzbaIds.has(sluzba.id)) return;
+
+    setDeletingSluzbaIds((prev) => {
+      const next = new Set(prev);
+      next.add(sluzba.id);
+      return next;
+    });
+
+    try {
+      const deletion = await deleteSluzbaById(sluzba.id);
+      if (!deletion.ok) {
+        alert(deletion.error || 'Nie udało się usunąć wydarzenia.');
+        return;
+      }
+
+      if (selectedSluzba?.id === sluzba.id) {
+        setShowSluzbaModal(false);
+        setSelectedSluzba(null);
+      }
+
+      await loadSluzby();
+    } finally {
+      setDeletingSluzbaIds((prev) => {
+        const next = new Set(prev);
+        next.delete(sluzba.id);
+        return next;
+      });
+    }
   };
 
   const handleAcceptSluzba = async (sluzba: Sluzba) => {
@@ -4371,6 +4613,53 @@ export default function MinistranciApp() {
       .eq('ministrant_id', currentUser.id);
 
     await loadSluzby();
+  };
+
+  const handleInlineFunkcjaAssignment = async (sluzbaId: string, funkcja: Funkcja, nextValue: string) => {
+    if (!canManageEvents) return;
+
+    const nextAssignment: Pick<Funkcja, 'aktywna' | 'ministrant_id' | 'zaakceptowana'> =
+      nextValue === 'BEZ'
+        ? { aktywna: false, ministrant_id: null, zaakceptowana: false }
+        : nextValue === 'UNASSIGNED'
+          ? { aktywna: true, ministrant_id: null, zaakceptowana: false }
+          : { aktywna: true, ministrant_id: nextValue, zaakceptowana: false };
+
+    setSluzbaInlineSavingIds((prev) => {
+      const next = new Set(prev);
+      next.add(funkcja.id);
+      return next;
+    });
+
+    const { error } = await supabase
+      .from('funkcje')
+      .update(nextAssignment)
+      .eq('id', funkcja.id)
+      .eq('sluzba_id', sluzbaId);
+
+    if (error) {
+      alert('Nie udało się zapisać funkcji: ' + error.message);
+      setSluzbaInlineSavingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(funkcja.id);
+        return next;
+      });
+      return;
+    }
+
+    setSluzby((prev) => prev.map((sl) => {
+      if (sl.id !== sluzbaId) return sl;
+      return {
+        ...sl,
+        funkcje: sl.funkcje.map((f) => (f.id === funkcja.id ? { ...f, ...nextAssignment } : f)),
+      };
+    }));
+
+    setSluzbaInlineSavingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(funkcja.id);
+      return next;
+    });
   };
 
   // ==================== MINISTRANCI ====================
@@ -4563,10 +4852,15 @@ export default function MinistranciApp() {
   const handleUpdateGrupa = async (grupa: GrupaType) => {
     if (!selectedMember) return;
 
-    await supabase
+    const { error } = await supabase
       .from('parafia_members')
       .update({ grupa })
       .eq('id', selectedMember.id);
+
+    if (error) {
+      alert('Nie udało się przypisać grupy: ' + error.message);
+      return;
+    }
 
     await loadParafiaData();
     setShowGrupaModal(false);
@@ -6241,6 +6535,18 @@ export default function MinistranciApp() {
                   <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                 </Button>
               )}
+              {adminImpersonationSession && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleStopAdminImpersonation}
+                  disabled={adminImpersonationStopping}
+                  className="h-9 px-2 sm:px-3 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/20"
+                >
+                  {adminImpersonationStopping ? <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" /> : <Shield className="w-4 h-4 sm:mr-2" />}
+                  <span className="hidden sm:inline">Wyjdź z trybu admina</span>
+                </Button>
+              )}
               <Button variant="ghost" size="sm" onClick={toggleDarkMode} className="h-9 w-9 p-0">
                 {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
               </Button>
@@ -6250,6 +6556,13 @@ export default function MinistranciApp() {
               </Button>
             </div>
           </div>
+
+          {adminImpersonationSession && (
+            <div className="mt-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-2.5 sm:px-4 py-1.5 text-[11px] sm:text-xs text-amber-900 dark:text-amber-100">
+              Tryb admina aktywny: działasz jako {adminImpersonationSession.impersonated_typ === 'ksiadz' ? 'ksiądz' : 'ministrant'}
+              {' '}w parafii <span className="font-semibold">{adminImpersonationSession.target_parafia_nazwa || currentParafia?.nazwa || adminImpersonationSession.target_parafia_id}</span>.
+            </div>
+          )}
 
           {/* Linia 2: kod zaproszenia + kopiuj + QR */}
           {canManageInvites && currentParafia && (
@@ -6284,7 +6597,7 @@ export default function MinistranciApp() {
 
           {/* Modal QR Code */}
           <Dialog open={showQrModal} onOpenChange={setShowQrModal}>
-            <DialogContent className="w-[calc(100%-1rem)] max-w-3xl max-h-[90dvh] overflow-y-auto">
+            <DialogContent className="w-[calc(100%-1rem)] max-w-3xl max-h-[90dvh] overflow-y-auto overflow-x-hidden">
               <DialogHeader>
                 <DialogTitle>Kod QR zaproszenia</DialogTitle>
                 <DialogDescription>
@@ -6295,7 +6608,7 @@ export default function MinistranciApp() {
               <div className="py-2">
                 <div
                   ref={qrPosterRef}
-                  className="mx-auto w-full max-w-[760px] rounded-2xl border border-gray-200 bg-white p-6 sm:p-8 text-gray-900 shadow-xl"
+                  className="mx-auto w-full max-w-[760px] rounded-2xl border border-gray-200 bg-white p-6 sm:p-8 text-gray-900 shadow-xl overflow-hidden"
                 >
                   <div className="rounded-xl bg-gradient-to-r from-emerald-600 via-green-600 to-teal-600 px-5 py-4 text-white">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-90">Służba Liturgiczna</p>
@@ -6305,7 +6618,7 @@ export default function MinistranciApp() {
                     </p>
                   </div>
 
-                  <div className="mt-6 grid gap-5 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <div className="mt-6 grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
                     <div className="space-y-3">
                       <p className="text-base sm:text-lg font-semibold">
                         To zajmie mniej niż minutę:
@@ -6326,12 +6639,13 @@ export default function MinistranciApp() {
                       </div>
                     </div>
 
-                    <div className="mx-auto">
-                      <div className="rounded-2xl border-4 border-emerald-100 bg-white p-4 shadow-md">
+                    <div className="mx-auto w-full max-w-[240px]">
+                      <div className="rounded-2xl border-4 border-emerald-100 bg-white p-4 shadow-md w-full">
                         <QRCodeSVG
                           value={`https://ministranci.net/app?kod=${currentParafia?.kod_zaproszenia || ''}`}
                           size={240}
                           level="H"
+                          className="w-full h-auto"
                         />
                       </div>
                     </div>
@@ -7841,7 +8155,10 @@ export default function MinistranciApp() {
                     const assignedCount = canUseMinistrantEvents
                       ? sluzby.filter((s) => isSluzbaAssignedToMe(s)).length
                       : sluzby.length;
-                    const visibleSluzby = canUseMinistrantEvents && !showAllSluzbyForMinistrant
+                    const shouldShowOnlyAssigned = canUseMinistrantEvents
+                      && !showAllSluzbyForMinistrant
+                      && assignedCount > 0;
+                    const visibleSluzby = shouldShowOnlyAssigned
                       ? sluzby.filter((s) => isSluzbaAssignedToMe(s))
                       : sluzby;
 
@@ -7852,7 +8169,7 @@ export default function MinistranciApp() {
                             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                               Pokazano <strong>{visibleSluzby.length}</strong> z <strong>{sluzby.length}</strong> wydarzeń
                             </p>
-                            {assignedCount < sluzby.length && (
+                            {assignedCount > 0 && assignedCount < sluzby.length && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -7907,15 +8224,31 @@ export default function MinistranciApp() {
                                   </CardDescription>
                                 </div>
                                 {canManageEvents && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                                    title="Edytuj wydarzenie"
-                                    onClick={() => handleEditSluzba(sluzba)}
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </Button>
+                                  <div className="flex items-center gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                      title="Edytuj wydarzenie"
+                                      onClick={() => handleEditSluzba(sluzba)}
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                                      title="Usuń wydarzenie"
+                                      disabled={deletingSluzbaIds.has(sluzba.id)}
+                                      onClick={() => void handleDeleteSluzbaFromList(sluzba)}
+                                    >
+                                      {deletingSluzbaIds.has(sluzba.id) ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="w-4 h-4" />
+                                      )}
+                                    </Button>
+                                  </div>
                                 )}
                               </div>
                             </CardHeader>
@@ -7924,33 +8257,85 @@ export default function MinistranciApp() {
                               {canManageEvents && (() => {
                                 const hours = parseGodziny(sluzba.godzina);
                                 const hasPerHour = hours.length > 1 && sluzba.funkcje.some(f => f.godzina);
+                                const isActiveSluzba = sluzba.status === 'zaplanowana';
+                                const availableMinistranci = members.filter(
+                                  (m) => m.typ === 'ministrant' && m.zatwierdzony !== false
+                                );
+                                const getFunkcjaOrderIndex = (typ: string) => {
+                                  const idx = FUNKCJE_TYPES.findIndex((item) => item === typ);
+                                  return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+                                };
+                                const sortFunkcje = (funkcje: Funkcja[]) => (
+                                  [...funkcje].sort((a, b) => {
+                                    const diff = getFunkcjaOrderIndex(a.typ) - getFunkcjaOrderIndex(b.typ);
+                                    if (diff !== 0) return diff;
+                                    return a.typ.localeCompare(b.typ, 'pl');
+                                  })
+                                );
+                                const renderFunkcjaRow = (funkcja: Funkcja, label: string) => {
+                                  const selectedValue = !funkcja.aktywna ? 'BEZ' : (funkcja.ministrant_id || 'UNASSIGNED');
+                                  const saving = sluzbaInlineSavingIds.has(funkcja.id);
+
+                                  return (
+                                    <div key={funkcja.id} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 bg-white dark:bg-gray-800 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm">
+                                      <div className="sm:w-44 shrink-0 flex items-center gap-2">
+                                        <span className="font-semibold text-sm text-gray-700 dark:text-gray-200">{label}:</span>
+                                        {!isActiveSluzba && (
+                                          <Badge variant="secondary" className="text-[10px]">Zakończone</Badge>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <Select
+                                          value={selectedValue}
+                                          onValueChange={(v) => { void handleInlineFunkcjaAssignment(sluzba.id, funkcja, v); }}
+                                          disabled={!isActiveSluzba || saving}
+                                        >
+                                          <SelectTrigger className="flex-1 min-w-0 h-9">
+                                            <SelectValue placeholder="--" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="BEZ">Wyłączona</SelectItem>
+                                            <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                                            {availableMinistranci.map((m) => (
+                                              <SelectItem key={m.profile_id} value={m.profile_id}>
+                                                {m.imie} {m.nazwisko || ''}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        {saving ? (
+                                          <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+                                        ) : funkcja.aktywna && funkcja.ministrant_id ? (
+                                          funkcja.zaakceptowana ? (
+                                            <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 shrink-0" />
+                                          ) : (
+                                            <Hourglass className="w-4 h-4 text-amber-500 shrink-0" />
+                                          )
+                                        ) : (
+                                          <Lock className="w-4 h-4 text-gray-400 shrink-0" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                };
+
                                 if (hasPerHour) {
                                   return (
                                     <div className="space-y-3">
                                       {hours.map(h => {
-                                        const hourFunkcje = sluzba.funkcje.filter(f => f.godzina === h && f.aktywna);
+                                        const hourFunkcje = sortFunkcje(sluzba.funkcje.filter(f => f.godzina === h && f.aktywna));
                                         if (hourFunkcje.length === 0) return null;
+                                        const typCounter: Record<string, number> = {};
                                         return (
                                           <div key={h} className="rounded-lg bg-indigo-50/50 dark:bg-indigo-900/10 p-2.5 border border-indigo-100 dark:border-indigo-800/30">
                                             <p className="text-xs font-bold text-indigo-600 dark:text-indigo-400 mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" />{h}</p>
                                             <div className="space-y-1">
-                                              {hourFunkcje.map((funkcja) => (
-                                                <div key={funkcja.id} className="flex items-center justify-between gap-2 p-1.5 bg-white dark:bg-gray-800 rounded-md border border-gray-100 dark:border-gray-700 text-sm shadow-sm">
-                                                  <span className="font-semibold text-gray-700 dark:text-gray-200 shrink-0">{funkcja.typ}:</span>
-                                                  <div className="flex items-center gap-1.5 min-w-0">
-                                                    <span className={`truncate ${funkcja.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
-                                                      {getMemberName(funkcja.ministrant_id) || 'nie przypisano'}
-                                                    </span>
-                                                    {funkcja.ministrant_id && (
-                                                      funkcja.zaakceptowana ? (
-                                                        <CheckCircle className="w-3.5 h-3.5 text-green-500 dark:text-green-400 shrink-0" />
-                                                      ) : (
-                                                        <Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                                      )
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              ))}
+                                              {hourFunkcje.map((funkcja) => {
+                                                typCounter[funkcja.typ] = (typCounter[funkcja.typ] || 0) + 1;
+                                                const slot = typCounter[funkcja.typ];
+                                                const label = slot > 1 ? `${funkcja.typ} (${slot})` : funkcja.typ;
+                                                return renderFunkcjaRow(funkcja, label);
+                                              })}
                                             </div>
                                           </div>
                                         );
@@ -7959,27 +8344,16 @@ export default function MinistranciApp() {
                                   );
                                 }
                                 // Single hour or legacy
+                                const singleHourFunkcje = sortFunkcje(sluzba.funkcje.filter(f => f.aktywna));
+                                const singleTypCounter: Record<string, number> = {};
                                 return (
                                   <div className="space-y-1.5">
-                                    {sluzba.funkcje
-                                      .filter(f => f.aktywna)
-                                      .map((funkcja) => (
-                                        <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm">
-                                          <span className="font-semibold text-sm text-gray-700 dark:text-gray-200 shrink-0">{funkcja.typ}:</span>
-                                          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                                            <span className={`text-sm truncate ${funkcja.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
-                                              {getMemberName(funkcja.ministrant_id) || 'nie przypisano'}
-                                            </span>
-                                            {funkcja.ministrant_id && (
-                                              funkcja.zaakceptowana ? (
-                                                <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 shrink-0" />
-                                              ) : (
-                                                <Hourglass className="w-4 h-4 text-amber-500 shrink-0" />
-                                              )
-                                            )}
-                                          </div>
-                                        </div>
-                                      ))}
+                                    {singleHourFunkcje.map((funkcja) => {
+                                      singleTypCounter[funkcja.typ] = (singleTypCounter[funkcja.typ] || 0) + 1;
+                                      const slot = singleTypCounter[funkcja.typ];
+                                      const label = slot > 1 ? `${funkcja.typ} (${slot})` : funkcja.typ;
+                                      return renderFunkcjaRow(funkcja, label);
+                                    })}
                                   </div>
                                 );
                               })()}
@@ -9420,9 +9794,17 @@ export default function MinistranciApp() {
                 {selectedSluzba ? 'Zapisz zmiany' : 'Utwórz wydarzenie'}
               </Button>
               {selectedSluzba && (
-                <Button variant="destructive" onClick={handleDeleteSluzba}>
-                  <X className="w-4 h-4 mr-1" />
-                  Usuń wydarzenie
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteSluzba}
+                  disabled={deletingSluzbaIds.has(selectedSluzba.id)}
+                >
+                  {deletingSluzbaIds.has(selectedSluzba.id) ? (
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                  ) : (
+                    <X className="w-4 h-4 mr-1" />
+                  )}
+                  {deletingSluzbaIds.has(selectedSluzba.id) ? 'Usuwanie...' : 'Usuń wydarzenie'}
                 </Button>
               )}
             </div>
@@ -11407,11 +11789,32 @@ export default function MinistranciApp() {
                               <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
                                 onClick={async () => {
                                   if (!confirm('Czy na pewno chcesz trwale usunąć to wydarzenie?')) return;
-                                  await supabase.from('sluzby').delete().eq('id', sluzba.id);
+                                  if (deletingSluzbaIds.has(sluzba.id)) return;
+                                  setDeletingSluzbaIds((prev) => {
+                                    const next = new Set(prev);
+                                    next.add(sluzba.id);
+                                    return next;
+                                  });
+                                  const deletion = await deleteSluzbaById(sluzba.id);
+                                  setDeletingSluzbaIds((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(sluzba.id);
+                                    return next;
+                                  });
+                                  if (!deletion.ok) {
+                                    alert(deletion.error || 'Nie udało się usunąć wydarzenia.');
+                                    return;
+                                  }
                                   await loadSluzby();
-                                }}>
-                                <Trash2 className="w-3 h-3 mr-1" />
-                                Usuń trwale
+                                }}
+                                disabled={deletingSluzbaIds.has(sluzba.id)}
+                              >
+                                {deletingSluzbaIds.has(sluzba.id) ? (
+                                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3 h-3 mr-1" />
+                                )}
+                                {deletingSluzbaIds.has(sluzba.id) ? 'Usuwanie...' : 'Usuń trwale'}
                               </Button>
                             </div>
                           </div>

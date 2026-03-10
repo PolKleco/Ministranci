@@ -25,6 +25,14 @@ export function isMissingColumnError(error: { message?: string } | null) {
   );
 }
 
+function isMissingImpersonationSchema(error: { message?: string } | null) {
+  const message = error?.message || '';
+  return (
+    message.includes('admin_impersonation_sessions') &&
+    (message.includes('does not exist') || message.includes("Could not find the table"))
+  );
+}
+
 export async function findParafiaForAdmin(parafiaId: string, adminId: string) {
   const { data, error } = await supabaseAdmin
     .from('parafie')
@@ -33,6 +41,28 @@ export async function findParafiaForAdmin(parafiaId: string, adminId: string) {
     .single();
 
   if (error || !data) return null;
-  if (data.admin_id !== adminId) return null;
+  if (data.admin_id === adminId) return data as Record<string, unknown>;
+
+  const { data: impersonationSession, error: impersonationError } = await supabaseAdmin
+    .from('admin_impersonation_sessions')
+    .select('id')
+    .eq('admin_user_id', adminId)
+    .eq('target_parafia_id', parafiaId)
+    .eq('impersonated_typ', 'ksiadz')
+    .is('ended_at', null)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (impersonationError) {
+    if (isMissingImpersonationSchema(impersonationError)) {
+      return null;
+    }
+    console.error('findParafiaForAdmin impersonation check error:', impersonationError);
+    return null;
+  }
+
+  if (!impersonationSession) return null;
+
   return data as Record<string, unknown>;
 }

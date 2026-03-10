@@ -6063,20 +6063,22 @@ export default function MinistranciApp() {
 
   if (!currentUser) {
     return (
-      <div className="auth-screen min-h-screen relative flex items-center justify-center p-4 overflow-hidden" style={{ background: 'linear-gradient(180deg, #09111d 0%, #0a1628 42%, #0d1a2c 100%)' }}>
+      <div className="auth-screen min-h-screen relative flex items-center justify-center p-4 overflow-hidden" style={{ background: 'linear-gradient(180deg, #050510 0%, #080a19 56%, #0b1020 100%)' }}>
         {/* Tło dekoracyjne */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full opacity-[0.12]" style={{ background: 'radial-gradient(circle, rgba(125,211,252,0.38) 0%, transparent 70%)' }} />
-          <div className="absolute bottom-[-15%] right-[-5%] w-[400px] h-[400px] rounded-full opacity-[0.10]" style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.30) 0%, transparent 70%)' }} />
-          <div className="absolute top-[10%] right-[15%] w-1 h-1 bg-sky-300/30 rounded-full" />
-          <div className="absolute top-[25%] left-[20%] w-0.5 h-0.5 bg-cyan-300/20 rounded-full" />
-          <div className="absolute bottom-[30%] left-[10%] w-1.5 h-1.5 bg-blue-300/15 rounded-full" />
+          <div className="absolute top-[-22%] left-[-14%] w-[620px] h-[620px] rounded-full opacity-[0.20]" style={{ background: 'radial-gradient(circle, rgba(251,191,36,0.46) 0%, transparent 72%)' }} />
+          <div className="absolute bottom-[-18%] right-[-9%] w-[520px] h-[520px] rounded-full opacity-[0.16]" style={{ background: 'radial-gradient(circle, rgba(56,189,248,0.30) 0%, transparent 72%)' }} />
+          <div className="absolute top-[14%] right-[24%] w-[360px] h-[360px] rounded-full opacity-[0.11]" style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.24) 0%, transparent 74%)' }} />
+          <div className="absolute bottom-[8%] left-[16%] w-[300px] h-[300px] rounded-full opacity-[0.10]" style={{ background: 'radial-gradient(circle, rgba(251,191,36,0.22) 0%, transparent 74%)' }} />
+          <div className="absolute top-[10%] right-[15%] w-1 h-1 bg-amber-300/35 rounded-full" />
+          <div className="absolute top-[25%] left-[20%] w-0.5 h-0.5 bg-amber-200/30 rounded-full" />
+          <div className="absolute bottom-[30%] left-[10%] w-1.5 h-1.5 bg-violet-300/20 rounded-full" />
         </div>
 
         <div className="w-full max-w-[420px] relative z-10">
           {/* Logo i nagłówek */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #22d3ee 100%)', boxShadow: '0 8px 32px rgba(56,189,248,0.28)' }}>
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 8px 32px rgba(245,158,11,0.28)' }}>
               <img src="/logo/mark-white.svg" alt="Logo Ministranci" className="w-12 h-12" />
             </div>
             <h1 className="text-2xl font-bold text-slate-100 mb-1">
@@ -6096,7 +6098,11 @@ export default function MinistranciApp() {
           </div>
 
           {/* Karta formularza */}
-          <div className="rounded-2xl border border-white/[0.06] p-6 sm:p-8" style={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)', backdropFilter: 'blur(20px)', boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)' }}>
+          <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] p-6 sm:p-8" style={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%)', backdropFilter: 'blur(20px)', boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)' }}>
+            <div className="pointer-events-none absolute -left-20 -top-20 h-56 w-56 rounded-full bg-amber-400/12 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-24 -right-16 h-64 w-64 rounded-full bg-sky-300/10 blur-3xl" />
+            <div className="pointer-events-none absolute left-1/3 top-1/2 h-44 w-44 -translate-y-1/2 rounded-full bg-violet-300/8 blur-3xl" />
+            <div className="relative z-10">
 
             {/* Błąd ogólny */}
             {authErrors.general && (
@@ -6111,11 +6117,11 @@ export default function MinistranciApp() {
             {/* ===== EKRAN: POTWIERDZENIE EMAIL (KSIĄDZ) ===== */}
             {authMode === 'email-sent' ? (
               <div className="text-center py-4">
-                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4" style={{ background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.25)' }}>
-                  <Mail className="w-7 h-7 text-sky-300" />
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4" style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                  <Mail className="w-7 h-7 text-amber-300" />
                 </div>
                 <p className="text-slate-200 font-semibold text-lg mb-1">Potwierdź swój adres e-mail</p>
-                <p className="text-sky-300 font-medium mb-4">{email}</p>
+                <p className="text-amber-300 font-medium mb-4">{email}</p>
                 <p className="text-slate-400 text-sm leading-relaxed mb-6">
                   Wysłaliśmy wiadomość z linkiem potwierdzającym na Twój adres e-mail.
                   Kliknij link w wiadomości, aby aktywować konto księdza.
@@ -6125,7 +6131,7 @@ export default function MinistranciApp() {
                 </p>
                 <button
                   onClick={() => { setAuthMode('login'); setIsLogin(true); setAuthErrors({}); }}
-                  className="text-sm text-sky-300 hover:text-sky-200 transition-colors font-medium"
+                  className="text-sm text-amber-300 hover:text-amber-200 transition-colors font-medium"
                 >
                   Wróć do logowania
                 </button>
@@ -6136,13 +6142,13 @@ export default function MinistranciApp() {
                   <Mail className="w-7 h-7 text-green-400" />
                 </div>
                 <p className="text-slate-300 text-sm mb-1">Wiadomość została wysłana na adres:</p>
-                <p className="text-sky-300 font-medium mb-6">{email}</p>
+                <p className="text-amber-300 font-medium mb-6">{email}</p>
                 <p className="text-slate-500 text-xs leading-relaxed mb-6">
                   Kliknij link w wiadomości e-mail, aby ustawić nowe hasło. Jeśli nie widzisz wiadomości, sprawdź folder spam.
                 </p>
                 <button
                   onClick={() => { setAuthMode('login'); setIsLogin(true); setAuthErrors({}); }}
-                  className="text-sm text-sky-300 hover:text-sky-200 transition-colors font-medium"
+                  className="text-sm text-amber-300 hover:text-amber-200 transition-colors font-medium"
                 >
                   Wróć do logowania
                 </button>
@@ -6163,7 +6169,7 @@ export default function MinistranciApp() {
                       className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
                         authErrors.email
                           ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-sky-300/50 focus:ring-1 focus:ring-sky-300/20'
+                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-300/50 focus:ring-1 focus:ring-amber-300/20'
                       }`}
                     />
                   </div>
@@ -6174,7 +6180,7 @@ export default function MinistranciApp() {
                   onClick={handleResetPassword}
                   disabled={authLoading}
                   className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2"
-                  style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #22d3ee 100%)', boxShadow: '0 4px 16px rgba(56,189,248,0.25)' }}
+                  style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 4px 16px rgba(245,158,11,0.25)' }}
                 >
                   {authLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                   Wyślij link resetujący
@@ -6208,7 +6214,7 @@ export default function MinistranciApp() {
                       className={`w-full pl-10 pr-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
                         authErrors.email
                           ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-sky-300/50 focus:ring-1 focus:ring-sky-300/20'
+                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-300/50 focus:ring-1 focus:ring-amber-300/20'
                       }`}
                     />
                   </div>
@@ -6230,7 +6236,7 @@ export default function MinistranciApp() {
                       className={`w-full pl-10 pr-12 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
                         authErrors.password
                           ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-sky-300/50 focus:ring-1 focus:ring-sky-300/20'
+                          : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-300/50 focus:ring-1 focus:ring-amber-300/20'
                       }`}
                     />
                     <button
@@ -6249,7 +6255,7 @@ export default function MinistranciApp() {
                   <div className="text-right -mt-1">
                     <button
                       onClick={() => { setAuthMode('forgot'); setAuthErrors({}); }}
-                      className="text-xs text-sky-300/80 hover:text-sky-200 transition-colors"
+                      className="text-xs text-amber-300/80 hover:text-amber-200 transition-colors"
                     >
                       Nie pamiętasz hasła?
                     </button>
@@ -6270,7 +6276,7 @@ export default function MinistranciApp() {
                           className={`w-full px-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
                             authErrors.imie
                               ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                              : 'border border-white/[0.08] bg-white/[0.03] focus:border-sky-300/50 focus:ring-1 focus:ring-sky-300/20'
+                              : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-300/50 focus:ring-1 focus:ring-amber-300/20'
                           }`}
                         />
                         {authErrors.imie && <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.imie}</p>}
@@ -6285,7 +6291,7 @@ export default function MinistranciApp() {
                           className={`w-full px-4 py-3 rounded-xl text-sm text-slate-200 placeholder:text-slate-600 outline-none transition-all duration-200 ${
                             authErrors.nazwisko
                               ? 'border border-red-500/50 bg-red-500/5 focus:border-red-400/70 focus:ring-1 focus:ring-red-400/20'
-                              : 'border border-white/[0.08] bg-white/[0.03] focus:border-sky-300/50 focus:ring-1 focus:ring-sky-300/20'
+                              : 'border border-white/[0.08] bg-white/[0.03] focus:border-amber-300/50 focus:ring-1 focus:ring-amber-300/20'
                           }`}
                         />
                         {authErrors.nazwisko && <p className="mt-1.5 text-xs text-red-400 flex items-center gap-1.5"><span className="inline-block w-1 h-1 rounded-full bg-red-400" />{authErrors.nazwisko}</p>}
@@ -6301,7 +6307,7 @@ export default function MinistranciApp() {
                           onClick={() => { setUserType('ministrant'); setDiecezja(''); setDekanat(''); setDiecezjaSearch(''); setAuthErrors(prev => ({ ...prev, diecezja: undefined, dekanat: undefined })); }}
                           className={`p-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
                             userType === 'ministrant'
-                              ? 'border-sky-300/45 bg-sky-300/10 text-sky-200'
+                              ? 'border-amber-300/45 bg-amber-300/10 text-amber-200'
                               : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/[0.15] hover:text-slate-300'
                           }`}
                         >
@@ -6313,7 +6319,7 @@ export default function MinistranciApp() {
                           onClick={() => setUserType('ksiadz')}
                           className={`p-3 rounded-xl text-sm font-medium transition-all duration-200 border ${
                             userType === 'ksiadz'
-                              ? 'border-sky-300/45 bg-sky-300/10 text-sky-200'
+                              ? 'border-amber-300/45 bg-amber-300/10 text-amber-200'
                               : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/[0.15] hover:text-slate-300'
                           }`}
                         >
@@ -6356,13 +6362,13 @@ export default function MinistranciApp() {
                                     onChange={(e) => setDiecezjaSearch(e.target.value)}
                                     placeholder="Szukaj diecezji..."
                                     autoFocus
-                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-sm text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-sky-300/40"
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-sm text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-300/40"
                                   />
                                 </div>
                               </div>
 
                               {/* Lista diecezji */}
-                              <div className="max-h-[200px] overflow-y-auto py-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(125,211,252,0.35) transparent' }}>
+                              <div className="max-h-[200px] overflow-y-auto py-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(245,158,11,0.35) transparent' }}>
                                 {DIECEZJE_POLSKIE
                                   .filter(d => d.toLowerCase().includes(diecezjaSearch.toLowerCase()))
                                   .map(d => (
@@ -6378,11 +6384,11 @@ export default function MinistranciApp() {
                                       }}
                                       className={`w-full px-4 py-2.5 text-xs text-left transition-colors flex items-center gap-2 ${
                                         d === diecezja
-                                          ? 'bg-sky-300/10 text-sky-200'
+                                          ? 'bg-amber-300/10 text-amber-200'
                                           : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
                                       }`}
                                     >
-                                      {d === diecezja && <Check className="w-3 h-3 text-sky-300 shrink-0" />}
+                                      {d === diecezja && <Check className="w-3 h-3 text-amber-300 shrink-0" />}
                                       <span className={d === diecezja ? '' : 'ml-5'}>{d}</span>
                                     </button>
                                   ))
@@ -6430,11 +6436,11 @@ export default function MinistranciApp() {
                                     onChange={(e) => setDekanatSearch(e.target.value)}
                                     placeholder="Szukaj dekanatu..."
                                     autoFocus
-                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-sm text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-sky-300/40"
+                                    className="w-full pl-9 pr-3 py-2 rounded-lg text-sm text-slate-200 placeholder:text-slate-600 bg-white/[0.04] border border-white/[0.06] outline-none focus:border-amber-300/40"
                                   />
                                 </div>
                               </div>
-                              <div className="max-h-[200px] overflow-y-auto py-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(125,211,252,0.35) transparent' }}>
+                              <div className="max-h-[200px] overflow-y-auto py-1" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(245,158,11,0.35) transparent' }}>
                                 {(DEKANATY[diecezja] || [])
                                   .filter(d => d.toLowerCase().includes(dekanatSearch.toLowerCase()))
                                   .map(d => (
@@ -6449,11 +6455,11 @@ export default function MinistranciApp() {
                                       }}
                                       className={`w-full px-4 py-2.5 text-xs text-left transition-colors flex items-center gap-2 ${
                                         d === dekanat
-                                          ? 'bg-sky-300/10 text-sky-200'
+                                          ? 'bg-amber-300/10 text-amber-200'
                                           : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200'
                                       }`}
                                     >
-                                      {d === dekanat && <Check className="w-3 h-3 text-sky-300 shrink-0" />}
+                                      {d === dekanat && <Check className="w-3 h-3 text-amber-300 shrink-0" />}
                                       <span className={d === dekanat ? '' : 'ml-5'}>{d}</span>
                                     </button>
                                   ))
@@ -6481,16 +6487,16 @@ export default function MinistranciApp() {
                         />
                         <label
                           htmlFor="terms-auth"
-                          className="w-[18px] h-[18px] rounded border border-white/[0.15] bg-white/[0.03] flex items-center justify-center cursor-pointer transition-all peer-checked:bg-sky-300/20 peer-checked:border-sky-300/55"
+                          className="w-[18px] h-[18px] rounded border border-white/[0.15] bg-white/[0.03] flex items-center justify-center cursor-pointer transition-all peer-checked:bg-amber-300/20 peer-checked:border-amber-300/55"
                         >
-                          {acceptedTerms && <Check className="w-3 h-3 text-sky-300" />}
+                          {acceptedTerms && <Check className="w-3 h-3 text-amber-300" />}
                         </label>
                       </div>
                       <label htmlFor="terms-auth" className="text-xs text-slate-500 leading-relaxed cursor-pointer">
                         Akceptuję{' '}
-                        <a href="/regulamin" target="_blank" className="text-sky-300/80 hover:text-sky-200 underline underline-offset-2 transition-colors">regulamin</a>
+                        <a href="/regulamin" target="_blank" className="text-amber-300/80 hover:text-amber-200 underline underline-offset-2 transition-colors">regulamin</a>
                         {' '}i{' '}
-                        <a href="/polityka-prywatnosci" target="_blank" className="text-sky-300/80 hover:text-sky-200 underline underline-offset-2 transition-colors">politykę prywatności</a>
+                        <a href="/polityka-prywatnosci" target="_blank" className="text-amber-300/80 hover:text-amber-200 underline underline-offset-2 transition-colors">politykę prywatności</a>
                       </label>
                     </div>
                   </>
@@ -6501,7 +6507,7 @@ export default function MinistranciApp() {
                   onClick={handleAuth}
                   disabled={authLoading}
                   className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 mt-2 hover:brightness-110 active:scale-[0.98]"
-                  style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #22d3ee 100%)', boxShadow: '0 4px 16px rgba(56,189,248,0.25)' }}
+                  style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 4px 16px rgba(245,158,11,0.25)' }}
                 >
                   {authLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                   {isLogin ? 'Zaloguj się' : 'Utwórz konto'}
@@ -6526,7 +6532,7 @@ export default function MinistranciApp() {
                         setAcceptedTerms(false);
                         setAuthErrors({});
                       }}
-                      className="text-sky-300 hover:text-sky-200 font-medium transition-colors"
+                      className="text-amber-300 hover:text-amber-200 font-medium transition-colors"
                     >
                       {isLogin ? 'Zarejestruj się' : 'Zaloguj się'}
                     </button>
@@ -6534,6 +6540,7 @@ export default function MinistranciApp() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>

@@ -5106,16 +5106,42 @@ export default function MinistranciApp() {
     await saveMemberPermissions(member.id, nextPermissions);
   };
 
+  const manageParafiaMember = async (
+    payload: { action: 'approve' | 'setGroup' | 'reject'; memberId: string; grupa?: string | null }
+  ): Promise<{ ok: true; member?: Partial<Member> } | { ok: false; error: string }> => {
+    if (!currentUser?.parafia_id) {
+      return { ok: false, error: 'Brak aktywnej parafii.' };
+    }
+
+    try {
+      const res = await authFetch('/api/parafia/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          parafiaId: currentUser.parafia_id,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) {
+        return { ok: false, error: result?.error || 'Błąd serwera' };
+      }
+      return { ok: true, member: result?.member as Partial<Member> | undefined };
+    } catch {
+      return { ok: false, error: 'Błąd połączenia z serwerem' };
+    }
+  };
+
   const handleUpdateGrupa = async (grupa: GrupaType) => {
     if (!selectedMember) return;
 
-    const { error } = await supabase
-      .from('parafia_members')
-      .update({ grupa })
-      .eq('id', selectedMember.id);
-
-    if (error) {
-      alert('Nie udało się przypisać grupy: ' + error.message);
+    const result = await manageParafiaMember({
+      action: 'setGroup',
+      memberId: selectedMember.id,
+      grupa,
+    });
+    if (!result.ok) {
+      alert('Nie udało się przypisać grupy: ' + result.error);
       return;
     }
 
@@ -12206,9 +12232,19 @@ export default function MinistranciApp() {
                       size="sm"
                       className="bg-green-600 hover:bg-green-700 text-white"
                       onClick={async () => {
-                        await supabase.from('parafia_members').update({ zatwierdzony: true }).eq('id', member.id);
+                        const result = await manageParafiaMember({
+                          action: 'approve',
+                          memberId: member.id,
+                        });
+                        if (!result.ok) {
+                          alert('Nie udało się zatwierdzić ministranta: ' + result.error);
+                          return;
+                        }
+                        const nextApprovedValue = typeof result.member?.zatwierdzony === 'boolean'
+                          ? result.member.zatwierdzony
+                          : true;
                         setMembers(prev => {
-                          const updated = prev.map(m => m.id === member.id ? { ...m, zatwierdzony: true } : m);
+                          const updated = prev.map(m => m.id === member.id ? { ...m, zatwierdzony: nextApprovedValue } : m);
                           if (updated.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length === 0) {
                             setShowZatwierdzModal(false);
                           }
@@ -12225,8 +12261,14 @@ export default function MinistranciApp() {
                       className="text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
                       onClick={async () => {
                         if (!confirm(`Czy na pewno chcesz odrzucić ${member.imie} ${member.nazwisko || ''}?`)) return;
-                        await supabase.from('parafia_members').delete().eq('id', member.id);
-                        await supabase.from('profiles').update({ parafia_id: null }).eq('id', member.profile_id);
+                        const result = await manageParafiaMember({
+                          action: 'reject',
+                          memberId: member.id,
+                        });
+                        if (!result.ok) {
+                          alert('Nie udało się odrzucić ministranta: ' + result.error);
+                          return;
+                        }
                         setMembers(prev => {
                           const updated = prev.filter(m => m.id !== member.id);
                           if (updated.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length === 0) {

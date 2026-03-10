@@ -375,25 +375,32 @@ export default function AdminPanel() {
     return (result?.data as T) ?? (undefined as T);
   }, []);
 
-  const verifyAdminAccess = useCallback(async (accessToken?: string) => {
+  const verifyAdminAccess = useCallback(async (accessToken?: string): Promise<{ ok: boolean; error?: string }> => {
     let token = accessToken;
     if (!token) {
       const { data: { session } } = await supabaseAuth.auth.getSession();
       token = session?.access_token;
     }
-    if (!token) return false;
+    if (!token) return { ok: false, error: 'Brak aktywnej sesji' };
 
-    const res = await fetch('/api/admin/panel', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ action: 'loadStats' }),
-    });
+    try {
+      const res = await fetch('/api/admin/panel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: 'loadStats' }),
+      });
 
-    const result = await res.json().catch(() => ({}));
-    return !!res.ok && !!result?.ok;
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) {
+        return { ok: false, error: result?.error || `HTTP ${res.status}` };
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Brak połączenia z API admina' };
+    }
   }, []);
 
   const adminUploadFile = useCallback(async (file: File) => {
@@ -520,8 +527,8 @@ export default function AdminPanel() {
     // Check existing Supabase session
     supabaseAuth.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        const hasAdminAccess = await verifyAdminAccess(session.access_token);
-        setIsAuthenticated(hasAdminAccess);
+        const access = await verifyAdminAccess(session.access_token);
+        setIsAuthenticated(access.ok);
       }
       setAuthChecking(false);
     });
@@ -538,10 +545,11 @@ export default function AdminPanel() {
       }
       if (session && event === 'SIGNED_IN') {
         void (async () => {
-          const hasAdminAccess = await verifyAdminAccess(session.access_token);
-          setIsAuthenticated(hasAdminAccess);
-          if (!hasAdminAccess) {
-            setAuthError('Brak uprawnień administratora dla tego konta');
+          const access = await verifyAdminAccess(session.access_token);
+          setIsAuthenticated(access.ok);
+          if (!access.ok) {
+            const reason = access.error === 'Forbidden' ? 'Brak uprawnień administratora dla tego konta' : `Odmowa logowania admina: ${access.error || 'nieznany błąd'}`;
+            setAuthError(reason);
             await supabaseAuth.auth.signOut();
           }
         })();
@@ -579,10 +587,11 @@ export default function AdminPanel() {
       return;
     }
 
-    const hasAdminAccess = await verifyAdminAccess(data.session?.access_token);
-    if (!hasAdminAccess) {
+    const access = await verifyAdminAccess(data.session?.access_token);
+    if (!access.ok) {
       await supabaseAuth.auth.signOut();
-      setAuthError('Brak uprawnień administratora dla tego konta');
+      const reason = access.error === 'Forbidden' ? 'Brak uprawnień administratora dla tego konta' : `Odmowa logowania admina: ${access.error || 'nieznany błąd'}`;
+      setAuthError(reason);
       setAuthLoading(false);
       return;
     }

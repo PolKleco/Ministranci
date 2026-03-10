@@ -6960,59 +6960,59 @@ export default function MinistranciApp() {
             } as Record<string, { list: string; trigger: string }>)[dzisLiturgiczny.kolor] || { list: 'bg-white dark:bg-gray-900', trigger: 'text-green-700 dark:text-green-400' } : { list: 'bg-muted', trigger: '' };
             const tc = litColor.trigger;
             return (
-          <TabsList className={`grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6 ${litColor.list}`}>
-            <TabsTrigger value="tablica" className={`relative ${tc}`} onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); }}>
-              <MessageSquare className="w-4 h-4 sm:mr-2" />
-              Aktualności
-              {nieprzeczytanePowiadomienia > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {nieprzeczytanePowiadomienia}
-                </span>
-              )}
-            </TabsTrigger>
-            {canManageMembers && (
-              <TabsTrigger value="ministranci" className={`${tc} relative`}>
-                <Users className="w-4 h-4 sm:mr-2" />
-                Ministranci
-                <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5">{members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length}</span>
-                {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1">
-                    {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length}
+            <TabsList className={`grid w-full grid-cols-4 md:grid-cols-8 mb-3 sm:mb-6 ${litColor.list}`}>
+              <TabsTrigger value="tablica" className={`relative ${tc}`} onClick={() => { setSelectedWatek(null); setTablicaWiadomosci([]); setEditingAnkietaId(null); setShowArchiwum(false); }}>
+                <MessageSquare className="w-4 h-4 sm:mr-2" />
+                Aktualności
+                {nieprzeczytanePowiadomienia > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {nieprzeczytanePowiadomienia}
                   </span>
                 )}
               </TabsTrigger>
-            )}
-            <TabsTrigger value="ranking" className={`${tc} relative`}>
-              <Trophy className="w-4 h-4 sm:mr-2" />
-              Ranking
-              {canApproveRankingSubmissions && obecnosci.filter(o => o.status === 'oczekuje').length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
-                  {obecnosci.filter(o => o.status === 'oczekuje').length}
-                </span>
+              {canManageMembers && (
+                <TabsTrigger value="ministranci" className={`${tc} relative`}>
+                  <Users className="w-4 h-4 sm:mr-2" />
+                  Ministranci
+                  <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5">{members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).length}</span>
+                  {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold bg-red-500 text-white rounded-full px-1">
+                      {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length}
+                    </span>
+                  )}
+                </TabsTrigger>
               )}
-            </TabsTrigger>
-            <TabsTrigger value="sluzby" className={tc}>
-              <Star className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Wydarzenia</span><span className="sm:hidden">Wydarzenia</span>
-              {sluzby.length > 0 && <span className="ml-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full px-1.5">{sluzby.length}</span>}
-            </TabsTrigger>
-            <TabsTrigger value="kalendarz" className={tc}>
-              <Calendar className="w-4 h-4 sm:mr-2" />
-              Kalendarz
-            </TabsTrigger>
-            <TabsTrigger value="poslugi" className={tc}>
-              <HandHelping className="w-4 h-4 sm:mr-2" />
-              Posługi
-            </TabsTrigger>
-            <TabsTrigger value="modlitwy" className={tc}>
-              <BookOpen className="w-4 h-4 sm:mr-2" />
-              Modlitwy
-            </TabsTrigger>
-            <TabsTrigger value="wskazowki" className={tc}>
-              <Lightbulb className="w-4 h-4 sm:mr-2" />
-              Wskazówki
-            </TabsTrigger>
-          </TabsList>
+              <TabsTrigger value="ranking" className={`${tc} relative`}>
+                <Trophy className="w-4 h-4 sm:mr-2" />
+                Ranking
+                {canApproveRankingSubmissions && obecnosci.filter(o => o.status === 'oczekuje').length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 dark:bg-red-600 text-white text-[10px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                    {obecnosci.filter(o => o.status === 'oczekuje').length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="sluzby" className={tc}>
+                <Star className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Wydarzenia</span><span className="sm:hidden">Wydarzenia</span>
+                {sluzby.length > 0 && <span className="ml-1 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full px-1.5">{sluzby.length}</span>}
+              </TabsTrigger>
+              <TabsTrigger value="kalendarz" className={tc}>
+                <Calendar className="w-4 h-4 sm:mr-2" />
+                Kalendarz
+              </TabsTrigger>
+              <TabsTrigger value="poslugi" className={tc}>
+                <HandHelping className="w-4 h-4 sm:mr-2" />
+                Posługi
+              </TabsTrigger>
+              <TabsTrigger value="modlitwy" className={tc}>
+                <BookOpen className="w-4 h-4 sm:mr-2" />
+                Modlitwy
+              </TabsTrigger>
+              <TabsTrigger value="wskazowki" className={tc}>
+                <Lightbulb className="w-4 h-4 sm:mr-2" />
+                Wskazówki
+              </TabsTrigger>
+            </TabsList>
             );
           })()}
 

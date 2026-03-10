@@ -151,6 +151,7 @@ const FULL_CONFIGURATION_PERMISSION_KEYS: ParishPermissionKey[] = PARISH_PERMISS
   (permission) => permission !== RANKING_APPROVAL_PERMISSION_KEY
 );
 const CLEAR_ASSIGN_MEMBER_VALUE = '__clear_assign_member__';
+const EXTERNAL_ASSIGNMENT_VALUE = 'EXTERNAL';
 const PRIEST_RANKING_INFO_DISMISSED_KEY_PREFIX = 'priest-ranking-info-dismissed';
 const PRIEST_MINISTRANCI_INFO_DISMISSED_KEY_PREFIX = 'priest-ministranci-info-dismissed';
 const PRIEST_WYDARZENIA_INFO_DISMISSED_KEY_PREFIX = 'priest-wydarzenia-info-dismissed';
@@ -250,6 +251,7 @@ interface Funkcja {
   sluzba_id: string;
   typ: FunkcjaType;
   ministrant_id: string | null;
+  osoba_zewnetrzna?: string | null;
   aktywna: boolean;
   zaakceptowana: boolean;
   godzina?: string;
@@ -2183,6 +2185,7 @@ export default function MinistranciApp() {
     godzina: '',
     funkcjePerHour: {} as FunkcjePerHourMap
   });
+  const [sluzbaExternalAssignments, setSluzbaExternalAssignments] = useState<Record<string, string>>({});
   const [sluzbaEkstraPunkty, setSluzbaEkstraPunkty] = useState<number | null>(null);
 
   // Kalendarz liturgiczny
@@ -4352,19 +4355,61 @@ export default function MinistranciApp() {
       return [typ, ...extras];
     });
 
-  const buildFunkcjeRecords = (sluzbaId: string, godzina: string, funkcjePerHour: FunkcjePerHourMap) => {
+  const getExternalAssignmentKey = (hour: string, funkcjaKey: string) => `${hour}::${funkcjaKey}`;
+
+  const findMissingExternalAssignmentLabel = (
+    godzina: string,
+    funkcjePerHour: FunkcjePerHourMap,
+    externalAssignments: Record<string, string>
+  ) => {
     const hours = parseGodziny(godzina);
-    const records: { sluzba_id: string; typ: string; ministrant_id: string | null; aktywna: boolean; zaakceptowana: boolean; godzina: string }[] = [];
+    for (const h of hours) {
+      const hourFunkcje = funkcjePerHour[h] || {};
+      const keys = new Set<string>([...FUNKCJE_TYPES, ...Object.keys(hourFunkcje)]);
+      for (const key of keys) {
+        const assigned = hourFunkcje[key] || 'BEZ';
+        if (assigned !== EXTERNAL_ASSIGNMENT_VALUE) continue;
+        const externalName = (externalAssignments[getExternalAssignmentKey(h, key)] || '').trim();
+        if (!externalName) {
+          const baseTyp = getFunkcjaBaseType(key);
+          const slot = getFunkcjaSlotNumber(key);
+          return slot > 1 ? `${baseTyp} (${slot})` : baseTyp;
+        }
+      }
+    }
+    return null;
+  };
+
+  const buildFunkcjeRecords = (
+    sluzbaId: string,
+    godzina: string,
+    funkcjePerHour: FunkcjePerHourMap,
+    externalAssignments: Record<string, string>
+  ) => {
+    const hours = parseGodziny(godzina);
+    const records: {
+      sluzba_id: string;
+      typ: string;
+      ministrant_id: string | null;
+      osoba_zewnetrzna: string | null;
+      aktywna: boolean;
+      zaakceptowana: boolean;
+      godzina: string;
+    }[] = [];
     hours.forEach(h => {
       const hourFunkcje = funkcjePerHour[h] || {};
       const keys = new Set<string>([...FUNKCJE_TYPES, ...Object.keys(hourFunkcje)]);
       keys.forEach((key) => {
         const typ = getFunkcjaBaseType(key);
         const assigned = hourFunkcje[key] || 'BEZ';
+        const externalName = assigned === EXTERNAL_ASSIGNMENT_VALUE
+          ? (externalAssignments[getExternalAssignmentKey(h, key)] || '').trim()
+          : '';
         records.push({
           sluzba_id: sluzbaId,
           typ,
-          ministrant_id: (assigned !== 'BEZ' && assigned !== 'UNASSIGNED') ? assigned : null,
+          ministrant_id: (assigned !== 'BEZ' && assigned !== 'UNASSIGNED' && assigned !== EXTERNAL_ASSIGNMENT_VALUE) ? assigned : null,
+          osoba_zewnetrzna: assigned === EXTERNAL_ASSIGNMENT_VALUE ? (externalName || null) : null,
           aktywna: assigned !== 'BEZ',
           zaakceptowana: false,
           godzina: h,
@@ -4382,9 +4427,44 @@ export default function MinistranciApp() {
       return;
     }
 
+    const missingExternalAssignment = findMissingExternalAssignmentLabel(
+      cleanGodzina,
+      sluzbaForm.funkcjePerHour,
+      sluzbaExternalAssignments
+    );
+    if (missingExternalAssignment) {
+      alert(`Uzupełnij imię i nazwisko osoby z zewnątrz dla funkcji: ${missingExternalAssignment}.`);
+      return;
+    }
+
+    const buildSluzbaSaveErrorMessage = (prefix: string, error: { message?: string } | null | undefined) => {
+      const details = error?.message || 'Nieznany błąd';
+      if (details.includes('osoba_zewnetrzna')) {
+        return `${prefix}: ${details}. W bazie brakuje migracji kolumny osoby z zewnątrz (uruchom add-funkcje-external-assignee.sql).`;
+      }
+      return `${prefix}: ${details}`;
+    };
+
     if (selectedSluzba) {
       // Edycja
-      await supabase
+      const previousSluzbaSnapshot = {
+        nazwa: selectedSluzba.nazwa,
+        data: selectedSluzba.data,
+        godzina: selectedSluzba.godzina,
+        ekstra_punkty: selectedSluzba.ekstra_punkty ?? null,
+      };
+      const previousFunkcjeSnapshot = (selectedSluzba.funkcje || []).map((f) => ({
+        id: f.id,
+        sluzba_id: selectedSluzba.id,
+        typ: f.typ,
+        ministrant_id: f.ministrant_id,
+        osoba_zewnetrzna: f.osoba_zewnetrzna ?? null,
+        aktywna: f.aktywna,
+        zaakceptowana: f.zaakceptowana,
+        godzina: f.godzina ?? null,
+      }));
+
+      const { error: updateSluzbaError } = await supabase
         .from('sluzby')
         .update({
           nazwa: sluzbaForm.nazwa,
@@ -4393,14 +4473,126 @@ export default function MinistranciApp() {
           ekstra_punkty: sluzbaEkstraPunkty
         })
         .eq('id', selectedSluzba.id);
+      if (updateSluzbaError) {
+        alert(buildSluzbaSaveErrorMessage('Nie udało się zapisać zmian wydarzenia', updateSluzbaError));
+        return;
+      }
 
-      await supabase
-        .from('funkcje')
-        .delete()
-        .eq('sluzba_id', selectedSluzba.id);
+      const funkcjeToInsert = buildFunkcjeRecords(
+        selectedSluzba.id,
+        cleanGodzina,
+        sluzbaForm.funkcjePerHour,
+        sluzbaExternalAssignments
+      );
+      const fallbackHour = parseGodziny(cleanGodzina)[0] || cleanGodzina;
+      const buildFunkcjaSyncPairs = <T extends { typ: string; godzina?: string | null }>(rows: T[]) => {
+        const counts: Record<string, number> = {};
+        return rows.map((row) => {
+          const hour = (row.godzina || fallbackHour).trim();
+          const counterKey = `${hour}::${row.typ}`;
+          const slot = (counts[counterKey] || 0) + 1;
+          counts[counterKey] = slot;
+          return {
+            key: `${hour}::${row.typ}::${slot}`,
+            row,
+          };
+        });
+      };
 
-      const funkcjeToInsert = buildFunkcjeRecords(selectedSluzba.id, cleanGodzina, sluzbaForm.funkcjePerHour);
-      await supabase.from('funkcje').insert(funkcjeToInsert);
+      const previousPairs = buildFunkcjaSyncPairs(previousFunkcjeSnapshot);
+      const previousByKey = new Map(previousPairs.map((entry) => [entry.key, entry.row]));
+      const nextPairsRaw = buildFunkcjaSyncPairs(funkcjeToInsert);
+      const nextPairs = nextPairsRaw.filter((entry) => {
+        if (previousByKey.has(entry.key)) return true;
+        // Starsze wydarzenia często nie mają zapisanych "pustych" funkcji.
+        // Pomijamy je przy edycji, żeby aktualizacja mogła iść wyłącznie przez UPDATE.
+        return entry.row.aktywna || !!entry.row.ministrant_id || !!entry.row.osoba_zewnetrzna;
+      });
+      const canUseUpdateOnly =
+        previousPairs.length === nextPairs.length &&
+        nextPairs.every((entry) => previousByKey.has(entry.key));
+
+      if (canUseUpdateOnly) {
+        const appliedUpdates: { id: string; previous: typeof previousFunkcjeSnapshot[number] }[] = [];
+        for (const entry of nextPairs) {
+          const previousRow = previousByKey.get(entry.key);
+          if (!previousRow) continue;
+
+          const { error: updateFunkcjaError } = await supabase
+            .from('funkcje')
+            .update({
+              typ: entry.row.typ,
+              ministrant_id: entry.row.ministrant_id,
+              osoba_zewnetrzna: entry.row.osoba_zewnetrzna,
+              aktywna: entry.row.aktywna,
+              zaakceptowana: entry.row.zaakceptowana,
+              godzina: entry.row.godzina,
+            })
+            .eq('id', previousRow.id)
+            .eq('sluzba_id', selectedSluzba.id);
+
+          if (updateFunkcjaError) {
+            await supabase.from('sluzby').update(previousSluzbaSnapshot).eq('id', selectedSluzba.id);
+            for (const applied of [...appliedUpdates].reverse()) {
+              await supabase
+                .from('funkcje')
+                .update({
+                  typ: applied.previous.typ,
+                  ministrant_id: applied.previous.ministrant_id,
+                  osoba_zewnetrzna: applied.previous.osoba_zewnetrzna,
+                  aktywna: applied.previous.aktywna,
+                  zaakceptowana: applied.previous.zaakceptowana,
+                  godzina: applied.previous.godzina,
+                })
+                .eq('id', applied.id)
+                .eq('sluzba_id', selectedSluzba.id);
+            }
+            alert(buildSluzbaSaveErrorMessage('Nie udało się zapisać funkcji po edycji', updateFunkcjaError));
+            await loadSluzby();
+            return;
+          }
+
+          appliedUpdates.push({ id: previousRow.id, previous: previousRow });
+        }
+      } else {
+        const { error: deleteFunkcjeError } = await supabase
+          .from('funkcje')
+          .delete()
+          .eq('sluzba_id', selectedSluzba.id);
+        if (deleteFunkcjeError) {
+          alert(buildSluzbaSaveErrorMessage('Nie udało się przygotować aktualizacji funkcji', deleteFunkcjeError));
+          await loadSluzby();
+          return;
+        }
+
+        const { error: insertFunkcjeError } = await supabase.from('funkcje').insert(funkcjeToInsert);
+        if (insertFunkcjeError) {
+          const { error: restoreSluzbaError } = await supabase
+            .from('sluzby')
+            .update(previousSluzbaSnapshot)
+            .eq('id', selectedSluzba.id);
+
+          let restoreFunkcjeError: { message?: string } | null = null;
+          if (previousFunkcjeSnapshot.length > 0) {
+            const restoreResult = await supabase.from('funkcje').insert(previousFunkcjeSnapshot);
+            restoreFunkcjeError = restoreResult.error;
+          }
+
+          if (restoreSluzbaError || restoreFunkcjeError) {
+            alert(
+              `${buildSluzbaSaveErrorMessage('Nie udało się zapisać funkcji po edycji', insertFunkcjeError)} ` +
+              `Dodatkowo nie udało się automatycznie przywrócić poprzedniego stanu.`
+            );
+          } else {
+            alert(
+              `${buildSluzbaSaveErrorMessage('Nie udało się zapisać funkcji po edycji', insertFunkcjeError)} ` +
+              `Poprzedni stan wydarzenia został przywrócony.`
+            );
+          }
+          await loadSluzby();
+          return;
+        }
+      }
     } else {
       // Nowe wydarzenie
       const { data: newSluzba, error } = await supabase
@@ -4422,8 +4614,18 @@ export default function MinistranciApp() {
         return;
       }
 
-      const funkcjeToInsert = buildFunkcjeRecords(newSluzba.id, cleanGodzina, sluzbaForm.funkcjePerHour);
-      await supabase.from('funkcje').insert(funkcjeToInsert);
+      const funkcjeToInsert = buildFunkcjeRecords(
+        newSluzba.id,
+        cleanGodzina,
+        sluzbaForm.funkcjePerHour,
+        sluzbaExternalAssignments
+      );
+      const { error: insertFunkcjeError } = await supabase.from('funkcje').insert(funkcjeToInsert);
+      if (insertFunkcjeError) {
+        await supabase.from('sluzby').delete().eq('id', newSluzba.id);
+        alert(buildSluzbaSaveErrorMessage('Nie udało się zapisać funkcji nowego wydarzenia', insertFunkcjeError));
+        return;
+      }
 
       if (currentParafia) {
         authFetch('/api/push/send', {
@@ -4445,6 +4647,7 @@ export default function MinistranciApp() {
     setShowSluzbaModal(false);
     setSelectedSluzba(null);
     setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+    setSluzbaExternalAssignments({});
   };
 
   const parseGodziny = (godzina: string): string[] => {
@@ -4488,13 +4691,19 @@ export default function MinistranciApp() {
         },
       };
     });
+    setSluzbaExternalAssignments((prev) => {
+      const next = { ...prev };
+      delete next[getExternalAssignmentKey(hour, key)];
+      return next;
+    });
   };
 
   const handleEditSluzba = (sluzba: Sluzba) => {
     setSelectedSluzba(sluzba);
     const hours = parseGodziny(sluzba.godzina);
     const funkcjePerHour: FunkcjePerHourMap = {};
-    const mapFunkcjeToHourAssignments = (funkcje: Funkcja[]): FunkcjaAssignmentMap => {
+    const externalAssignments: Record<string, string> = {};
+    const mapFunkcjeToHourAssignments = (funkcje: Funkcja[], hour: string): FunkcjaAssignmentMap => {
       const counts: Record<string, number> = {};
       const hourFunkcje: FunkcjaAssignmentMap = {};
       funkcje.forEach((f) => {
@@ -4506,6 +4715,9 @@ export default function MinistranciApp() {
           hourFunkcje[key] = 'BEZ';
         } else if (f.ministrant_id) {
           hourFunkcje[key] = f.ministrant_id;
+        } else if (f.osoba_zewnetrzna) {
+          hourFunkcje[key] = EXTERNAL_ASSIGNMENT_VALUE;
+          externalAssignments[getExternalAssignmentKey(hour, key)] = f.osoba_zewnetrzna;
         } else {
           hourFunkcje[key] = 'UNASSIGNED';
         }
@@ -4516,11 +4728,11 @@ export default function MinistranciApp() {
     if (hours.length > 1) {
       // Multi-hour event: group funkcje by godzina
       hours.forEach(h => {
-        funkcjePerHour[h] = mapFunkcjeToHourAssignments(sluzba.funkcje.filter(f => f.godzina === h));
+        funkcjePerHour[h] = mapFunkcjeToHourAssignments(sluzba.funkcje.filter(f => f.godzina === h), h);
       });
     } else {
       // Single-hour: all funkcje go to that hour
-      funkcjePerHour[hours[0]] = mapFunkcjeToHourAssignments(sluzba.funkcje);
+      funkcjePerHour[hours[0]] = mapFunkcjeToHourAssignments(sluzba.funkcje, hours[0]);
     }
 
     setSluzbaForm({
@@ -4529,6 +4741,7 @@ export default function MinistranciApp() {
       godzina: sluzba.godzina,
       funkcjePerHour,
     });
+    setSluzbaExternalAssignments(externalAssignments);
     setSluzbaEkstraPunkty(sluzba.ekstra_punkty ?? null);
     setShowSluzbaModal(true);
   };
@@ -4648,12 +4861,26 @@ export default function MinistranciApp() {
   const handleInlineFunkcjaAssignment = async (sluzbaId: string, funkcja: Funkcja, nextValue: string) => {
     if (!canManageEvents) return;
 
-    const nextAssignment: Pick<Funkcja, 'aktywna' | 'ministrant_id' | 'zaakceptowana'> =
+    let externalName: string | null = null;
+    if (nextValue === EXTERNAL_ASSIGNMENT_VALUE) {
+      const raw = window.prompt('Wpisz imię i nazwisko osoby z zewnątrz dla tej funkcji:', funkcja.osoba_zewnetrzna || '');
+      if (raw === null) return;
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        alert('Wpisz imię i nazwisko osoby z zewnątrz.');
+        return;
+      }
+      externalName = trimmed;
+    }
+
+    const nextAssignment: Pick<Funkcja, 'aktywna' | 'ministrant_id' | 'osoba_zewnetrzna' | 'zaakceptowana'> =
       nextValue === 'BEZ'
-        ? { aktywna: false, ministrant_id: null, zaakceptowana: false }
+        ? { aktywna: false, ministrant_id: null, osoba_zewnetrzna: null, zaakceptowana: false }
         : nextValue === 'UNASSIGNED'
-          ? { aktywna: true, ministrant_id: null, zaakceptowana: false }
-          : { aktywna: true, ministrant_id: nextValue, zaakceptowana: false };
+          ? { aktywna: true, ministrant_id: null, osoba_zewnetrzna: null, zaakceptowana: false }
+          : nextValue === EXTERNAL_ASSIGNMENT_VALUE
+            ? { aktywna: true, ministrant_id: null, osoba_zewnetrzna: externalName, zaakceptowana: false }
+            : { aktywna: true, ministrant_id: nextValue, osoba_zewnetrzna: null, zaakceptowana: false };
 
     setSluzbaInlineSavingIds((prev) => {
       const next = new Set(prev);
@@ -5612,7 +5839,8 @@ export default function MinistranciApp() {
 
   // ==================== RENDERY ====================
 
-  const getMemberName = (id: string | null) => {
+  const getMemberName = (id: string | null, externalName?: string | null) => {
+    if (externalName?.trim()) return externalName.trim();
     if (!id) return '';
     if (id === currentUser?.id) return 'Ty';
     const member = members.find(m => m.profile_id === id);
@@ -8173,6 +8401,7 @@ export default function MinistranciApp() {
                       onOpenAddWydarzenie={() => {
                         setSelectedSluzba(null);
                         setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+                        setSluzbaExternalAssignments({});
                         setSluzbaEkstraPunkty(null);
                         setShowSluzbaModal(true);
                       }}
@@ -8303,7 +8532,9 @@ export default function MinistranciApp() {
                                   })
                                 );
                                 const renderFunkcjaRow = (funkcja: Funkcja, label: string) => {
-                                  const selectedValue = !funkcja.aktywna ? 'BEZ' : (funkcja.ministrant_id || 'UNASSIGNED');
+                                  const selectedValue = !funkcja.aktywna
+                                    ? 'BEZ'
+                                    : (funkcja.osoba_zewnetrzna ? EXTERNAL_ASSIGNMENT_VALUE : (funkcja.ministrant_id || 'UNASSIGNED'));
                                   const saving = sluzbaInlineSavingIds.has(funkcja.id);
 
                                   return (
@@ -8315,26 +8546,36 @@ export default function MinistranciApp() {
                                         )}
                                       </div>
                                       <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        <Select
-                                          value={selectedValue}
-                                          onValueChange={(v) => { void handleInlineFunkcjaAssignment(sluzba.id, funkcja, v); }}
-                                          disabled={!isActiveSluzba || saving}
-                                        >
-                                          <SelectTrigger className="flex-1 min-w-0 h-9">
-                                            <SelectValue placeholder="--" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="BEZ">Wyłączona</SelectItem>
-                                            <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
-                                            {availableMinistranci.map((m) => (
-                                              <SelectItem key={m.profile_id} value={m.profile_id}>
-                                                {m.imie} {m.nazwisko || ''}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <div className="flex-1 min-w-0">
+                                          <Select
+                                            value={selectedValue}
+                                            onValueChange={(v) => { void handleInlineFunkcjaAssignment(sluzba.id, funkcja, v); }}
+                                            disabled={!isActiveSluzba || saving}
+                                          >
+                                            <SelectTrigger className="w-full min-w-0 h-9">
+                                              <SelectValue placeholder="--" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="BEZ">Wyłączona</SelectItem>
+                                              <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                                              <SelectItem value={EXTERNAL_ASSIGNMENT_VALUE}>Osoba z zewnątrz</SelectItem>
+                                              {availableMinistranci.map((m) => (
+                                                <SelectItem key={m.profile_id} value={m.profile_id}>
+                                                  {m.imie} {m.nazwisko || ''}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                          {funkcja.aktywna && funkcja.osoba_zewnetrzna && (
+                                            <p className="mt-1 truncate text-[11px] text-sky-600 dark:text-sky-300">
+                                              {funkcja.osoba_zewnetrzna}
+                                            </p>
+                                          )}
+                                        </div>
                                         {saving ? (
                                           <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />
+                                        ) : funkcja.aktywna && funkcja.osoba_zewnetrzna ? (
+                                          <Users className="w-4 h-4 text-sky-500 dark:text-sky-400 shrink-0" />
                                         ) : funkcja.aktywna && funkcja.ministrant_id ? (
                                           funkcja.zaakceptowana ? (
                                             <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 shrink-0" />
@@ -9549,6 +9790,7 @@ export default function MinistranciApp() {
         if (!open) {
           setSelectedSluzba(null);
           setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+          setSluzbaExternalAssignments({});
           setSluzbaEkstraPunkty(null);
         }
       }}>
@@ -9600,6 +9842,19 @@ export default function MinistranciApp() {
                             if (oldHour && oldHour !== e.target.value) {
                               newFunkcjePerHour[e.target.value] = newFunkcjePerHour[oldHour] || {};
                               delete newFunkcjePerHour[oldHour];
+                              setSluzbaExternalAssignments((prev) => {
+                                const next = { ...prev };
+                                const oldPrefix = `${oldHour}::`;
+                                const newPrefix = `${e.target.value}::`;
+                                Object.keys(prev).forEach((k) => {
+                                  if (k.startsWith(oldPrefix)) {
+                                    const suffix = k.slice(oldPrefix.length);
+                                    next[`${newPrefix}${suffix}`] = prev[k];
+                                    delete next[k];
+                                  }
+                                });
+                                return next;
+                              });
                             }
                             setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: newFunkcjePerHour });
                           }}
@@ -9614,6 +9869,16 @@ export default function MinistranciApp() {
                               const newGodzina = newHours.filter(Boolean).join(', ');
                               const newFunkcjePerHour = { ...sluzbaForm.funkcjePerHour };
                               if (godz) delete newFunkcjePerHour[godz];
+                              if (godz) {
+                                setSluzbaExternalAssignments((prev) => {
+                                  const next = { ...prev };
+                                  const prefix = `${godz}::`;
+                                  Object.keys(prev).forEach((k) => {
+                                    if (k.startsWith(prefix)) delete next[k];
+                                  });
+                                  return next;
+                                });
+                              }
                               setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: newFunkcjePerHour });
                             }}
                           >
@@ -9680,6 +9945,9 @@ export default function MinistranciApp() {
                         const slot = getFunkcjaSlotNumber(funkcjaKey);
                         const isDuplicate = funkcjaKey !== funkcja;
                         const canDuplicate = isMultiAssigneeFunkcja(funkcja);
+                        const currentValue = hourFunkcje[funkcjaKey] || 'BEZ';
+                        const externalKey = getExternalAssignmentKey(h, funkcjaKey);
+                        const isExternal = currentValue === EXTERNAL_ASSIGNMENT_VALUE;
                         return (
                         <div key={funkcjaKey} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
                           <div className="w-full sm:w-32 text-sm font-medium flex items-center gap-1.5">
@@ -9705,29 +9973,52 @@ export default function MinistranciApp() {
                               </button>
                             )}
                           </div>
-                          <Select
-                            value={hourFunkcje[funkcjaKey] || 'BEZ'}
-                            onValueChange={(v) => setSluzbaForm({
-                              ...sluzbaForm,
-                              funkcjePerHour: {
-                                ...sluzbaForm.funkcjePerHour,
-                                [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcjaKey]: v }
-                              }
-                            })}
-                          >
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Wyłączona" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="BEZ">Wyłączona</SelectItem>
-                              <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
-                              {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
-                                <SelectItem key={m.profile_id} value={m.profile_id}>
-                                  {m.imie} {m.nazwisko || ''}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex-1 space-y-1">
+                            <Select
+                              value={currentValue}
+                              onValueChange={(v) => {
+                                setSluzbaForm({
+                                  ...sluzbaForm,
+                                  funkcjePerHour: {
+                                    ...sluzbaForm.funkcjePerHour,
+                                    [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcjaKey]: v }
+                                  }
+                                });
+                                if (v !== EXTERNAL_ASSIGNMENT_VALUE) {
+                                  setSluzbaExternalAssignments((prev) => {
+                                    if (!(externalKey in prev)) return prev;
+                                    const next = { ...prev };
+                                    delete next[externalKey];
+                                    return next;
+                                  });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Wyłączona" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="BEZ">Wyłączona</SelectItem>
+                                <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                                <SelectItem value={EXTERNAL_ASSIGNMENT_VALUE}>Osoba z zewnątrz</SelectItem>
+                                {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
+                                  <SelectItem key={m.profile_id} value={m.profile_id}>
+                                    {m.imie} {m.nazwisko || ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {isExternal && (
+                              <Input
+                                value={sluzbaExternalAssignments[externalKey] || ''}
+                                onChange={(e) => setSluzbaExternalAssignments((prev) => ({
+                                  ...prev,
+                                  [externalKey]: e.target.value,
+                                }))}
+                                placeholder="Imię i nazwisko osoby z zewnątrz"
+                              />
+                            )}
+                          </div>
                         </div>
                       )})}
                     </div>
@@ -9750,8 +10041,12 @@ export default function MinistranciApp() {
                           const slot = getFunkcjaSlotNumber(funkcjaKey);
                           const isDuplicate = funkcjaKey !== funkcja;
                           const canDuplicate = isMultiAssigneeFunkcja(funkcja);
+                          const currentValue = hourFunkcje[funkcjaKey] || 'BEZ';
+                          const externalKey = getExternalAssignmentKey(h, funkcjaKey);
+                          const isExternal = currentValue === EXTERNAL_ASSIGNMENT_VALUE;
                           return (
-                          <div key={funkcjaKey} className="flex items-center gap-2">
+                          <div key={funkcjaKey} className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
                             <div className="w-28 text-xs font-medium truncate flex items-center gap-1">
                               <span>{funkcja}{slot > 1 ? ` (${slot})` : ''}:</span>
                               {canDuplicate && !isDuplicate && (
@@ -9776,14 +10071,24 @@ export default function MinistranciApp() {
                               )}
                             </div>
                             <Select
-                              value={hourFunkcje[funkcjaKey] || 'BEZ'}
-                              onValueChange={(v) => setSluzbaForm({
-                                ...sluzbaForm,
-                                funkcjePerHour: {
-                                  ...sluzbaForm.funkcjePerHour,
-                                  [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcjaKey]: v }
+                              value={currentValue}
+                              onValueChange={(v) => {
+                                setSluzbaForm({
+                                  ...sluzbaForm,
+                                  funkcjePerHour: {
+                                    ...sluzbaForm.funkcjePerHour,
+                                    [h]: { ...sluzbaForm.funkcjePerHour[h], [funkcjaKey]: v }
+                                  }
+                                });
+                                if (v !== EXTERNAL_ASSIGNMENT_VALUE) {
+                                  setSluzbaExternalAssignments((prev) => {
+                                    if (!(externalKey in prev)) return prev;
+                                    const next = { ...prev };
+                                    delete next[externalKey];
+                                    return next;
+                                  });
                                 }
-                              })}
+                              }}
                             >
                               <SelectTrigger className="flex-1 h-8 text-xs">
                                 <SelectValue placeholder="--" />
@@ -9791,6 +10096,7 @@ export default function MinistranciApp() {
                               <SelectContent>
                                 <SelectItem value="BEZ">Wyłączona</SelectItem>
                                 <SelectItem value="UNASSIGNED">-- Nie przypisano --</SelectItem>
+                                <SelectItem value={EXTERNAL_ASSIGNMENT_VALUE}>Osoba z zewnątrz</SelectItem>
                                 {members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false).map(m => (
                                   <SelectItem key={m.profile_id} value={m.profile_id}>
                                     {m.imie} {m.nazwisko || ''}
@@ -9798,6 +10104,18 @@ export default function MinistranciApp() {
                                 ))}
                               </SelectContent>
                             </Select>
+                            </div>
+                            {isExternal && (
+                              <Input
+                                value={sluzbaExternalAssignments[externalKey] || ''}
+                                onChange={(e) => setSluzbaExternalAssignments((prev) => ({
+                                  ...prev,
+                                  [externalKey]: e.target.value,
+                                }))}
+                                placeholder="Imię i nazwisko osoby z zewnątrz"
+                                className="h-8 text-xs"
+                              />
+                            )}
                           </div>
                         )})}
                       </div>
@@ -11783,8 +12101,8 @@ export default function MinistranciApp() {
                                             <div key={f.id} className="flex items-center justify-between gap-2 p-1.5 bg-white dark:bg-gray-800 rounded-md border border-gray-100 dark:border-gray-700 text-sm shadow-sm">
                                               <span className="font-semibold text-gray-700 dark:text-gray-200 shrink-0">{f.typ}:</span>
                                               <div className="flex items-center gap-1.5 min-w-0">
-                                                <span className={`truncate ${f.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
-                                                  {getMemberName(f.ministrant_id) || 'nie przypisano'}
+                                                <span className={`truncate ${(f.ministrant_id || f.osoba_zewnetrzna) ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
+                                                  {getMemberName(f.ministrant_id, f.osoba_zewnetrzna) || 'nie przypisano'}
                                                 </span>
                                                 {f.ministrant_id && (
                                                   f.zaakceptowana ? <CheckCircle className="w-3.5 h-3.5 text-green-500 dark:text-green-400 shrink-0" /> : <Hourglass className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -11803,8 +12121,8 @@ export default function MinistranciApp() {
                                     <div key={f.id} className="flex items-center justify-between gap-2 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm">
                                       <span className="font-semibold text-sm text-gray-700 dark:text-gray-200 shrink-0">{f.typ}:</span>
                                       <div className="flex items-center gap-1.5 min-w-0">
-                                        <span className={`text-sm truncate ${f.ministrant_id ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
-                                          {getMemberName(f.ministrant_id) || 'nie przypisano'}
+                                        <span className={`text-sm truncate ${(f.ministrant_id || f.osoba_zewnetrzna) ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
+                                          {getMemberName(f.ministrant_id, f.osoba_zewnetrzna) || 'nie przypisano'}
                                         </span>
                                         {f.ministrant_id && (
                                           f.zaakceptowana ? <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 shrink-0" /> : <Hourglass className="w-4 h-4 text-amber-500 shrink-0" />

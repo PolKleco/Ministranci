@@ -68,6 +68,7 @@ create table funkcje (
   sluzba_id uuid references sluzby(id) on delete cascade not null,
   typ text not null,
   ministrant_id uuid references profiles(id),
+  osoba_zewnetrzna text,
   aktywna boolean default true,
   zaakceptowana boolean default false,
   godzina text
@@ -131,23 +132,76 @@ create policy "Admin can delete members" on parafia_members for delete using (
   exists (select 1 from parafie where parafie.id = parafia_members.parafia_id and parafie.admin_id = auth.uid())
 );
 
--- Sluzby: czytanie dla członków, tworzenie/edycja dla księdza
+-- Uprawnienia parafialne (ksiadz / administrator z przypisanymi permisjami)
+create or replace function public.has_parafia_permission(p_parafia_id uuid, p_permission text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.parafia_members pm
+    where pm.parafia_id = p_parafia_id
+      and pm.profile_id = auth.uid()
+      and (
+        pm.typ = 'ksiadz'
+        or coalesce(pm.role, '{}'::text[]) @> array['__parafia_admin__']
+        or coalesce(pm.role, '{}'::text[]) @> array['__perm__:' || p_permission]
+      )
+  );
+$$;
+
+-- Sluzby: czytanie dla członków, tworzenie/edycja dla uprawnionych administratorów
 create policy "Sluzby viewable by parish members" on sluzby for select using (true);
-create policy "Ksiadz can insert sluzby" on sluzby for insert with check (auth.uid() = utworzono_przez);
-create policy "Ksiadz can update sluzby" on sluzby for update using (auth.uid() = utworzono_przez);
-create policy "Ksiadz can delete sluzby" on sluzby for delete using (auth.uid() = utworzono_przez);
+create policy "Ksiadz can insert sluzby" on sluzby for insert with check (
+  public.has_parafia_permission(parafia_id, 'manage_events')
+  and auth.uid() = utworzono_przez
+);
+create policy "Ksiadz can update sluzby" on sluzby for update using (
+  public.has_parafia_permission(parafia_id, 'manage_events')
+) with check (
+  public.has_parafia_permission(parafia_id, 'manage_events')
+);
+create policy "Ksiadz can delete sluzby" on sluzby for delete using (
+  public.has_parafia_permission(parafia_id, 'manage_events')
+);
 
 -- Funkcje: czytanie dla wszystkich, edycja powiązana
 create policy "Funkcje viewable by everyone" on funkcje for select using (true);
 create policy "Funkcje insert by sluzba creator" on funkcje for insert with check (
-  exists (select 1 from sluzby where sluzby.id = funkcje.sluzba_id and sluzby.utworzono_przez = auth.uid())
+  exists (
+    select 1
+    from sluzby
+    where sluzby.id = funkcje.sluzba_id
+      and public.has_parafia_permission(sluzby.parafia_id, 'manage_events')
+  )
 );
 create policy "Funkcje update by sluzba creator or assigned" on funkcje for update using (
-  exists (select 1 from sluzby where sluzby.id = funkcje.sluzba_id and sluzby.utworzono_przez = auth.uid())
+  exists (
+    select 1
+    from sluzby
+    where sluzby.id = funkcje.sluzba_id
+      and public.has_parafia_permission(sluzby.parafia_id, 'manage_events')
+  )
+  or ministrant_id = auth.uid()
+) with check (
+  exists (
+    select 1
+    from sluzby
+    where sluzby.id = funkcje.sluzba_id
+      and public.has_parafia_permission(sluzby.parafia_id, 'manage_events')
+  )
   or ministrant_id = auth.uid()
 );
 create policy "Funkcje delete by sluzba creator" on funkcje for delete using (
-  exists (select 1 from sluzby where sluzby.id = funkcje.sluzba_id and sluzby.utworzono_przez = auth.uid())
+  exists (
+    select 1
+    from sluzby
+    where sluzby.id = funkcje.sluzba_id
+      and public.has_parafia_permission(sluzby.parafia_id, 'manage_events')
+  )
 );
 
 -- Harmonogram: czytanie dla wszystkich, edycja dla admina

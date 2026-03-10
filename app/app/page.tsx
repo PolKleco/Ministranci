@@ -2295,7 +2295,54 @@ export default function MinistranciApp() {
       .gte('data', today)
       .order('data', { ascending: true });
 
-    if (sluzbyData) setSluzby(sluzbyData as Sluzba[]);
+    if (sluzbyData) {
+      const nextSluzby = sluzbyData as Sluzba[];
+      setSluzby(nextSluzby);
+
+      // Recovery: jeśli w wydarzeniach istnieją funkcje, których nie ma w funkcje_config,
+      // dołącz je do listy, aby były widoczne w "Funkcje ministrantów" i przy edycji.
+      setFunkcjeConfig((prev) => {
+        const normalize = (value: string) =>
+          value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        const existingNames = new Set(prev.map((f) => normalize(f.nazwa)));
+        const existingIds = new Set(prev.map((f) => f.id));
+
+        const missingNames = Array.from(
+          new Set(
+            nextSluzby
+              .flatMap((sluzba) => sluzba.funkcje || [])
+              .map((funkcja) => (typeof funkcja.typ === 'string' ? funkcja.typ.trim() : ''))
+              .filter(Boolean)
+          )
+        ).filter((name) => !existingNames.has(normalize(name)));
+
+        if (missingNames.length === 0) return prev;
+
+        const toId = (name: string) =>
+          name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-ząćęłńóśźż0-9_]/gi, '') || 'funkcja';
+
+        const recovered = missingNames.map((nazwa, index) => {
+          const baseId = toId(nazwa);
+          let id = baseId;
+          let suffix = 2;
+          while (existingIds.has(id)) {
+            id = `${baseId}_${suffix}`;
+            suffix += 1;
+          }
+          existingIds.add(id);
+
+          return {
+            id,
+            nazwa,
+            opis: '',
+            emoji: '⭐',
+            kolor: 'gray',
+          } as FunkcjaConfig;
+        });
+
+        return [...prev, ...recovered];
+      });
+    }
 
     // Archiwum — wydarzenia z przeszłości (max 30 dni wstecz)
     const thirtyDaysAgo = new Date();
@@ -4348,7 +4395,12 @@ export default function MinistranciApp() {
   };
 
   const getHourFunkcjaKeys = (hourFunkcje: FunkcjaAssignmentMap) =>
-    FUNKCJE_TYPES.flatMap((typ) => {
+    [
+      ...FUNKCJE_TYPES,
+      ...Array.from(new Set(Object.keys(hourFunkcje).map(getFunkcjaBaseType)))
+        .filter((typ) => !FUNKCJE_TYPES.includes(typ))
+        .sort((a, b) => a.localeCompare(b, 'pl')),
+    ].flatMap((typ) => {
       const extras = Object.keys(hourFunkcje)
         .filter((key) => getFunkcjaBaseType(key) === typ && key !== typ)
         .sort((a, b) => getFunkcjaSlotNumber(a) - getFunkcjaSlotNumber(b));
@@ -5161,14 +5213,31 @@ export default function MinistranciApp() {
   };
 
   const saveFunkcjeConfigToDb = async (newFunkcje: FunkcjaConfig[]) => {
-    if (!currentUser?.parafia_id) return;
-    await supabase
-      .from('parafie')
-      .update({ funkcje_config: newFunkcje })
-      .eq('id', currentUser.parafia_id);
+    if (!currentUser?.parafia_id) return false;
+    try {
+      const res = await authFetch('/api/parafia/funkcje-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parafiaId: currentUser.parafia_id,
+          funkcjeConfig: newFunkcje,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.ok) {
+        alert('Nie udało się zapisać funkcji: ' + (result?.error || 'Błąd serwera'));
+        await loadParafiaData();
+        return false;
+      }
+      return true;
+    } catch {
+      alert('Nie udało się zapisać funkcji: błąd połączenia z serwerem.');
+      await loadParafiaData();
+      return false;
+    }
   };
 
-  const handleAddFunkcja = () => {
+  const handleAddFunkcja = async () => {
     if (!newFunkcjaForm.nazwa.trim()) {
       alert('Podaj nazwę funkcji!');
       return;
@@ -5182,24 +5251,27 @@ export default function MinistranciApp() {
       kolor: 'gray',
     };
     const updated = [...funkcjeConfig, newFunkcja];
+    const ok = await saveFunkcjeConfigToDb(updated);
+    if (!ok) return;
     setFunkcjeConfig(updated);
-    saveFunkcjeConfigToDb(updated);
     setNewFunkcjaForm({ nazwa: '', opis: '' });
   };
 
-  const handleDeleteFunkcja = (id: string) => {
+  const handleDeleteFunkcja = async (id: string) => {
     const updated = funkcjeConfig.filter(f => f.id !== id);
+    const ok = await saveFunkcjeConfigToDb(updated);
+    if (!ok) return;
     setFunkcjeConfig(updated);
-    saveFunkcjeConfigToDb(updated);
   };
 
-  const handleMoveFunkcja = (fromIdx: number, toIdx: number) => {
+  const handleMoveFunkcja = async (fromIdx: number, toIdx: number) => {
     if (toIdx < 0 || toIdx >= funkcjeConfig.length) return;
     const updated = [...funkcjeConfig];
     const [moved] = updated.splice(fromIdx, 1);
     updated.splice(toIdx, 0, moved);
+    const ok = await saveFunkcjeConfigToDb(updated);
+    if (!ok) return;
     setFunkcjeConfig(updated);
-    saveFunkcjeConfigToDb(updated);
   };
 
   const handleSaveFunkcjaEdit = async () => {
@@ -5236,8 +5308,9 @@ export default function MinistranciApp() {
     const updated = funkcjeConfig.map(f =>
       f.id === editingFunkcja.id ? updatedFunkcja : f
     );
+    const ok = await saveFunkcjeConfigToDb(updated);
+    if (!ok) return;
     setFunkcjeConfig(updated);
-    saveFunkcjeConfigToDb(updated);
     setShowEditFunkcjaModal(false);
     setEditingFunkcja(null);
     setEditFunkcjaFile(null);

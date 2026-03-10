@@ -375,6 +375,27 @@ export default function AdminPanel() {
     return (result?.data as T) ?? (undefined as T);
   }, []);
 
+  const verifyAdminAccess = useCallback(async (accessToken?: string) => {
+    let token = accessToken;
+    if (!token) {
+      const { data: { session } } = await supabaseAuth.auth.getSession();
+      token = session?.access_token;
+    }
+    if (!token) return false;
+
+    const res = await fetch('/api/admin/panel', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ action: 'loadStats' }),
+    });
+
+    const result = await res.json().catch(() => ({}));
+    return !!res.ok && !!result?.ok;
+  }, []);
+
   const adminUploadFile = useCallback(async (file: File) => {
     const { data: { session }, error: sessionError } = await supabaseAuth.auth.getSession();
     if (sessionError || !session?.access_token) {
@@ -497,12 +518,10 @@ export default function AdminPanel() {
     }
 
     // Check existing Supabase session
-    const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const checkAdmin = (email?: string) => !!email && adminEmails.includes(email.toLowerCase());
-
-    supabaseAuth.auth.getSession().then(({ data: { session } }) => {
-      if (session && checkAdmin(session.user.email)) {
-        setIsAuthenticated(true);
+    supabaseAuth.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        const hasAdminAccess = await verifyAdminAccess(session.access_token);
+        setIsAuthenticated(hasAdminAccess);
       }
       setAuthChecking(false);
     });
@@ -513,13 +532,24 @@ export default function AdminPanel() {
         setAuthChecking(false);
         return;
       }
-      if (session && event === 'SIGNED_IN' && checkAdmin(session.user.email)) {
-        setIsAuthenticated(true);
+      if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        return;
+      }
+      if (session && event === 'SIGNED_IN') {
+        void (async () => {
+          const hasAdminAccess = await verifyAdminAccess(session.access_token);
+          setIsAuthenticated(hasAdminAccess);
+          if (!hasAdminAccess) {
+            setAuthError('Brak uprawnień administratora dla tego konta');
+            await supabaseAuth.auth.signOut();
+          }
+        })();
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [verifyAdminAccess]);
 
   useEffect(() => {
     if (successMsg) {
@@ -530,15 +560,7 @@ export default function AdminPanel() {
 
   // ==================== AUTH ====================
 
-  const allowedEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
-    .split(',')
-    .map(e => e.trim().toLowerCase())
-    .filter(Boolean);
-
-  const isAllowedAdmin = (email: string) =>
-    allowedEmails.includes(email.trim().toLowerCase());
-
-  const handleLogin = async () => {
+  const handleLogin = useCallback(async () => {
     if (!authEmail.trim() || !authPassword) {
       setAuthError('Wypełnij wszystkie pola');
       return;
@@ -546,13 +568,7 @@ export default function AdminPanel() {
     setAuthLoading(true);
     setAuthError('');
 
-    if (!isAllowedAdmin(authEmail)) {
-      setAuthError('Brak uprawnień administratora dla tego konta');
-      setAuthLoading(false);
-      return;
-    }
-
-    const { error } = await supabaseAuth.auth.signInWithPassword({
+    const { data, error } = await supabaseAuth.auth.signInWithPassword({
       email: authEmail.trim(),
       password: authPassword,
     });
@@ -563,11 +579,19 @@ export default function AdminPanel() {
       return;
     }
 
+    const hasAdminAccess = await verifyAdminAccess(data.session?.access_token);
+    if (!hasAdminAccess) {
+      await supabaseAuth.auth.signOut();
+      setAuthError('Brak uprawnień administratora dla tego konta');
+      setAuthLoading(false);
+      return;
+    }
+
     setIsAuthenticated(true);
     setAuthLoading(false);
     setAuthEmail('');
     setAuthPassword('');
-  };
+  }, [authEmail, authPassword, verifyAdminAccess]);
 
   const handleLogout = async () => {
     await supabaseAuth.auth.signOut();

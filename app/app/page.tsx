@@ -11895,7 +11895,7 @@ export default function MinistranciApp() {
               Subskrypcja Premium
             </DialogTitle>
             <DialogDescription>
-              Zarządzaj statusem konta parafii
+              Zarządzaj statusem konta parafii. W razie problemów prosimy o kontakt: lsoministranci@gmail.com
             </DialogDescription>
           </DialogHeader>
 
@@ -11972,6 +11972,19 @@ export default function MinistranciApp() {
                   </p>
                 </div>
 
+                <div className="p-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 dark:from-emerald-900/20 dark:via-teal-900/20 dark:to-cyan-900/20">
+                  <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" />
+                    Płatność Premium
+                  </p>
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mt-1">
+                    Cena - 249zł/rok
+                  </p>
+                  <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
+                    Wybierz sposób płatności: abonament roczny (auto-odnowienie) albo jednorazowo na 1 rok.
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <Button onClick={handleStartStripeCheckout} disabled={premiumCheckoutLoading} className="w-full">
                     <CreditCard className="w-4 h-4 mr-2" />
@@ -11984,10 +11997,9 @@ export default function MinistranciApp() {
 
                 <div className="space-y-2">
                   <Button
-                    variant="outline"
                     onClick={handleStartStripeOneTimeCheckout}
                     disabled={premiumOneTimeCheckoutLoading}
-                    className="w-full"
+                    className="w-full border border-amber-300 bg-gradient-to-r from-amber-300 via-orange-300 to-amber-400 text-slate-900 font-semibold hover:from-amber-200 hover:via-orange-200 hover:to-amber-300"
                   >
                     <CreditCard className="w-4 h-4 mr-2" />
                     {premiumOneTimeCheckoutLoading ? 'Przechodzę do płatności...' : 'Zapłać jednorazowo za 1 rok (BLIK/online)'}

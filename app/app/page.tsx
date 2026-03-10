@@ -2208,14 +2208,28 @@ export default function MinistranciApp() {
         .single();
 
       if (profile) {
-        const canPreviewRole = !!profile.email && ADMIN_PREVIEW_EMAILS.includes(profile.email.toLowerCase());
         const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-        const previewRole = params?.get('preview_role');
-        const previewParafia = params?.get('preview_parafia');
-        const previewSession = canPreviewRole && previewParafia && (previewRole === 'ksiadz' || previewRole === 'ministrant');
+        const previewRoleParam = params?.get('preview_role');
+        const previewRole: UserType | null = previewRoleParam === 'ksiadz' || previewRoleParam === 'ministrant'
+          ? previewRoleParam
+          : null;
+        const previewParafia = params?.get('preview_parafia') || null;
+        const wantsPreviewSession = Boolean(previewParafia && previewRole);
+
+        let canPreviewRole = !!profile.email && ADMIN_PREVIEW_EMAILS.includes(profile.email.toLowerCase());
+        if (!canPreviewRole && wantsPreviewSession) {
+          try {
+            const previewAccessRes = await authFetch('/api/admin/impersonation/status', { method: 'GET' });
+            canPreviewRole = previewAccessRes.ok;
+          } catch {
+            canPreviewRole = false;
+          }
+        }
+
+        const previewSession = canPreviewRole && wantsPreviewSession;
 
         const effectiveProfile: Profile = previewSession
-          ? { ...(profile as Profile), typ: previewRole, parafia_id: previewParafia }
+          ? { ...(profile as Profile), typ: previewRole as UserType, parafia_id: previewParafia }
           : (profile as Profile);
 
         setIsAdminPreviewMode(Boolean(previewSession));
@@ -2235,7 +2249,7 @@ export default function MinistranciApp() {
       setIsAdminPreviewMode(false);
     }
     setLoading(false);
-  }, []);
+  }, [authFetch]);
 
   const loadParafiaData = useCallback(async () => {
     if (!currentUser?.parafia_id) return;
@@ -3011,6 +3025,22 @@ export default function MinistranciApp() {
     if (profileError) {
       alert('Błąd zapisu profilu: ' + profileError.message);
       return;
+    }
+
+    if (currentUser.parafia_id) {
+      const { error: memberSyncError } = await supabase
+        .from('parafia_members')
+        .update({
+          imie: editProfilForm.imie.trim(),
+          nazwisko: editProfilForm.nazwisko.trim(),
+          email: editProfilForm.email.trim(),
+        })
+        .eq('profile_id', currentUser.id)
+        .eq('parafia_id', currentUser.parafia_id);
+
+      if (memberSyncError) {
+        console.warn('Nie udało się zsynchronizować parafia_members po edycji profilu:', memberSyncError.message);
+      }
     }
 
     setCurrentUser({

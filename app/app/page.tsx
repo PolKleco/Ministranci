@@ -1773,6 +1773,16 @@ export default function MinistranciApp() {
   // QR Code
   const [showQrModal, setShowQrModal] = useState(false);
   const [qrPdfLoading, setQrPdfLoading] = useState(false);
+
+  // Po każdym logowaniu otwieraj domyślnie zakładkę "Aktualności".
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    setActiveTab('tablica');
+    setSelectedWatek(null);
+    setTablicaWiadomosci([]);
+    setEditingAnkietaId(null);
+    setShowArchiwum(false);
+  }, [currentUser?.id]);
   const qrPosterRef = useRef<HTMLDivElement | null>(null);
   const wiadomoscInputRef = useRef<HTMLInputElement | null>(null);
 

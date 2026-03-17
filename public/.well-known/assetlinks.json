@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "net.ministranci.twa",
+      "sha256_cert_fingerprints": [
+        "C1:DD:DF:CD:6B:38:6A:28:8B:E8:A5:3F:92:11:4D:BC:70:C3:AB:3D:EB:E1:09:91:F2:AF:83:81:1C:60:32:18",
+        "49:44:F0:9D:00:72:81:87:4E:EE:FA:D2:4F:3A:F2:A0:FD:3A:C0:31:48:3A:88:E6:0B:15:E9:18:C4:10:81:C1",
+        "30:73:C1:5E:23:E6:CD:BA:05:77:D1:88:F6:05:B9:35:AA:BE:44:F7:74:0F:71:63:03:A8:0C:E0:FC:4A:7C:69"
+      ]
+    }
+  }
+]

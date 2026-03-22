@@ -239,7 +239,7 @@ export default function LandingPage() {
 
               <div className="intro-2 mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
                 <Link
-                  href="/app"
+                  href="/app?auth=register"
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-7 py-4 text-base font-semibold text-slate-950 transition-all hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
                 >
                   Załóż darmowe konto parafii
@@ -498,7 +498,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Link
-              href="/app"
+              href="/app?auth=register"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-8 py-4 text-base font-semibold text-slate-950"
             >
               Załóż darmowe konto parafii

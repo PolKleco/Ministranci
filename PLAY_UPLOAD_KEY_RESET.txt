@@ -1,0 +1,18 @@
+RESET KLUCZA UPLOAD - GOTOWE DANE
+
+1) Plik certyfikatu do wysłania w Play Console:
+/Users/pawelimac/ministranci/app/upload_certificate.pem
+
+2) Odcisk nowego certyfikatu upload:
+SHA1: DD:E1:AE:8A:6D:8F:5D:69:C7:8D:F0:F6:E0:E7:B6:31:F8:B3:E4:BE
+SHA256: 49:44:F0:9D:00:72:81:87:4E:EE:FA:D2:4F:3A:F2:A0:FD:3A:C0:31:48:3A:88:E6:0B:15:E9:18:C4:10:81:C1
+
+3) Gotowy tekst do zgłoszenia:
+Proszę o reset klucza przesyłania (upload key) dla aplikacji net.ministranci.twa.
+Utraciliśmy dostęp do poprzedniego klucza upload.
+W załączniku przesyłam nowy certyfikat upload_certificate.pem.
+
+4) Po zatwierdzeniu resetu przez Google:
+- buduj kolejne AAB tym nowym kluczem (już ustawione lokalnie),
+- wrzucaj nowy plik:
+  /Users/pawelimac/ministranci/app/build/outputs/bundle/release/app-release.aab

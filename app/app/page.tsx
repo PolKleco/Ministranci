@@ -62,6 +62,7 @@ const ADMIN_PREVIEW_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
   .split(',')
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
+const BLOCKED_PRIEST_EMAIL_DOMAINS = ['niepodam.pl'];
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -115,6 +116,40 @@ const getLocalISODate = (date: Date = new Date()) => {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+};
+
+const readLocalStorage = (key: string): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalStorage = (key: string, value: string): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const isStandaloneApp = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) {
+      return true;
+    }
+  } catch {
+    // Ignorujemy niedostępne API w nietypowych przeglądarkach/webview.
+  }
+  if (typeof navigator !== 'undefined' && 'standalone' in navigator) {
+    return Boolean((navigator as unknown as { standalone?: boolean }).standalone);
+  }
+  return false;
 };
 
 const REPLY_MARKER_RE = /^\[\[reply:([^\]]+)\]\]\n?/;
@@ -1656,15 +1691,7 @@ export default function MinistranciApp() {
   const [poslugi, setPoslugi] = useState<Posluga[]>([]);
   const [editingPosluga, setEditingPosluga] = useState<Posluga | null>(null);
   const [newPoslugaForm, setNewPoslugaForm] = useState({ nazwa: '', opis: '', emoji: '⭐', kolor: 'gray', dlugi_opis: '', youtube_url: '' });
-  const [newPoslugaFile, setNewPoslugaFile] = useState<File | null>(null);
-  const [newPoslugaPreview, setNewPoslugaPreview] = useState('');
-  const [editPoslugaFile, setEditPoslugaFile] = useState<File | null>(null);
-  const [editPoslugaPreview, setEditPoslugaPreview] = useState('');
   const [expandedPosluga, setExpandedPosluga] = useState<string | null>(null);
-  const [editGalleryFiles, setEditGalleryFiles] = useState<File[]>([]);
-  const [editGalleryPreviews, setEditGalleryPreviews] = useState<string[]>([]);
-  const [newGalleryFiles, setNewGalleryFiles] = useState<File[]>([]);
-  const [newGalleryPreviews, setNewGalleryPreviews] = useState<string[]>([]);
   const [isUploadingInline, setIsUploadingInline] = useState(false);
   const [showYoutubeInput, setShowYoutubeInput] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -1672,8 +1699,7 @@ export default function MinistranciApp() {
   const [emailSelectedGrupy, setEmailSelectedGrupy] = useState<string[]>([]);
   const [emailSelectedMinistranci, setEmailSelectedMinistranci] = useState<string[]>([]);
   const [emailSearchMinistrant, setEmailSearchMinistrant] = useState('');
-  const canEditPoslugaVisuals = !!isAdminPreviewMode || !!adminImpersonationSession;
-  const canEditPoslugaEmoji = canEditPoslugaVisuals;
+  const canEditPoslugaEmoji = !!isAdminPreviewMode || !!adminImpersonationSession;
 
   // ==================== STAN — RANKING SŁUŻBY ====================
   const [punktacjaConfig, setPunktacjaConfig] = useState<PunktacjaConfig[]>([]);
@@ -1969,7 +1995,7 @@ export default function MinistranciApp() {
       return;
     }
     try {
-      const raw = window.localStorage.getItem(`watek-last-read:${currentUser.id}`);
+      const raw = readLocalStorage(`watek-last-read:${currentUser.id}`);
       setWatekLastReadMap(raw ? JSON.parse(raw) as Record<string, string> : {});
     } catch {
       setWatekLastReadMap({});
@@ -1980,9 +2006,7 @@ export default function MinistranciApp() {
     if (!currentUser?.id) return;
     setWatekLastReadMap((prev) => {
       const next = { ...prev, [watekId]: whenIso };
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(`watek-last-read:${currentUser.id}`, JSON.stringify(next));
-      }
+      writeLocalStorage(`watek-last-read:${currentUser.id}`, JSON.stringify(next));
       return next;
     });
     setWatekUnreadCounts((prev) => ({ ...prev, [watekId]: 0 }));
@@ -2163,7 +2187,7 @@ export default function MinistranciApp() {
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem('darkMode');
+    const saved = readLocalStorage('darkMode');
     if (saved === 'true') {
       setDarkMode(true);
       document.documentElement.classList.add('dark');
@@ -2173,7 +2197,7 @@ export default function MinistranciApp() {
   const toggleDarkMode = () => {
     const next = !darkMode;
     setDarkMode(next);
-    localStorage.setItem('darkMode', String(next));
+    writeLocalStorage('darkMode', String(next));
     if (next) {
       document.documentElement.classList.add('dark');
     } else {
@@ -3448,6 +3472,27 @@ export default function MinistranciApp() {
     window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
   }, [currentParafia, loadSubscription]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || currentUser) return;
+    const url = new URL(window.location.href);
+    const authView = url.searchParams.get('auth');
+    if (authView === 'register') {
+      setIsLogin(false);
+      setAuthMode('register');
+      setAuthErrors({});
+      url.searchParams.delete('auth');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      return;
+    }
+    if (authView === 'login') {
+      setIsLogin(true);
+      setAuthMode('login');
+      setAuthErrors({});
+      url.searchParams.delete('auth');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, [currentUser]);
+
   const handleRedeemCode = async (code?: string, parafiaId?: string) => {
     const kodDoUzycia = (code || premiumCode).trim();
     const parafiaDoUzycia = parafiaId || currentParafia?.id;
@@ -3704,7 +3749,7 @@ export default function MinistranciApp() {
       setHidePriestRankingInfoPermanently(false);
       return;
     }
-    setHidePriestRankingInfoPermanently(localStorage.getItem(priestRankingInfoStorageKey) === 'true');
+    setHidePriestRankingInfoPermanently(readLocalStorage(priestRankingInfoStorageKey) === 'true');
   }, [priestRankingInfoStorageKey]);
 
   useEffect(() => {
@@ -3717,7 +3762,7 @@ export default function MinistranciApp() {
       setHidePriestMinistranciInfoPermanently(false);
       return;
     }
-    setHidePriestMinistranciInfoPermanently(localStorage.getItem(priestMinistranciInfoStorageKey) === 'true');
+    setHidePriestMinistranciInfoPermanently(readLocalStorage(priestMinistranciInfoStorageKey) === 'true');
   }, [priestMinistranciInfoStorageKey]);
 
   useEffect(() => {
@@ -3730,7 +3775,7 @@ export default function MinistranciApp() {
       setHidePriestWydarzeniaInfoPermanently(false);
       return;
     }
-    setHidePriestWydarzeniaInfoPermanently(localStorage.getItem(priestWydarzeniaInfoStorageKey) === 'true');
+    setHidePriestWydarzeniaInfoPermanently(readLocalStorage(priestWydarzeniaInfoStorageKey) === 'true');
   }, [priestWydarzeniaInfoStorageKey]);
 
   useEffect(() => {
@@ -3743,7 +3788,7 @@ export default function MinistranciApp() {
       setHidePriestPoslugiInfoPermanently(false);
       return;
     }
-    setHidePriestPoslugiInfoPermanently(localStorage.getItem(priestPoslugiInfoStorageKey) === 'true');
+    setHidePriestPoslugiInfoPermanently(readLocalStorage(priestPoslugiInfoStorageKey) === 'true');
   }, [priestPoslugiInfoStorageKey]);
 
   useEffect(() => {
@@ -3754,9 +3799,9 @@ export default function MinistranciApp() {
   // Pokaż baner instalacji PWA na iOS Safari
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || ('standalone' in navigator && (navigator as unknown as { standalone: boolean }).standalone);
-    const dismissed = localStorage.getItem('ios-install-dismissed');
+    const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = isStandaloneApp();
+    const dismissed = readLocalStorage('ios-install-dismissed');
     if (isIOS && !isStandalone && !dismissed) {
       setShowIOSInstallBanner(true);
     }
@@ -3835,6 +3880,11 @@ export default function MinistranciApp() {
     return emailRegex.test(email);
   };
 
+  const isBlockedPriestEmail = (candidateEmail: string): boolean => {
+    const domain = candidateEmail.trim().toLowerCase().split('@')[1] || '';
+    return BLOCKED_PRIEST_EMAIL_DOMAINS.includes(domain);
+  };
+
   const shouldShowChangedEmailLoginHint = async (loginEmail: string): Promise<boolean> => {
     try {
       const response = await fetch('/api/auth/login-email-hint', {
@@ -3869,6 +3919,9 @@ export default function MinistranciApp() {
       if (!nazwisko.trim()) errors.nazwisko = 'Wpisz swoje nazwisko';
       if (userType === 'ksiadz' && !diecezja) errors.diecezja = 'Wybierz swoją diecezję';
       if (userType === 'ksiadz' && diecezja && !dekanat) errors.dekanat = 'Wybierz swój dekanat';
+      if (userType === 'ksiadz' && isBlockedPriestEmail(email.trim())) {
+        errors.email = 'Rejestracja księdza z domeną @niepodam.pl jest zablokowana.';
+      }
     }
 
     if (Object.keys(errors).length > 0) {
@@ -3918,6 +3971,8 @@ export default function MinistranciApp() {
         if (error) {
           if (error.message === 'User already registered') {
             setAuthErrors({ email: 'Użytkownik o tym adresie e-mail już istnieje.' });
+          } else if (error.message.toLowerCase().includes('@niepodam.pl') || error.message.toLowerCase().includes('zablokowana')) {
+            setAuthErrors({ email: 'Rejestracja księdza z domeną @niepodam.pl jest zablokowana.' });
           } else if (error.message.includes('password')) {
             setAuthErrors({ password: 'Hasło jest za słabe. Użyj co najmniej 6 znaków.' });
           } else if (error.message.toLowerCase().includes('rate limit')) {
@@ -5370,17 +5425,6 @@ export default function MinistranciApp() {
 
     const slug = newPoslugaForm.nazwa.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     const tempId = crypto.randomUUID();
-
-    let obrazekUrl: string | undefined;
-    if (canEditPoslugaVisuals && newPoslugaFile) {
-      const url = await uploadPoslugaImage(newPoslugaFile, tempId);
-      if (url) obrazekUrl = url;
-    }
-
-    let zdjeciaUrls: string[] = [];
-    if (newGalleryFiles.length > 0) {
-      zdjeciaUrls = await uploadPoslugaGalleryImages(newGalleryFiles, tempId);
-    }
     const emojiToSave = canEditPoslugaEmoji ? newPoslugaForm.emoji : '⭐';
 
     const { error } = await supabase.from('poslugi').insert({
@@ -5391,10 +5435,10 @@ export default function MinistranciApp() {
       opis: newPoslugaForm.opis,
       emoji: emojiToSave,
       kolor: newPoslugaForm.kolor,
-      obrazek_url: obrazekUrl || null,
+      obrazek_url: null,
       kolejnosc: poslugi.length,
       dlugi_opis: poslugaEditor?.getHTML() || '',
-      zdjecia: zdjeciaUrls,
+      zdjecia: [],
       youtube_url: newPoslugaForm.youtube_url || '',
     });
 
@@ -5406,31 +5450,11 @@ export default function MinistranciApp() {
     await loadPoslugi();
     if (poslugaEditor) poslugaEditor.commands.clearContent();
     setNewPoslugaForm({ nazwa: '', opis: '', emoji: '⭐', kolor: 'gray', dlugi_opis: '', youtube_url: '' });
-    setNewPoslugaFile(null);
-    setNewPoslugaPreview('');
-    setNewGalleryFiles([]);
-    setNewGalleryPreviews([]);
     setShowAddPoslugaModal(false);
   };
 
   const handleUpdatePoslugaDetails = async () => {
     if (!editingPosluga) return;
-
-    let obrazekUrl = editingPosluga.obrazek_url;
-
-    if (canEditPoslugaVisuals && editPoslugaFile) {
-      if (editingPosluga.obrazek_url) {
-        await deletePoslugaImage(editingPosluga.obrazek_url);
-      }
-      const url = await uploadPoslugaImage(editPoslugaFile, editingPosluga.id);
-      if (url) obrazekUrl = url;
-    }
-
-    let zdjeciaUrls = editingPosluga.zdjecia || [];
-    if (editGalleryFiles.length > 0) {
-      const newUrls = await uploadPoslugaGalleryImages(editGalleryFiles, editingPosluga.id);
-      zdjeciaUrls = [...zdjeciaUrls, ...newUrls];
-    }
     const emojiToSave = canEditPoslugaEmoji ? editingPosluga.emoji : (poslugi.find((p) => p.id === editingPosluga.id)?.emoji || editingPosluga.emoji);
 
     const { error } = await supabase
@@ -5440,9 +5464,9 @@ export default function MinistranciApp() {
         opis: editingPosluga.opis,
         emoji: emojiToSave,
         kolor: editingPosluga.kolor,
-        obrazek_url: obrazekUrl || null,
+        obrazek_url: editingPosluga.obrazek_url || null,
         dlugi_opis: poslugaEditor?.getHTML() || editingPosluga.dlugi_opis || '',
-        zdjecia: zdjeciaUrls,
+        zdjecia: editingPosluga.zdjecia || [],
         youtube_url: editingPosluga.youtube_url || '',
       })
       .eq('id', editingPosluga.id);
@@ -5454,10 +5478,6 @@ export default function MinistranciApp() {
 
     await loadPoslugi();
     setEditingPosluga(null);
-    setEditPoslugaFile(null);
-    setEditPoslugaPreview('');
-    setEditGalleryFiles([]);
-    setEditGalleryPreviews([]);
     setShowPoslugaEditModal(false);
   };
 
@@ -7016,7 +7036,7 @@ export default function MinistranciApp() {
                     <div className="mx-auto w-full max-w-[240px]">
                       <div className="rounded-2xl border-4 border-emerald-100 bg-white p-4 shadow-md w-full">
                         <QRCodeSVG
-                          value={`https://ministranci.net/app?kod=${currentParafia?.kod_zaproszenia || ''}`}
+                          value={`https://ministranci.net/app?auth=register&kod=${encodeURIComponent(currentParafia?.kod_zaproszenia || '')}`}
                           size={240}
                           level="H"
                           className="w-full h-auto"
@@ -8062,7 +8082,7 @@ export default function MinistranciApp() {
                             setShowPriestRankingInfo(false);
                             setHidePriestRankingInfoPermanently(true);
                             if (typeof window !== 'undefined' && priestRankingInfoStorageKey) {
-                              localStorage.setItem(priestRankingInfoStorageKey, 'true');
+                              writeLocalStorage(priestRankingInfoStorageKey, 'true');
                             }
                           }}
                         >
@@ -8491,7 +8511,7 @@ export default function MinistranciApp() {
                                 setShowPriestWydarzeniaInfo(false);
                                 setHidePriestWydarzeniaInfoPermanently(true);
                                 if (typeof window !== 'undefined' && priestWydarzeniaInfoStorageKey) {
-                                  localStorage.setItem(priestWydarzeniaInfoStorageKey, 'true');
+                                  writeLocalStorage(priestWydarzeniaInfoStorageKey, 'true');
                                 }
                               }}
                             >
@@ -8880,7 +8900,7 @@ export default function MinistranciApp() {
                               setShowPriestMinistranciInfo(false);
                               setHidePriestMinistranciInfoPermanently(true);
                               if (typeof window !== 'undefined' && priestMinistranciInfoStorageKey) {
-                                localStorage.setItem(priestMinistranciInfoStorageKey, 'true');
+                                writeLocalStorage(priestMinistranciInfoStorageKey, 'true');
                               }
                             }}
                           >
@@ -9133,7 +9153,7 @@ export default function MinistranciApp() {
                             To miejsce do budowania i porządkowania bazy posług liturgicznych w parafii.
                           </p>
                           <p className="text-xs text-fuchsia-800 dark:text-fuchsia-200">
-                            W tym panelu możesz m.in. dodawać i edytować posługi, uzupełniać opisy, zdjęcia i filmy, usuwać nieaktualne pozycje oraz nadawać uprawnienia admina.
+                            W tym panelu możesz m.in. dodawać i edytować posługi, uzupełniać opisy i filmy, usuwać nieaktualne pozycje oraz nadawać uprawnienia admina.
                           </p>
                         </div>
                       </div>
@@ -9148,7 +9168,7 @@ export default function MinistranciApp() {
                             setShowPriestPoslugiInfo(false);
                             setHidePriestPoslugiInfoPermanently(true);
                             if (typeof window !== 'undefined' && priestPoslugiInfoStorageKey) {
-                              localStorage.setItem(priestPoslugiInfoStorageKey, 'true');
+                              writeLocalStorage(priestPoslugiInfoStorageKey, 'true');
                             }
                           }}
                         >
@@ -9248,8 +9268,6 @@ export default function MinistranciApp() {
                                 title="Edytuj posługę"
                                 onClick={() => {
                                   setEditingPosluga({ ...posluga });
-                                  setEditGalleryFiles([]);
-                                  setEditGalleryPreviews([]);
                                   if (poslugaEditor) {
                                     const opis = posluga.dlugi_opis || '';
                                     const html = /<[a-z][\s\S]*>/i.test(opis) ? opis : opis.split('\n').map(l => `<p>${l || '<br>'}</p>`).join('');
@@ -9882,7 +9900,7 @@ export default function MinistranciApp() {
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
                 onClick={() => {
                   setShowIOSInstallBanner(false);
-                  localStorage.setItem('ios-install-dismissed', 'true');
+                  writeLocalStorage('ios-install-dismissed', 'true');
                 }}
               >
                 <X className="w-4 h-4" />
@@ -11301,10 +11319,6 @@ export default function MinistranciApp() {
         setShowPoslugaEditModal(open);
         if (!open) {
           setEditingPosluga(null);
-          setEditPoslugaFile(null);
-          setEditPoslugaPreview('');
-          setEditGalleryFiles([]);
-          setEditGalleryPreviews([]);
         }
       }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -11351,37 +11365,6 @@ export default function MinistranciApp() {
                   </Select>
                 </div>
               </div>
-              {canEditPoslugaVisuals && (
-                <div>
-                  <Label>Własny obrazek (zamiast emoji)</Label>
-                  <div className="flex items-center gap-3 mt-1">
-                    {(editPoslugaPreview || editingPosluga.obrazek_url) && (
-                      <img src={editPoslugaPreview || editingPosluga.obrazek_url} alt={editingPosluga.nazwa} className="w-12 h-12 rounded-full object-cover border" />
-                    )}
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setEditPoslugaFile(file);
-                        setEditPoslugaPreview(URL.createObjectURL(file));
-                      }}
-                    />
-                    {(editPoslugaPreview || editingPosluga.obrazek_url) && (
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        setEditPoslugaFile(null);
-                        setEditPoslugaPreview('');
-                        setEditingPosluga({ ...editingPosluga, obrazek_url: undefined });
-                      }}>
-                        Usuń
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
-                </div>
-              )}
-
               <div className="border-t pt-4">
                 <h3 className="font-semibold mb-3">Karta szczegółów</h3>
 
@@ -11404,56 +11387,6 @@ export default function MinistranciApp() {
                         <EditorContent editor={poslugaEditor} />
                       </div>
                     )}
-                  </div>
-
-                  <div>
-                    <Label>Zdjęcia do galerii</Label>
-                    {((editingPosluga.zdjecia && editingPosluga.zdjecia.length > 0) || editGalleryPreviews.length > 0) && (
-                      <div className="grid grid-cols-3 gap-2 mt-2 mb-2">
-                        {(editingPosluga.zdjecia || []).map((url, i) => (
-                          <div key={`existing-${i}`} className="relative group">
-                            <img src={url} alt={`Zdjęcie ${i + 1}`} className="w-full h-24 object-cover rounded border" />
-                            <button
-                              type="button"
-                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => {
-                                const updated = (editingPosluga.zdjecia || []).filter((_, idx) => idx !== i);
-                                setEditingPosluga({ ...editingPosluga, zdjecia: updated });
-                                deletePoslugaImage(url);
-                              }}
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                        {editGalleryPreviews.map((preview, i) => (
-                          <div key={`new-${i}`} className="relative group">
-                            <img src={preview} alt={`Nowe ${i + 1}`} className="w-full h-24 object-cover rounded border border-green-300" />
-                            <button
-                              type="button"
-                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                              onClick={() => {
-                                setEditGalleryFiles(editGalleryFiles.filter((_, idx) => idx !== i));
-                                setEditGalleryPreviews(editGalleryPreviews.filter((_, idx) => idx !== i));
-                              }}
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        if (files.length === 0) return;
-                        setEditGalleryFiles([...editGalleryFiles, ...files]);
-                        setEditGalleryPreviews([...editGalleryPreviews, ...files.map(f => URL.createObjectURL(f))]);
-                      }}
-                    />
                   </div>
 
                   <div>
@@ -11490,10 +11423,6 @@ export default function MinistranciApp() {
       {/* Modal dodawania posługi */}
       <Dialog open={showAddPoslugaModal} onOpenChange={(open) => {
         setShowAddPoslugaModal(open);
-        if (!open) {
-          setNewGalleryFiles([]);
-          setNewGalleryPreviews([]);
-        }
       }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -11541,36 +11470,6 @@ export default function MinistranciApp() {
                 </Select>
               </div>
             </div>
-            {canEditPoslugaVisuals && (
-              <div>
-                <Label>Własny obrazek (zamiast emoji)</Label>
-                <div className="flex items-center gap-3 mt-1">
-                  {newPoslugaPreview && (
-                    <img src={newPoslugaPreview} alt="podgląd" className="w-12 h-12 rounded-full object-cover border" />
-                  )}
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      setNewPoslugaFile(file);
-                      setNewPoslugaPreview(URL.createObjectURL(file));
-                    }}
-                  />
-                  {newPoslugaPreview && (
-                    <Button variant="ghost" size="sm" onClick={() => {
-                      setNewPoslugaFile(null);
-                      setNewPoslugaPreview('');
-                    }}>
-                      Usuń
-                    </Button>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Jeśli dodasz obrazek, zastąpi on emoji</p>
-              </div>
-            )}
-
             <div className="border-t pt-4">
               <h3 className="font-semibold mb-3">Karta szczegółów</h3>
 
@@ -11593,40 +11492,6 @@ export default function MinistranciApp() {
                       <EditorContent editor={poslugaEditor} />
                     </div>
                   )}
-                </div>
-
-                <div>
-                  <Label>Zdjęcia do galerii</Label>
-                  {newGalleryPreviews.length > 0 && (
-                    <div className="grid grid-cols-3 gap-2 mt-2 mb-2">
-                      {newGalleryPreviews.map((preview, i) => (
-                        <div key={i} className="relative group">
-                          <img src={preview} alt={`Nowe ${i + 1}`} className="w-full h-24 object-cover rounded border" />
-                          <button
-                            type="button"
-                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => {
-                              setNewGalleryFiles(newGalleryFiles.filter((_, idx) => idx !== i));
-                              setNewGalleryPreviews(newGalleryPreviews.filter((_, idx) => idx !== i));
-                            }}
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      if (files.length === 0) return;
-                      setNewGalleryFiles([...newGalleryFiles, ...files]);
-                      setNewGalleryPreviews([...newGalleryPreviews, ...files.map(f => URL.createObjectURL(f))]);
-                    }}
-                  />
                 </div>
 
                 <div>

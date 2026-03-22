@@ -1,4 +1,4 @@
-#Thu Mar 05 14:51:25 CET 2026
+#Sun Mar 22 02:52:02 CET 2026
 base.0=/Users/pawelimac/ministranci/app/build/intermediates/dex/release/minifyReleaseWithR8/classes.dex
 renamed.0=classes.dex
 path.0=classes.dex

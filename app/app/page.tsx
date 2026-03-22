@@ -7020,7 +7020,7 @@ export default function MinistranciApp() {
                       <div className="space-y-2 text-sm sm:text-base leading-relaxed text-gray-700">
                         <p>1. Otwórz aparat lub aplikację do skanowania QR.</p>
                         <p>2. Zeskanuj kod z plakatu.</p>
-                        <p>3. Potwierdź dołączenie do parafii.</p>
+                        <p>3. Załóż konto i dołącz do parafii.</p>
                       </div>
                       <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
                         <p className="text-xs uppercase tracking-[0.14em] text-emerald-700 font-bold">Kod zaproszenia</p>

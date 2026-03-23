@@ -405,6 +405,7 @@ interface Dyzur {
   ministrant_id: string;
   parafia_id: string;
   dzien_tygodnia: number;
+  godzina?: string | null;
   aktywny: boolean;
   status: 'oczekuje' | 'zatwierdzona' | 'odrzucona';
 }
@@ -1712,7 +1713,7 @@ export default function MinistranciApp() {
   const [rankingData, setRankingData] = useState<RankingEntry[]>([]);
   const [showZglosModal, setShowZglosModal] = useState(false);
   const [showDyzuryModal, setShowDyzuryModal] = useState(false);
-  const [dyzurConfirm, setDyzurConfirm] = useState<{ dzien: number; type: 'first' | 'change' } | null>(null);
+  const [dyzurConfirm, setDyzurConfirm] = useState<{ dzien: number; type: 'first' | 'change'; godzina: string } | null>(null);
   const [showEditProfilModal, setShowEditProfilModal] = useState(false);
   const [editProfilForm, setEditProfilForm] = useState({ imie: '', nazwisko: '', email: '' });
   const [editDyzury, setEditDyzury] = useState(false);
@@ -1740,6 +1741,7 @@ export default function MinistranciApp() {
   const [approvingObecnosciIds, setApprovingObecnosciIds] = useState<Set<string>>(new Set());
   const [rejectingObecnosciIds, setRejectingObecnosciIds] = useState<Set<string>>(new Set());
   const [bulkApprovingObecnosci, setBulkApprovingObecnosci] = useState(false);
+  const [approvingDyzurIds, setApprovingDyzurIds] = useState<Set<string>>(new Set());
   const [editingOdznakaId, setEditingOdznakaId] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ punkty: number; total: number } | null>(null);
   const prevObecnosciRef = useRef<Obecnosc[]>([]);
@@ -3076,7 +3078,7 @@ export default function MinistranciApp() {
 
     // Nowy dzień — pokaż dialog potwierdzenia
     const hasAnyApproved = dyzury.some(d => d.ministrant_id === currentUser.id && d.status === 'zatwierdzona');
-    setDyzurConfirm({ dzien: dzienTygodnia, type: hasAnyApproved ? 'change' : 'first' });
+    setDyzurConfirm({ dzien: dzienTygodnia, type: hasAnyApproved ? 'change' : 'first', godzina: '' });
   };
 
   const confirmDyzur = async () => {
@@ -3085,6 +3087,7 @@ export default function MinistranciApp() {
       ministrant_id: currentUser.id,
       parafia_id: currentUser.parafia_id,
       dzien_tygodnia: dyzurConfirm.dzien,
+      godzina: dyzurConfirm.godzina.trim() || null,
       status: dyzurConfirm.type === 'first' ? 'zatwierdzona' : 'oczekuje',
     });
     setDyzurConfirm(null);
@@ -3164,6 +3167,26 @@ export default function MinistranciApp() {
     loadRankingData();
   };
 
+  const handleApprovePendingDyzurRequest = async (dyzurId: string) => {
+    if (approvingDyzurIds.has(dyzurId)) return;
+    setApprovingDyzurIds((prev) => {
+      const next = new Set(prev);
+      next.add(dyzurId);
+      return next;
+    });
+    try {
+      await handleDyzurDecision(dyzurId, 'zatwierdzona');
+    } catch (err) {
+      alert('Nie udało się zatwierdzić zmiany dyżuru: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setApprovingDyzurIds((prev) => {
+        const next = new Set(prev);
+        next.delete(dyzurId);
+        return next;
+      });
+    }
+  };
+
   const handleDeleteMember = async (member: Member) => {
     if (!currentUser?.parafia_id) return;
     try {
@@ -3216,6 +3239,10 @@ export default function MinistranciApp() {
   const pendingObecnosci = useMemo(
     () => obecnosci.filter((o) => o.status === 'oczekuje'),
     [obecnosci]
+  );
+  const pendingDyzury = useMemo(
+    () => dyzury.filter((d) => d.status === 'oczekuje'),
+    [dyzury]
   );
   const memberByProfileId = useMemo(
     () => new Map(members.map((m) => [m.profile_id, m])),
@@ -8126,7 +8153,9 @@ export default function MinistranciApp() {
                           <div className="flex flex-wrap gap-1 justify-center">
                             {myDyzury.map(d => (
                               <span key={d.id} className={`px-2 py-0.5 rounded text-xs font-medium ${d.status === 'oczekuje' ? 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300' : 'bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'}`}>
-                                {d.status === 'oczekuje' ? '⏳ ' : ''}{DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
+                                {d.status === 'oczekuje' ? '⏳ ' : ''}
+                                {DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1]}
+                                {d.godzina?.trim() ? ` • ${d.godzina.trim()}` : ''}
                               </span>
                             ))}
                           </div>
@@ -8918,6 +8947,60 @@ export default function MinistranciApp() {
                     Zatwierdź ministrantów ({members.filter(m => m.typ === 'ministrant' && m.zatwierdzony === false).length})
                   </Button>
                 )}
+                {pendingDyzury.length > 0 && (
+                  <Card className="border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 shadow-md shadow-amber-500/10">
+                    <CardContent className="py-3 px-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="space-y-1">
+                          <p className="text-sm font-bold text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                            <Hourglass className="w-4 h-4" />
+                            Prośby o zmianę dyżuru ({pendingDyzury.length})
+                          </p>
+                          <p className="text-xs text-amber-700 dark:text-amber-300">
+                            Ministranci czekają na akceptację nowego terminu dyżuru.
+                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            {pendingDyzury.slice(0, 4).map((d) => {
+                              const member = memberByProfileId.get(d.ministrant_id);
+                              const dayName = DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1];
+                              const memberName = member ? `${member.imie} ${member.nazwisko || ''}`.trim() : 'Nieznany ministrant';
+                              const godzina = d.godzina?.trim();
+                              const isApproving = approvingDyzurIds.has(d.id);
+                              return (
+                                <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white/90 dark:bg-gray-900/50 px-2.5 py-1.5">
+                                  <span className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                                    {memberName} • {dayName}{godzina ? ` • ${godzina}` : ''}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    className="h-6 px-2 text-[11px] bg-amber-500 hover:bg-amber-600 text-white"
+                                    onClick={() => handleApprovePendingDyzurRequest(d.id)}
+                                    disabled={isApproving}
+                                  >
+                                    <Check className="w-3 h-3 mr-1" />
+                                    {isApproving ? 'Akceptuję...' : 'Akceptuj'}
+                                  </Button>
+                                </div>
+                              );
+                            })}
+                            {pendingDyzury.length > 4 && (
+                              <Badge variant="outline" className="bg-white/90 dark:bg-gray-900/50 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200">
+                                +{pendingDyzury.length - 4} więcej
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="bg-amber-600 hover:bg-amber-700 text-white"
+                          onClick={() => setShowGrafikModal(true)}
+                        >
+                          Otwórz grafik dyżurów
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
                 <div className="flex justify-end items-center flex-wrap gap-2">
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" onClick={() => { setEmailSelectedGrupy([]); setEmailSelectedMinistranci([]); setEmailSearchMinistrant(''); setShowEmailModal(true); }} variant="outline">
@@ -8945,6 +9028,11 @@ export default function MinistranciApp() {
                 <Button className="w-full py-5 text-base font-semibold bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-700 dark:hover:bg-indigo-600" onClick={() => setShowGrafikModal(true)}>
                   <Shield className="w-5 h-5 mr-2" />
                   Grafik dyżurów
+                  {pendingDyzury.length > 0 && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+                      {pendingDyzury.length} oczekuje
+                    </span>
+                  )}
                 </Button>
 
                 {/* Nieprzypisani */}
@@ -9095,14 +9183,24 @@ export default function MinistranciApp() {
                                   {(() => {
                                     const memberDyzury = dyzury.filter(d => d.ministrant_id === member.profile_id);
                                     if (memberDyzury.length > 0) {
+                                      const hasPendingDyzurChange = memberDyzury.some((d) => d.status === 'oczekuje');
                                       const biernik: Record<string, string> = { 'Środa': 'Środę', 'Sobota': 'Sobotę', 'Niedziela': 'Niedzielę' };
                                       const dniNazwy = memberDyzury.map(d => {
                                         const idx = d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1;
                                         const nazwa = DNI_TYGODNIA_FULL[idx];
-                                        return biernik[nazwa] || nazwa;
+                                        const dzienName = biernik[nazwa] || nazwa;
+                                        const godzina = d.godzina?.trim();
+                                        return godzina ? `${dzienName} (${godzina})` : dzienName;
                                       });
                                       const prefix = dniNazwy[0] === 'Wtorek' ? 'we' : 'w';
-                                      return <p className="text-xs text-gray-500 dark:text-gray-400">Dyżur {prefix} {dniNazwy.join(', ')}</p>;
+                                      return (
+                                        <div className="space-y-1">
+                                          <p className="text-xs text-gray-500 dark:text-gray-400">Dyżur {prefix} {dniNazwy.join(', ')}</p>
+                                          {hasPendingDyzurChange && (
+                                            <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-300">⏳ Prośba o zmianę dyżuru</p>
+                                          )}
+                                        </div>
+                                      );
                                     }
                                     return (
                                       <Button
@@ -12332,6 +12430,7 @@ export default function MinistranciApp() {
                               {isPending && <span className="text-xs">⏳</span>}
                               {!isPending && grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
                               {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
+                              {d.godzina?.trim() && <span className="text-[10px] opacity-80">• {d.godzina.trim()}</span>}
                               {isPending && (
                                 <>
                                   <button onClick={() => handleDyzurDecision(d.id, 'zatwierdzona')} className="ml-1 w-5 h-5 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors" title="Zatwierdź">
@@ -12375,6 +12474,7 @@ export default function MinistranciApp() {
                             {isPending && <span className="text-xs">⏳</span>}
                             {!isPending && grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
                             {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
+                            {d.godzina?.trim() && <span className="text-[10px] opacity-80">• {d.godzina.trim()}</span>}
                             {isPending ? (
                               <>
                                 <button onClick={() => handleDyzurDecision(d.id, 'zatwierdzona')} className="ml-0.5 w-5 h-5 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors" title="Zatwierdź">
@@ -12570,6 +12670,7 @@ export default function MinistranciApp() {
               const isActive = !!myDyzur;
               const isPending = myDyzur?.status === 'oczekuje';
               const isApproved = myDyzur?.status === 'zatwierdzona';
+              const dyzurGodzina = myDyzur?.godzina?.trim() || '';
               return (
                 <button
                   key={i}
@@ -12580,8 +12681,9 @@ export default function MinistranciApp() {
                     {isPending ? <Clock className="w-4 h-4" /> : isApproved ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                   </div>
                   <span className={`font-bold text-sm ${isPending ? 'text-amber-700 dark:text-amber-300' : isApproved ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>{dzien}</span>
-                  {isPending && <span className="ml-auto text-[10px] font-bold text-amber-500 uppercase">Cofnij wniosek</span>}
-                  {isApproved && <span className="ml-auto text-[10px] font-bold text-indigo-500 uppercase">Aktywny</span>}
+                  {dyzurGodzina && <span className="ml-auto text-xs font-semibold text-gray-600 dark:text-gray-300">{dyzurGodzina}</span>}
+                  {isPending && <span className={`${dyzurGodzina ? 'ml-2' : 'ml-auto'} text-[10px] font-bold text-amber-500 uppercase`}>Cofnij wniosek</span>}
+                  {isApproved && <span className={`${dyzurGodzina ? 'ml-2' : 'ml-auto'} text-[10px] font-bold text-indigo-500 uppercase`}>Aktywny</span>}
                   {!isActive && <span className="ml-auto text-[10px] text-gray-400">Wybierz</span>}
                 </button>
               );
@@ -12602,6 +12704,15 @@ export default function MinistranciApp() {
               }
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-1">
+            <Label htmlFor="dyzur-godzina">Godzina (opcjonalnie)</Label>
+            <Input
+              id="dyzur-godzina"
+              type="time"
+              value={dyzurConfirm?.godzina || ''}
+              onChange={(e) => setDyzurConfirm((prev) => (prev ? { ...prev, godzina: e.target.value } : prev))}
+            />
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDyzurConfirm(null)}>Anuluj</Button>
             <Button onClick={confirmDyzur}>

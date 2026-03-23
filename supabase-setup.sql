@@ -400,6 +400,7 @@ create table dyzury (
   ministrant_id uuid references profiles(id) on delete cascade not null,
   parafia_id uuid references parafie(id) on delete cascade not null,
   dzien_tygodnia integer not null check (dzien_tygodnia between 0 and 6),
+  godzina text,
   aktywny boolean default true,
   status text default 'zatwierdzona' check (status in ('oczekuje', 'zatwierdzona', 'odrzucona')),
   created_at timestamptz default now(),

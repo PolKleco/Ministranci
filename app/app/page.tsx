@@ -406,6 +406,7 @@ interface Dyzur {
   parafia_id: string;
   dzien_tygodnia: number;
   godzina?: string | null;
+  zastepuje_dzien_tygodnia?: number | null;
   aktywny: boolean;
   status: 'oczekuje' | 'zatwierdzona' | 'odrzucona';
 }
@@ -433,6 +434,16 @@ interface MinusowePunkty {
   data: string;
   powod: string;
   punkty: number;
+}
+
+interface PunktyReczne {
+  id: string;
+  ministrant_id: string;
+  parafia_id: string;
+  data: string;
+  powod: string;
+  punkty: number;
+  created_at: string;
 }
 
 interface OdznakaZdobyta {
@@ -1709,11 +1720,12 @@ export default function MinistranciApp() {
   const [dyzury, setDyzury] = useState<Dyzur[]>([]);
   const [obecnosci, setObecnosci] = useState<Obecnosc[]>([]);
   const [minusowePunkty, setMinusowePunkty] = useState<MinusowePunkty[]>([]);
+  const [punktyReczne, setPunktyReczne] = useState<PunktyReczne[]>([]);
   const [odznakiZdobyte, setOdznakiZdobyte] = useState<OdznakaZdobyta[]>([]);
   const [rankingData, setRankingData] = useState<RankingEntry[]>([]);
   const [showZglosModal, setShowZglosModal] = useState(false);
   const [showDyzuryModal, setShowDyzuryModal] = useState(false);
-  const [dyzurConfirm, setDyzurConfirm] = useState<{ dzien: number; type: 'first' | 'change'; godzina: string } | null>(null);
+  const [dyzurConfirm, setDyzurConfirm] = useState<{ dzien: number; type: 'first' | 'change'; godzina: string; replaceFromDzien: number | null } | null>(null);
   const [showEditProfilModal, setShowEditProfilModal] = useState(false);
   const [editProfilForm, setEditProfilForm] = useState({ imie: '', nazwisko: '', email: '' });
   const [editDyzury, setEditDyzury] = useState(false);
@@ -2509,6 +2521,7 @@ export default function MinistranciApp() {
       { data: dyzuryData },
       { data: obecnosciData },
       { data: minusoweData },
+      { data: punktyReczneData },
       { data: odznakiZdobyteData },
       { data: rankingRows },
     ] = await Promise.all([
@@ -2518,6 +2531,7 @@ export default function MinistranciApp() {
       supabase.from('dyzury').select('*').eq('parafia_id', pid),
       supabase.from('obecnosci').select('*').eq('parafia_id', pid).order('data', { ascending: false }),
       supabase.from('minusowe_punkty').select('*').eq('parafia_id', pid),
+      supabase.from('punkty_reczne').select('*').eq('parafia_id', pid).order('created_at', { ascending: false }),
       supabase.from('odznaki_zdobyte').select('*'),
       supabase.from('ranking').select('*').eq('parafia_id', pid).order('total_pkt', { ascending: false }),
     ]);
@@ -2528,6 +2542,7 @@ export default function MinistranciApp() {
     if (dyzuryData) setDyzury(dyzuryData as Dyzur[]);
     if (obecnosciData) setObecnosci(obecnosciData as Obecnosc[]);
     if (minusoweData) setMinusowePunkty(minusoweData as MinusowePunkty[]);
+    if (punktyReczneData) setPunktyReczne(punktyReczneData as PunktyReczne[]);
     if (odznakiZdobyteData) setOdznakiZdobyte(odznakiZdobyteData as OdznakaZdobyta[]);
     if (rankingRows) setRankingData(rankingRows as RankingEntry[]);
   }, [currentUser?.parafia_id]);
@@ -2956,6 +2971,8 @@ export default function MinistranciApp() {
     if (!selectedMember || !currentUser?.parafia_id) return;
     const pkt = parseInt(dodajPunktyForm.punkty);
     if (!pkt || pkt === 0) return;
+    const powod = dodajPunktyForm.powod.trim();
+    const today = getLocalISODate();
 
     const { data: existing } = await supabase.from('ranking')
       .select('*')
@@ -2966,20 +2983,39 @@ export default function MinistranciApp() {
     if (existing) {
       const newTotal = Number(existing.total_pkt) + pkt;
       const ranga = getRanga(newTotal);
-      await supabase.from('ranking').update({
+      const { error: rankingUpdateError } = await supabase.from('ranking').update({
         total_pkt: newTotal,
         ranga: ranga?.nazwa || existing.ranga,
         updated_at: new Date().toISOString(),
       }).eq('id', existing.id);
+      if (rankingUpdateError) {
+        alert('Nie udało się zapisać punktów: ' + rankingUpdateError.message);
+        return;
+      }
     } else {
       const ranga = getRanga(pkt);
-      await supabase.from('ranking').insert({
+      const { error: rankingInsertError } = await supabase.from('ranking').insert({
         ministrant_id: selectedMember.profile_id,
         parafia_id: currentUser.parafia_id,
         total_pkt: pkt,
         total_obecnosci: 0,
         ranga: ranga?.nazwa || 'Ready',
       });
+      if (rankingInsertError) {
+        alert('Nie udało się zapisać punktów: ' + rankingInsertError.message);
+        return;
+      }
+    }
+
+    const { error: punktyReczneError } = await supabase.from('punkty_reczne').insert({
+      ministrant_id: selectedMember.profile_id,
+      parafia_id: currentUser.parafia_id,
+      data: today,
+      powod,
+      punkty: pkt,
+    });
+    if (punktyReczneError) {
+      alert('Punkty dodano, ale nie udało się zapisać wpisu do historii misji: ' + punktyReczneError.message);
     }
 
     setShowDodajPunktyModal(false);
@@ -3077,17 +3113,40 @@ export default function MinistranciApp() {
     }
 
     // Nowy dzień — pokaż dialog potwierdzenia
-    const hasAnyApproved = dyzury.some(d => d.ministrant_id === currentUser.id && d.status === 'zatwierdzona');
-    setDyzurConfirm({ dzien: dzienTygodnia, type: hasAnyApproved ? 'change' : 'first', godzina: '' });
+    const approvedMyDyzury = dyzury.filter(d => d.ministrant_id === currentUser.id && d.status === 'zatwierdzona');
+    const hasAnyApproved = approvedMyDyzury.length > 0;
+    const defaultReplaceFrom = approvedMyDyzury.length === 1 ? approvedMyDyzury[0].dzien_tygodnia : null;
+    setDyzurConfirm({
+      dzien: dzienTygodnia,
+      type: hasAnyApproved ? 'change' : 'first',
+      godzina: '',
+      replaceFromDzien: hasAnyApproved ? defaultReplaceFrom : null,
+    });
   };
 
   const confirmDyzur = async () => {
     if (!currentUser?.parafia_id || !dyzurConfirm) return;
+    if (dyzurConfirm.type === 'change' && dyzurConfirm.replaceFromDzien === null) {
+      alert('Wybierz, który obecny dzień dyżuru chcesz zmienić.');
+      return;
+    }
+
+    if (dyzurConfirm.type === 'change') {
+      // Jedna aktywna prośba o zmianę naraz — nowa nadpisuje poprzednią.
+      await supabase
+        .from('dyzury')
+        .delete()
+        .eq('parafia_id', currentUser.parafia_id)
+        .eq('ministrant_id', currentUser.id)
+        .eq('status', 'oczekuje');
+    }
+
     await supabase.from('dyzury').insert({
       ministrant_id: currentUser.id,
       parafia_id: currentUser.parafia_id,
       dzien_tygodnia: dyzurConfirm.dzien,
       godzina: dyzurConfirm.godzina.trim() || null,
+      zastepuje_dzien_tygodnia: dyzurConfirm.type === 'change' ? dyzurConfirm.replaceFromDzien : null,
       status: dyzurConfirm.type === 'first' ? 'zatwierdzona' : 'oczekuje',
     });
     setDyzurConfirm(null);
@@ -3162,7 +3221,32 @@ export default function MinistranciApp() {
     if (decision === 'odrzucona') {
       await supabase.from('dyzury').delete().eq('id', dyzurId);
     } else {
-      await supabase.from('dyzury').update({ status: decision }).eq('id', dyzurId);
+      const pendingRequest = dyzury.find((d) => d.id === dyzurId);
+      if (pendingRequest) {
+        // Akceptacja zmiany dyżuru podmienia poprzedni zatwierdzony termin.
+        const replaceFrom = pendingRequest.zastepuje_dzien_tygodnia;
+        if (replaceFrom !== null && replaceFrom !== undefined) {
+          await supabase
+            .from('dyzury')
+            .delete()
+            .eq('parafia_id', pendingRequest.parafia_id)
+            .eq('ministrant_id', pendingRequest.ministrant_id)
+            .eq('status', 'zatwierdzona')
+            .eq('dzien_tygodnia', replaceFrom);
+        } else {
+          // Fallback dla starszych próśb bez wskazanego dnia zastępowanego.
+          const approvedForMember = dyzury.filter(
+            (d) =>
+              d.ministrant_id === pendingRequest.ministrant_id &&
+              d.parafia_id === pendingRequest.parafia_id &&
+              d.status === 'zatwierdzona'
+          );
+          if (approvedForMember.length === 1) {
+            await supabase.from('dyzury').delete().eq('id', approvedForMember[0].id);
+          }
+        }
+      }
+      await supabase.from('dyzury').update({ status: decision, zastepuje_dzien_tygodnia: null }).eq('id', dyzurId);
     }
     loadRankingData();
   };
@@ -3317,6 +3401,7 @@ export default function MinistranciApp() {
     await Promise.all([
       supabase.from('obecnosci').delete().eq('parafia_id', pid),
       supabase.from('minusowe_punkty').delete().eq('parafia_id', pid),
+      supabase.from('punkty_reczne').delete().eq('parafia_id', pid),
     ]);
     // Wyzeruj ranking jednym zapytaniem (zachowaj rekordy)
     await supabase.from('ranking').update({
@@ -8129,12 +8214,17 @@ export default function MinistranciApp() {
                 const nextRanga = getNextRanga(totalPkt);
                 const myObecnosci = obecnosci.filter(o => o.ministrant_id === currentUser.id);
                 const myDyzury = dyzury.filter(d => d.ministrant_id === currentUser.id);
+                const myPunktyReczne = punktyReczne.filter(p => p.ministrant_id === currentUser.id);
                 const myOdznaki = odznakiZdobyte.filter(o => o.ministrant_id === currentUser.id);
                 const myMinusowe = minusowePunkty.filter(m => m.ministrant_id === currentUser.id);
                 const totalMinusowe = myMinusowe.reduce((sum, m) => sum + Number(m.punkty), 0);
                 const myPosition = rankingData.findIndex(r => r.ministrant_id === currentUser.id) + 1;
                 const myMember = members.find(m => m.profile_id === currentUser.id);
                 const myGrupa = myMember?.grupa ? grupy.find(g => g.id === myMember.grupa) : null;
+                const historiaMisji = [
+                  ...myObecnosci.map((o) => ({ kind: 'obecnosc' as const, id: o.id, createdAt: `${o.data}T00:00:00`, obec: o })),
+                  ...myPunktyReczne.map((p) => ({ kind: 'korekta' as const, id: p.id, createdAt: p.created_at || `${p.data}T00:00:00`, korekta: p })),
+                ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
                 return (
                   <div className="space-y-5">
@@ -8261,40 +8351,68 @@ export default function MinistranciApp() {
                         </h3>
                       </div>
                       <div className="bg-white dark:bg-gray-900 p-3">
-                        {myObecnosci.length === 0 ? (
+                        {historiaMisji.length === 0 ? (
                           <p className="text-gray-500 dark:text-gray-400 text-sm text-center py-4">Brak misji. Zacznij służyć i zdobywaj XP!</p>
                         ) : (
                           <div className="space-y-1.5">
-                            {(showAllZgloszenia ? myObecnosci : myObecnosci.slice(0, 3)).map(o => {
-                              const d = new Date(`${o.data}T00:00:00`);
+                            {(showAllZgloszenia ? historiaMisji : historiaMisji.slice(0, 3)).map((item) => {
+                              if (item.kind === 'obecnosc') {
+                                const o = item.obec;
+                                const d = new Date(`${o.data}T00:00:00`);
+                                const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+                                const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay() && dy.status === 'zatwierdzona');
+                                return (
+                                  <div key={o.id} className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border ${o.status === 'zatwierdzona' ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10' : o.status === 'odrzucona' ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10' : 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10'}`}>
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      {o.status === 'zatwierdzona' && <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)] shrink-0" />}
+                                      {o.status === 'oczekuje' && <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />}
+                                      {o.status === 'odrzucona' && <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+                                      <span className="text-xs sm:text-sm truncate font-medium">
+                                        {dayName} {d.toLocaleDateString('pl-PL')}
+                                      </span>
+                                      {isDyzur && <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">DYŻUR</span>}
+                                      {o.typ === 'nabożeństwo' && (
+                                        <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-[10px] font-medium text-purple-600 dark:text-purple-400">{o.nazwa_nabożeństwa}</span>
+                                      )}
+                                      {o.typ === 'wydarzenie' && (
+                                        <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-[10px] font-medium text-amber-600 dark:text-amber-400">⭐ {o.nazwa_nabożeństwa}</span>
+                                      )}
+                                    </div>
+                                    <span className={`font-extrabold text-sm tabular-nums ${o.status === 'zatwierdzona' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
+                                      {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? '...' : 'X'}
+                                    </span>
+                                  </div>
+                                );
+                              }
+
+                              const p = item.korekta;
+                              const d = new Date(`${p.data}T00:00:00`);
                               const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-                              const isDyzur = myDyzury.some(dy => dy.dzien_tygodnia === d.getDay() && dy.status === 'zatwierdzona');
+                              const isPlus = Number(p.punkty) > 0;
+                              const powodLabel = p.powod?.trim() && p.powod.trim() !== 'Ręczna korekta punktów'
+                                ? p.powod.trim()
+                                : '';
                               return (
-                                <div key={o.id} className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border ${o.status === 'zatwierdzona' ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10' : o.status === 'odrzucona' ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10' : 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10'}`}>
+                                <div key={p.id} className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border ${isPlus ? 'border-teal-200 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-900/10' : 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'}`}>
                                   <div className="flex items-center gap-2 min-w-0">
-                                    {o.status === 'zatwierdzona' && <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)] shrink-0" />}
-                                    {o.status === 'oczekuje' && <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />}
-                                    {o.status === 'odrzucona' && <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+                                    <div className={`w-2 h-2 rounded-full shrink-0 ${isPlus ? 'bg-teal-500 shadow-[0_0_6px_rgba(20,184,166,0.5)]' : 'bg-red-500'}`} />
                                     <span className="text-xs sm:text-sm truncate font-medium">
                                       {dayName} {d.toLocaleDateString('pl-PL')}
                                     </span>
-                                    {isDyzur && <span className="px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">DYŻUR</span>}
-                                    {o.typ === 'nabożeństwo' && (
-                                      <span className="px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-[10px] font-medium text-purple-600 dark:text-purple-400">{o.nazwa_nabożeństwa}</span>
-                                    )}
-                                    {o.typ === 'wydarzenie' && (
-                                      <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-[10px] font-medium text-amber-600 dark:text-amber-400">⭐ {o.nazwa_nabożeństwa}</span>
-                                    )}
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isPlus ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+                                      Ksiądz
+                                    </span>
+                                    {powodLabel && <span className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-300 truncate">{powodLabel}</span>}
                                   </div>
-                                  <span className={`font-extrabold text-sm tabular-nums ${o.status === 'zatwierdzona' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
-                                    {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? '...' : 'X'}
+                                  <span className={`font-extrabold text-sm tabular-nums ${isPlus ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400'}`}>
+                                    {isPlus ? `+${p.punkty}` : p.punkty}
                                   </span>
                                 </div>
                               );
                             })}
-                            {myObecnosci.length > 3 && (
+                            {historiaMisji.length > 3 && (
                               <Button variant="ghost" size="sm" className="w-full text-xs text-gray-500 mt-1" onClick={() => setShowAllZgloszenia(!showAllZgloszenia)}>
-                                {showAllZgloszenia ? <><ChevronUp className="w-3 h-3 mr-1" /> Zwiń</> : <><ChevronDown className="w-3 h-3 mr-1" /> Pokaż wszystkie ({myObecnosci.length})</>}
+                                {showAllZgloszenia ? <><ChevronUp className="w-3 h-3 mr-1" /> Zwiń</> : <><ChevronDown className="w-3 h-3 mr-1" /> Pokaż wszystkie ({historiaMisji.length})</>}
                               </Button>
                             )}
                           </div>
@@ -8963,13 +9081,16 @@ export default function MinistranciApp() {
                             {pendingDyzury.slice(0, 4).map((d) => {
                               const member = memberByProfileId.get(d.ministrant_id);
                               const dayName = DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1];
+                              const replaceFromName = d.zastepuje_dzien_tygodnia !== null && d.zastepuje_dzien_tygodnia !== undefined
+                                ? DNI_TYGODNIA_FULL[d.zastepuje_dzien_tygodnia === 0 ? 6 : d.zastepuje_dzien_tygodnia - 1]
+                                : null;
                               const memberName = member ? `${member.imie} ${member.nazwisko || ''}`.trim() : 'Nieznany ministrant';
                               const godzina = d.godzina?.trim();
                               const isApproving = approvingDyzurIds.has(d.id);
                               return (
                                 <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white/90 dark:bg-gray-900/50 px-2.5 py-1.5">
                                   <span className="text-xs font-medium text-amber-900 dark:text-amber-200">
-                                    {memberName} • {dayName}{godzina ? ` • ${godzina}` : ''}
+                                    {memberName} • {replaceFromName ? `${replaceFromName} → ${dayName}` : dayName}{godzina ? ` • ${godzina}` : ''}
                                   </span>
                                   <Button
                                     size="sm"
@@ -12700,10 +12821,47 @@ export default function MinistranciApp() {
             <DialogDescription>
               {dyzurConfirm?.type === 'first'
                 ? `Czy chcesz wybrać ${DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1]} jako dzień dyżuru? Po zatwierdzeniu nie będzie można go samodzielnie usunąć.`
-                : `Dodanie nowego dnia (${dyzurConfirm ? DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1] : ''}) wymaga akceptacji księdza. Czy chcesz wysłać prośbę?`
+                : `Zmiana na dzień (${dyzurConfirm ? DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1] : ''}) wymaga akceptacji księdza. Po akceptacji poprzedni dyżur zostanie zastąpiony. Czy chcesz wysłać prośbę?`
               }
             </DialogDescription>
           </DialogHeader>
+          {dyzurConfirm?.type === 'change' && (
+            <div className="space-y-1">
+              <Label>Który dzień chcesz zmienić?</Label>
+              <Select
+                value={dyzurConfirm.replaceFromDzien !== null ? String(dyzurConfirm.replaceFromDzien) : '__none__'}
+                onValueChange={(value) =>
+                  setDyzurConfirm((prev) =>
+                    prev
+                      ? {
+                        ...prev,
+                        replaceFromDzien: value === '__none__' ? null : Number(value),
+                      }
+                      : prev
+                  )
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Wybierz obecny dzień dyżuru" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Wybierz dzień</SelectItem>
+                  {dyzury
+                    .filter((d) => d.ministrant_id === currentUser?.id && d.status === 'zatwierdzona')
+                    .sort((a, b) => a.dzien_tygodnia - b.dzien_tygodnia)
+                    .map((d) => {
+                      const dayName = DNI_TYGODNIA_FULL[d.dzien_tygodnia === 0 ? 6 : d.dzien_tygodnia - 1];
+                      const godzina = d.godzina?.trim();
+                      return (
+                        <SelectItem key={d.id} value={String(d.dzien_tygodnia)}>
+                          {dayName}{godzina ? ` • ${godzina}` : ''}
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1">
             <Label htmlFor="dyzur-godzina">Godzina (opcjonalnie)</Label>
             <Input

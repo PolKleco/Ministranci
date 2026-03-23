@@ -401,6 +401,7 @@ create table dyzury (
   parafia_id uuid references parafie(id) on delete cascade not null,
   dzien_tygodnia integer not null check (dzien_tygodnia between 0 and 6),
   godzina text,
+  zastepuje_dzien_tygodnia integer check (zastepuje_dzien_tygodnia between 0 and 6),
   aktywny boolean default true,
   status text default 'zatwierdzona' check (status in ('oczekuje', 'zatwierdzona', 'odrzucona')),
   created_at timestamptz default now(),
@@ -435,7 +436,18 @@ create table minusowe_punkty (
   created_at timestamptz default now()
 );
 
--- 14. Odznaki zdobyte przez ministrantów
+-- 14. Ręczne korekty punktów (dodawane przez księdza/admina)
+create table punkty_reczne (
+  id uuid default gen_random_uuid() primary key,
+  ministrant_id uuid references profiles(id) on delete cascade not null,
+  parafia_id uuid references parafie(id) on delete cascade not null,
+  data date not null default current_date,
+  powod text not null default '',
+  punkty numeric not null,
+  created_at timestamptz default now()
+);
+
+-- 15. Odznaki zdobyte przez ministrantów
 create table odznaki_zdobyte (
   id uuid default gen_random_uuid() primary key,
   ministrant_id uuid references profiles(id) on delete cascade not null,
@@ -445,7 +457,7 @@ create table odznaki_zdobyte (
   unique(ministrant_id, odznaka_config_id)
 );
 
--- 15. Ranking (cache — aktualizowany przy zatwierdzaniu obecności)
+-- 16. Ranking (cache — aktualizowany przy zatwierdzaniu obecności)
 create table ranking (
   id uuid default gen_random_uuid() primary key,
   ministrant_id uuid references profiles(id) on delete cascade not null,
@@ -471,6 +483,7 @@ alter table odznaki_config enable row level security;
 alter table dyzury enable row level security;
 alter table obecnosci enable row level security;
 alter table minusowe_punkty enable row level security;
+alter table punkty_reczne enable row level security;
 alter table odznaki_zdobyte enable row level security;
 alter table ranking enable row level security;
 
@@ -560,6 +573,18 @@ create policy "Admin can insert minusowe" on minusowe_punkty
 create policy "Admin can delete minusowe" on minusowe_punkty
   for delete using (
     exists (select 1 from parafie where parafie.id = minusowe_punkty.parafia_id and parafie.admin_id = auth.uid())
+  );
+
+-- punkty_reczne: wszyscy w parafii widzą, admin dodaje/usuwa
+create policy "Punkty reczne viewable by parish members" on punkty_reczne
+  for select using (true);
+create policy "Admin can insert punkty reczne" on punkty_reczne
+  for insert with check (
+    exists (select 1 from parafie where parafie.id = punkty_reczne.parafia_id and parafie.admin_id = auth.uid())
+  );
+create policy "Admin can delete punkty reczne" on punkty_reczne
+  for delete using (
+    exists (select 1 from parafie where parafie.id = punkty_reczne.parafia_id and parafie.admin_id = auth.uid())
   );
 
 -- odznaki_zdobyte: wszyscy widzą

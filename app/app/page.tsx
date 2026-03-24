@@ -553,6 +553,13 @@ interface AppConfigEntry {
   wartosc: string | null;
 }
 
+interface LiturgicalDayOverride {
+  nazwa: string;
+  kolor: DzienLiturgiczny['kolor'];
+  ranga: DzienLiturgiczny['ranga'];
+  okres: string;
+}
+
 interface PremiumSubscription {
   tier: string;
   rabat_id: string | null;
@@ -1893,6 +1900,7 @@ export default function MinistranciApp() {
   const canManageRankingSettings = hasLegacyRankingPermission || hasPriestPermission('manage_ranking_settings');
   const canManageRanking = canApproveRankingSubmissions || canManageRankingSettings;
   const canManageEvents = hasPriestPermission('manage_events');
+  const canEditLiturgicalCalendar = isPriestUser || canManageEvents;
   const canManageFunctionTemplates = hasPriestPermission('manage_function_templates');
   const canManagePoslugiCatalog = hasPriestPermission('manage_poslugi_catalog');
   const canEditPrayers = hasPriestPermission('edit_prayers');
@@ -2272,14 +2280,28 @@ export default function MinistranciApp() {
   // Kalendarz liturgiczny
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<DzienLiturgiczny | null>(null);
+  const [calendarOverrides, setCalendarOverrides] = useState<Record<string, LiturgicalDayOverride>>({});
+  const [calendarEditMode, setCalendarEditMode] = useState(false);
+  const [calendarEditSaving, setCalendarEditSaving] = useState(false);
+  const [calendarEditForm, setCalendarEditForm] = useState<LiturgicalDayOverride>({
+    nazwa: '',
+    kolor: 'zielony',
+    ranga: 'dzien_powszedni',
+    okres: '',
+  });
+
+  const applyLiturgicalDayOverride = useCallback((day: DzienLiturgiczny): DzienLiturgiczny => {
+    const override = calendarOverrides[day.date];
+    return override ? { ...day, ...override } : day;
+  }, [calendarOverrides]);
 
   // Dzisiejszy dzień liturgiczny (dla belki koloru)
   const dzisLiturgiczny = useMemo(() => {
     const now = new Date();
-    const days = getLiturgicalMonth(now.getFullYear(), now.getMonth());
+    const days = getLiturgicalMonth(now.getFullYear(), now.getMonth()).map(applyLiturgicalDayOverride);
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     return days.find(d => d.date === todayStr) || null;
-  }, []);
+  }, [applyLiturgicalDayOverride]);
 
   // ==================== FUNKCJE ŁADOWANIA ====================
 
@@ -2662,7 +2684,8 @@ export default function MinistranciApp() {
 
     // Pobierz dzień liturgiczny
     const days = getLiturgicalMonth(dateObj.getFullYear(), dateObj.getMonth());
-    const liturgDay = days.find(d => d.date === data);
+    const baseLiturgDay = days.find(d => d.date === data) || null;
+    const liturgDay = baseLiturgDay ? applyLiturgicalDayOverride(baseLiturgDay) : null;
 
     // Mnożnik sezonowy
     let mnoznik = getConfigValue('mnoznik_domyslny', 1);
@@ -2683,7 +2706,7 @@ export default function MinistranciApp() {
     }
 
     return { bazowe, mnoznik };
-  }, [getConfigValue, sluzby]);
+  }, [getConfigValue, sluzby, applyLiturgicalDayOverride]);
 
   // Helper: pobierz aktualną rangę ministranta
   const getRanga = useCallback((pkt: number): RangaConfig | null => {
@@ -3184,6 +3207,55 @@ export default function MinistranciApp() {
     });
     setDyzurConfirm(null);
     loadRankingData();
+  };
+
+  const handleSaveCalendarDayOverride = async () => {
+    if (!canEditLiturgicalCalendar) return;
+    if (!currentUser?.parafia_id || !selectedDay) return;
+    const pid = currentUser.parafia_id;
+    const key = `kalendarz_override_${pid}_${selectedDay.date}`;
+    const payload: LiturgicalDayOverride = {
+      nazwa: calendarEditForm.nazwa.trim(),
+      kolor: calendarEditForm.kolor,
+      ranga: calendarEditForm.ranga,
+      okres: calendarEditForm.okres.trim(),
+    };
+    setCalendarEditSaving(true);
+    const { error } = await supabase.from('app_config').upsert(
+      { klucz: key, wartosc: JSON.stringify(payload) },
+      { onConflict: 'klucz' }
+    );
+    setCalendarEditSaving(false);
+    if (error) {
+      alert('Nie udało się zapisać zmian dnia: ' + error.message);
+      return;
+    }
+    setCalendarOverrides((prev) => ({ ...prev, [selectedDay.date]: payload }));
+    setSelectedDay((prev) => (prev ? { ...prev, ...payload } : prev));
+    setCalendarEditMode(false);
+  };
+
+  const handleResetCalendarDayOverride = async () => {
+    if (!canEditLiturgicalCalendar) return;
+    if (!currentUser?.parafia_id || !selectedDay) return;
+    const pid = currentUser.parafia_id;
+    const key = `kalendarz_override_${pid}_${selectedDay.date}`;
+    setCalendarEditSaving(true);
+    const { error } = await supabase.from('app_config').delete().eq('klucz', key);
+    setCalendarEditSaving(false);
+    if (error) {
+      alert('Nie udało się przywrócić domyślnego dnia: ' + error.message);
+      return;
+    }
+    setCalendarOverrides((prev) => {
+      const next = { ...prev };
+      delete next[selectedDay.date];
+      return next;
+    });
+    const dateObj = new Date(`${selectedDay.date}T00:00:00`);
+    const baseDay = getLiturgicalMonth(dateObj.getFullYear(), dateObj.getMonth()).find((d) => d.date === selectedDay.date) || null;
+    setSelectedDay(baseDay);
+    setCalendarEditMode(false);
   };
 
   const handleSaveProfile = async () => {
@@ -4000,6 +4072,60 @@ export default function MinistranciApp() {
         }
       });
   }, [currentUser?.parafia_id]);
+
+  // Załaduj lokalne nadpisania dni kalendarza liturgicznego dla parafii
+  useEffect(() => {
+    if (!currentUser?.parafia_id) {
+      setCalendarOverrides({});
+      return;
+    }
+    const pid = currentUser.parafia_id;
+    const prefix = `kalendarz_override_${pid}_`;
+    supabase
+      .from('app_config')
+      .select('klucz, wartosc')
+      .like('klucz', `${prefix}%`)
+      .then(({ data }) => {
+        const next: Record<string, LiturgicalDayOverride> = {};
+        (data as AppConfigEntry[] | null)?.forEach((row) => {
+          if (!row.klucz.startsWith(prefix) || !row.wartosc) return;
+          const date = row.klucz.slice(prefix.length);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+          try {
+            const parsed = JSON.parse(row.wartosc);
+            if (!parsed || typeof parsed !== 'object') return;
+            const kolor = String((parsed as { kolor?: string }).kolor || '') as DzienLiturgiczny['kolor'];
+            const ranga = String((parsed as { ranga?: string }).ranga || '') as DzienLiturgiczny['ranga'];
+            const dozwoloneKolory: DzienLiturgiczny['kolor'][] = ['zielony', 'bialy', 'czerwony', 'fioletowy', 'rozowy'];
+            const dozwoloneRangi: DzienLiturgiczny['ranga'][] = ['uroczystosc', 'swieto', 'wspomnienie', 'wspomnienie_dowolne', 'dzien_powszedni'];
+            if (!dozwoloneKolory.includes(kolor) || !dozwoloneRangi.includes(ranga)) return;
+            next[date] = {
+              nazwa: String((parsed as { nazwa?: string }).nazwa || ''),
+              kolor,
+              ranga,
+              okres: String((parsed as { okres?: string }).okres || ''),
+            };
+          } catch {
+            // ignore
+          }
+        });
+        setCalendarOverrides(next);
+      });
+  }, [currentUser?.parafia_id]);
+
+  useEffect(() => {
+    if (!selectedDay) {
+      setCalendarEditMode(false);
+      return;
+    }
+    setCalendarEditForm({
+      nazwa: selectedDay.nazwa || '',
+      kolor: selectedDay.kolor,
+      ranga: selectedDay.ranga,
+      okres: selectedDay.okres || '',
+    });
+    setCalendarEditMode(false);
+  }, [selectedDay]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !priestRankingInfoStorageKey) {
@@ -9769,7 +9895,7 @@ export default function MinistranciApp() {
               {(() => {
                 const year = calendarMonth.getFullYear();
                 const month = calendarMonth.getMonth();
-                const days = getLiturgicalMonth(year, month);
+                const days = getLiturgicalMonth(year, month).map(applyLiturgicalDayOverride);
                 const firstDayOfMonth = new Date(year, month, 1);
                 // poniedziałek = 0, niedziela = 6
                 const startDow = (firstDayOfMonth.getDay() + 6) % 7;
@@ -9802,13 +9928,14 @@ export default function MinistranciApp() {
                         const kolory = KOLORY_LITURGICZNE[day.kolor] || KOLORY_LITURGICZNE.zielony;
                         const isToday = day.date === todayStr;
                         const isUroczystosc = day.ranga === 'uroczystosc' || day.ranga === 'swieto';
+                        const hasOverride = Boolean(calendarOverrides[day.date]);
                         const dayNum = new Date(day.date).getDate();
 
                         return (
                           <button
                             key={day.date}
                             onClick={() => setSelectedDay(day)}
-                            className={`h-16 sm:h-20 md:h-24 rounded-lg p-1 text-left transition-all hover:ring-2 hover:ring-indigo-400 ${kolory.bg} ${kolory.border} border ${isToday ? 'ring-2 ring-indigo-600 ring-offset-1' : ''}`}
+                            className={`h-16 sm:h-20 md:h-24 rounded-lg p-1 text-left transition-all hover:ring-2 hover:ring-indigo-400 ${kolory.bg} ${kolory.border} border ${isToday ? 'ring-2 ring-indigo-600 ring-offset-1' : ''} ${hasOverride ? 'ring-1 ring-sky-500/60' : ''}`}
                           >
                             <div className="flex items-center gap-1">
                               <div className={`w-2 h-2 rounded-full ${kolory.dot} shrink-0`} />
@@ -9833,6 +9960,9 @@ export default function MinistranciApp() {
               <DialogContent>
                 {selectedDay && (() => {
                   const kolory = KOLORY_LITURGICZNE[selectedDay.kolor] || KOLORY_LITURGICZNE.zielony;
+                  const previewKolory = calendarEditMode
+                    ? (KOLORY_LITURGICZNE[calendarEditForm.kolor] || KOLORY_LITURGICZNE.zielony)
+                    : kolory;
                   const dateObj = new Date(selectedDay.date);
                   const dow = (dateObj.getDay() + 6) % 7;
                   return (
@@ -9847,27 +9977,137 @@ export default function MinistranciApp() {
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4">
-                        <div className={`p-4 rounded-lg ${kolory.bg} ${kolory.border} border`}>
-                          {selectedDay.nazwa ? (
-                            <p className={`text-lg font-bold ${kolory.text}`}>{selectedDay.nazwa}</p>
-                          ) : (
-                            <p className={`text-lg ${kolory.text}`}>Dzień powszedni</p>
-                          )}
-                        </div>
+                        {canEditLiturgicalCalendar && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 bg-indigo-50/60 dark:bg-indigo-900/20 px-3 py-2">
+                            <p className="text-xs text-indigo-700 dark:text-indigo-200">
+                              Zmiany są widoczne tylko w tej parafii.
+                            </p>
+                            {!calendarEditMode ? (
+                              <Button size="sm" variant="outline" onClick={() => setCalendarEditMode(true)}>
+                                <Pencil className="w-3.5 h-3.5 mr-1" />
+                                Edytuj dzień
+                              </Button>
+                            ) : (
+                              <Button size="sm" variant="ghost" onClick={() => setCalendarEditMode(false)}>
+                                Anuluj edycję
+                              </Button>
+                            )}
+                          </div>
+                        )}
+
+                        {calendarEditMode && canEditLiturgicalCalendar ? (
+                          <div className="space-y-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white/80 dark:bg-gray-900/50 p-3">
+                            <div className="space-y-1">
+                              <Label htmlFor="calendar-edit-name">Nazwa dnia</Label>
+                              <Input
+                                id="calendar-edit-name"
+                                value={calendarEditForm.nazwa}
+                                onChange={(e) => setCalendarEditForm((prev) => ({ ...prev, nazwa: e.target.value }))}
+                                placeholder="Np. Święto parafialne"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor="calendar-edit-period">Okres liturgiczny</Label>
+                              <Input
+                                id="calendar-edit-period"
+                                value={calendarEditForm.okres}
+                                onChange={(e) => setCalendarEditForm((prev) => ({ ...prev, okres: e.target.value }))}
+                                placeholder="Np. Okres zwykły"
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div className="space-y-1">
+                                <Label>Ranga</Label>
+                                <Select
+                                  value={calendarEditForm.ranga}
+                                  onValueChange={(value) => setCalendarEditForm((prev) => ({ ...prev, ranga: value as DzienLiturgiczny['ranga'] }))}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.entries(RANGI).map(([key, label]) => (
+                                      <SelectItem key={key} value={key}>
+                                        {label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="space-y-1">
+                                <Label>Kolor liturgiczny</Label>
+                                <Select
+                                  value={calendarEditForm.kolor}
+                                  onValueChange={(value) => setCalendarEditForm((prev) => ({ ...prev, kolor: value as DzienLiturgiczny['kolor'] }))}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.entries(KOLORY_LITURGICZNE).map(([key, value]) => (
+                                      <SelectItem key={key} value={key}>
+                                        <span className="inline-flex items-center gap-2">
+                                          <span className={`inline-block w-2 h-2 rounded-full ${value.dot}`} />
+                                          {value.nazwa}
+                                        </span>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              <Button size="sm" onClick={handleSaveCalendarDayOverride} disabled={calendarEditSaving}>
+                                {calendarEditSaving ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                                    Zapisywanie...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 mr-1" />
+                                    Zapisz zmiany
+                                  </>
+                                )}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={handleResetCalendarDayOverride} disabled={calendarEditSaving}>
+                                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                                Przywróć domyślne
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={`p-4 rounded-lg ${kolory.bg} ${kolory.border} border`}>
+                            {selectedDay.nazwa ? (
+                              <p className={`text-lg font-bold ${kolory.text}`}>{selectedDay.nazwa}</p>
+                            ) : (
+                              <p className={`text-lg ${kolory.text}`}>Dzień powszedni</p>
+                            )}
+                          </div>
+                        )}
+
+                        {calendarEditMode && (
+                          <div className={`p-4 rounded-lg ${previewKolory.bg} ${previewKolory.border} border`}>
+                            <p className={`text-sm font-semibold ${previewKolory.text}`}>Podgląd dnia</p>
+                            <p className={`text-lg font-bold mt-1 ${previewKolory.text}`}>{calendarEditForm.nazwa || 'Dzień powszedni'}</p>
+                          </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Okres</p>
-                            <p className="font-medium">{selectedDay.okres}</p>
+                            <p className="font-medium">{calendarEditMode ? (calendarEditForm.okres || '—') : (selectedDay.okres || '—')}</p>
                           </div>
                           <div>
                             <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Ranga</p>
-                            <p className="font-medium">{RANGI[selectedDay.ranga]}</p>
+                            <p className="font-medium">{calendarEditMode ? RANGI[calendarEditForm.ranga] : RANGI[selectedDay.ranga]}</p>
                           </div>
                           <div>
                             <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">Kolor liturgiczny</p>
                             <div className="flex items-center gap-2">
-                              <div className={`w-4 h-4 rounded-full ${kolory.dot}`} />
-                              <p className="font-medium">{kolory.nazwa}</p>
+                              <div className={`w-4 h-4 rounded-full ${previewKolory.dot}`} />
+                              <p className="font-medium">
+                                {previewKolory.nazwa}
+                              </p>
                             </div>
                           </div>
                         </div>

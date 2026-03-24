@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildStripeFormPayload, stripeRequest } from '@/lib/stripe';
-import { findParafiaForAdmin, getAuthUser, isMissingColumnError, supabaseAdmin } from '../_shared';
+import { findParafiaForAdmin, getAuthUser, isMissingColumnError, parseInvoiceData, type InvoiceData, supabaseAdmin } from '../_shared';
 
 type StripeCustomerResponse = {
   id: string;
@@ -9,6 +9,53 @@ type StripeCustomerResponse = {
 type StripeCheckoutSessionResponse = {
   id: string;
   url: string | null;
+};
+
+const normalizeTaxIdForStripe = (invoiceData: InvoiceData) => {
+  if (invoiceData.invoiceType !== 'company' || !invoiceData.taxId) return null;
+  if (/^[A-Z]{2}/.test(invoiceData.taxId)) return invoiceData.taxId;
+  return `${invoiceData.country}${invoiceData.taxId}`;
+};
+
+async function attachCompanyTaxId(customerId: string, invoiceData: InvoiceData) {
+  const taxId = normalizeTaxIdForStripe(invoiceData);
+  if (!taxId) return;
+  try {
+    await stripeRequest(`/customers/${encodeURIComponent(customerId)}/tax_ids`, {
+      method: 'POST',
+      form: buildStripeFormPayload([
+        ['type', 'eu_vat'],
+        ['value', taxId],
+      ]),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Ignore duplicates/validation edge-cases and keep checkout flow alive.
+    if (!message.toLowerCase().includes('already')) {
+      console.warn('Nie udalo sie dodac tax_id do klienta Stripe:', message);
+    }
+  }
+}
+
+const buildCustomerPayload = (invoiceData: InvoiceData, parafiaId: string, adminId: string, fallbackName: string) => {
+  const displayName = invoiceData.invoiceType === 'company'
+    ? (invoiceData.companyName || fallbackName)
+    : invoiceData.fullName;
+  return buildStripeFormPayload([
+    ['email', invoiceData.email],
+    ['name', displayName],
+    ['address[line1]', invoiceData.street],
+    ['address[city]', invoiceData.city],
+    ['address[postal_code]', invoiceData.postalCode],
+    ['address[country]', invoiceData.country],
+    ['metadata[parafia_id]', parafiaId],
+    ['metadata[admin_id]', adminId],
+    ['metadata[invoice_type]', invoiceData.invoiceType],
+    ['metadata[invoice_full_name]', invoiceData.fullName],
+    ['metadata[invoice_company_name]', invoiceData.companyName],
+    ['metadata[invoice_tax_id]', invoiceData.taxId],
+    ['metadata[invoice_email_consent]', invoiceData.consentEmailInvoice ? 'true' : 'false'],
+  ]);
 };
 
 export async function POST(request: NextRequest) {
@@ -23,6 +70,11 @@ export async function POST(request: NextRequest) {
     if (!parafiaId) {
       return NextResponse.json({ error: 'Brak parafiaId' }, { status: 400 });
     }
+    const parsedInvoice = parseInvoiceData(body?.invoiceData);
+    if (!parsedInvoice.ok) {
+      return NextResponse.json({ error: parsedInvoice.error }, { status: 400 });
+    }
+    const invoiceData = parsedInvoice.data;
 
     const parafia = await findParafiaForAdmin(parafiaId, authUser.id);
     if (!parafia) {
@@ -42,17 +94,13 @@ export async function POST(request: NextRequest) {
       : null;
 
     if (!customerId) {
-      const customerPayload = buildStripeFormPayload([
-        ['email', authUser.email || ''],
-        ['name', parafiaName],
-        ['metadata[parafia_id]', parafiaId],
-        ['metadata[admin_id]', authUser.id],
-      ]);
+      const customerPayload = buildCustomerPayload(invoiceData, parafiaId, authUser.id, parafiaName);
       const customer = await stripeRequest<StripeCustomerResponse>('/customers', {
         method: 'POST',
         form: customerPayload,
       });
       customerId = customer.id;
+      await attachCompanyTaxId(customerId, invoiceData);
 
       const { error: persistCustomerError } = await supabaseAdmin
         .from('parafie')
@@ -63,11 +111,18 @@ export async function POST(request: NextRequest) {
       if (persistCustomerError && !isMissingColumnError(persistCustomerError)) {
         console.error('Nie udalo sie zapisac stripe_customer_id:', persistCustomerError);
       }
+    } else {
+      await stripeRequest<StripeCustomerResponse>(`/customers/${encodeURIComponent(customerId)}`, {
+        method: 'POST',
+        form: buildCustomerPayload(invoiceData, parafiaId, authUser.id, parafiaName),
+      });
+      await attachCompanyTaxId(customerId, invoiceData);
     }
 
     const checkoutPayload = buildStripeFormPayload([
       ['mode', 'subscription'],
       ['customer', customerId],
+      ['billing_address_collection', 'required'],
       ['line_items[0][price]', priceId],
       ['line_items[0][quantity]', 1],
       ['allow_promotion_codes', true],
@@ -76,9 +131,25 @@ export async function POST(request: NextRequest) {
       ['cancel_url', `${appUrl}/app?stripe=cancel`],
       ['subscription_data[metadata][parafia_id]', parafiaId],
       ['subscription_data[metadata][admin_id]', authUser.id],
+      ['subscription_data[metadata][invoice_type]', invoiceData.invoiceType],
+      ['subscription_data[metadata][invoice_email]', invoiceData.email],
+      ['subscription_data[metadata][invoice_full_name]', invoiceData.fullName],
+      ['subscription_data[metadata][invoice_company_name]', invoiceData.companyName],
+      ['subscription_data[metadata][invoice_tax_id]', invoiceData.taxId],
+      ['subscription_data[metadata][invoice_email_consent]', invoiceData.consentEmailInvoice ? 'true' : 'false'],
       ['metadata[parafia_id]', parafiaId],
       ['metadata[admin_id]', authUser.id],
+      ['metadata[invoice_type]', invoiceData.invoiceType],
+      ['metadata[invoice_email]', invoiceData.email],
+      ['metadata[invoice_full_name]', invoiceData.fullName],
+      ['metadata[invoice_company_name]', invoiceData.companyName],
+      ['metadata[invoice_tax_id]', invoiceData.taxId],
+      ['metadata[invoice_email_consent]', invoiceData.consentEmailInvoice ? 'true' : 'false'],
     ]);
+
+    if (invoiceData.invoiceType === 'company') {
+      checkoutPayload.append('tax_id_collection[enabled]', 'true');
+    }
 
     const session = await stripeRequest<StripeCheckoutSessionResponse>('/checkout/sessions', {
       method: 'POST',

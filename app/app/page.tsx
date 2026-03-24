@@ -58,6 +58,19 @@ import { sanitizeRichHtml } from '@/lib/sanitize-rich-html';
 
 // ==================== LIMITY ====================
 const DARMOWY_LIMIT_MINISTRANTOW = 5;
+
+const buildInitialPremiumInvoiceForm = (email = ''): PremiumInvoiceForm => ({
+  invoiceType: 'company',
+  email,
+  fullName: '',
+  companyName: '',
+  taxId: '',
+  street: '',
+  postalCode: '',
+  city: '',
+  country: 'PL',
+  consentEmailInvoice: false,
+});
 const ADMIN_PREVIEW_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
   .split(',')
   .map((email) => email.trim().toLowerCase())
@@ -550,6 +563,21 @@ interface PremiumSubscription {
     kod: string;
     procent_znizki: number | null;
   } | null;
+}
+
+type InvoiceType = 'company' | 'private';
+
+interface PremiumInvoiceForm {
+  invoiceType: InvoiceType;
+  email: string;
+  fullName: string;
+  companyName: string;
+  taxId: string;
+  street: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  consentEmailInvoice: boolean;
 }
 
 interface AdminImpersonationSession {
@@ -1833,6 +1861,7 @@ export default function MinistranciApp() {
   const [premiumCheckoutLoading, setPremiumCheckoutLoading] = useState(false);
   const [premiumOneTimeCheckoutLoading, setPremiumOneTimeCheckoutLoading] = useState(false);
   const [premiumPortalLoading, setPremiumPortalLoading] = useState(false);
+  const [premiumInvoiceForm, setPremiumInvoiceForm] = useState<PremiumInvoiceForm>(() => buildInitialPremiumInvoiceForm(''));
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
@@ -3585,6 +3614,72 @@ export default function MinistranciApp() {
   }, [currentParafia, loadSubscription]);
 
   useEffect(() => {
+    if (!currentUser) return;
+    setPremiumInvoiceForm((prev) => {
+      const next = { ...prev };
+      if (!next.email && currentUser.email) {
+        next.email = currentUser.email;
+      }
+      if (!next.fullName) {
+        const suggestedName = `${currentUser.imie || ''} ${currentUser.nazwisko || ''}`.trim();
+        if (suggestedName) next.fullName = suggestedName;
+      }
+      if (!next.companyName && currentParafia?.nazwa) {
+        next.companyName = currentParafia.nazwa;
+      }
+      return next;
+    });
+  }, [currentParafia?.nazwa, currentUser]);
+
+  const setPremiumInvoiceField = <K extends keyof PremiumInvoiceForm>(key: K, value: PremiumInvoiceForm[K]) => {
+    setPremiumInvoiceForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const getNormalizedInvoicePayload = (): PremiumInvoiceForm => ({
+    ...premiumInvoiceForm,
+    email: premiumInvoiceForm.email.trim().toLowerCase(),
+    fullName: premiumInvoiceForm.fullName.trim(),
+    companyName: premiumInvoiceForm.companyName.trim(),
+    taxId: premiumInvoiceForm.taxId.replace(/[\s-]/g, '').toUpperCase(),
+    street: premiumInvoiceForm.street.trim(),
+    postalCode: premiumInvoiceForm.postalCode.trim().toUpperCase(),
+    city: premiumInvoiceForm.city.trim(),
+    country: premiumInvoiceForm.country.trim().toUpperCase() || 'PL',
+  });
+
+  const validatePremiumInvoiceForm = (): string | null => {
+    const data = getNormalizedInvoicePayload();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+      return 'Podaj poprawny e-mail do faktury.';
+    }
+    if (data.fullName.length < 3) {
+      return 'Podaj imie i nazwisko do faktury.';
+    }
+    if (data.invoiceType === 'company' && data.companyName.length < 2) {
+      return 'Podaj nazwe firmy lub parafii do faktury.';
+    }
+    if (data.invoiceType === 'company' && !(/^([0-9]{10}|[A-Z]{2}[A-Z0-9]{8,14})$/.test(data.taxId))) {
+      return 'Podaj poprawny NIP/VAT ID.';
+    }
+    if (data.street.length < 3) {
+      return 'Podaj ulice i numer.';
+    }
+    if (data.postalCode.length < 3) {
+      return 'Podaj kod pocztowy.';
+    }
+    if (data.city.length < 2) {
+      return 'Podaj miasto.';
+    }
+    if (!/^[A-Z]{2}$/.test(data.country)) {
+      return 'Podaj kod kraju, np. PL.';
+    }
+    if (!data.consentEmailInvoice) {
+      return 'Aby kontynuowac, zaznacz zgode na wysylke faktury e-mailem.';
+    }
+    return null;
+  };
+
+  useEffect(() => {
     if (typeof window === 'undefined' || currentUser) return;
     const url = new URL(window.location.href);
     const authView = url.searchParams.get('auth');
@@ -3633,12 +3728,18 @@ export default function MinistranciApp() {
 
   const handleStartStripeCheckout = async () => {
     if (!currentParafia) return;
+    const validationError = validatePremiumInvoiceForm();
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+    const invoiceData = getNormalizedInvoicePayload();
     setPremiumCheckoutLoading(true);
     try {
       const res = await authFetch('/api/billing/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parafiaId: currentParafia.id }),
+        body: JSON.stringify({ parafiaId: currentParafia.id, invoiceData }),
       });
       const result = await res.json();
       if (!res.ok) {
@@ -3661,12 +3762,18 @@ export default function MinistranciApp() {
 
   const handleStartStripeOneTimeCheckout = async () => {
     if (!currentParafia) return;
+    const validationError = validatePremiumInvoiceForm();
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+    const invoiceData = getNormalizedInvoicePayload();
     setPremiumOneTimeCheckoutLoading(true);
     try {
       const res = await authFetch('/api/billing/stripe/checkout-onetime', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parafiaId: currentParafia.id }),
+        body: JSON.stringify({ parafiaId: currentParafia.id, invoiceData }),
       });
       const result = await res.json();
       if (!res.ok) {
@@ -12990,15 +13097,126 @@ export default function MinistranciApp() {
                   </Button>
                 )}
                 {subscription.premium_source !== 'stripe' && (
-                  <Button
-                    variant="outline"
-                    onClick={handleStartStripeOneTimeCheckout}
-                    disabled={premiumOneTimeCheckoutLoading}
-                    className="w-full"
-                  >
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    {premiumOneTimeCheckoutLoading ? 'Przechodzę do płatności...' : 'Odnów Premium na rok (jednorazowo)'}
-                  </Button>
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/20">
+                      <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+                        Dane do faktury (obowiazkowe)
+                      </p>
+                      <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 mt-1">
+                        Wystawiamy tylko faktury: firmowe lub prywatne.
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                        <Button
+                          type="button"
+                          variant={premiumInvoiceForm.invoiceType === 'company' ? 'default' : 'outline'}
+                          className="w-full"
+                          onClick={() => setPremiumInvoiceField('invoiceType', 'company')}
+                        >
+                          Firma / parafia
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={premiumInvoiceForm.invoiceType === 'private' ? 'default' : 'outline'}
+                          className="w-full"
+                          onClick={() => setPremiumInvoiceField('invoiceType', 'private')}
+                        >
+                          Osoba prywatna
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-2 mt-3 sm:grid-cols-2">
+                        <div className="sm:col-span-2">
+                          <Label>E-mail do faktury</Label>
+                          <Input
+                            type="email"
+                            value={premiumInvoiceForm.email}
+                            onChange={(e) => setPremiumInvoiceField('email', e.target.value)}
+                            placeholder="np. parafia@domena.pl"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Label>Imię i nazwisko</Label>
+                          <Input
+                            value={premiumInvoiceForm.fullName}
+                            onChange={(e) => setPremiumInvoiceField('fullName', e.target.value)}
+                            placeholder="Jan Kowalski"
+                          />
+                        </div>
+                        {premiumInvoiceForm.invoiceType === 'company' && (
+                          <>
+                            <div className="sm:col-span-2">
+                              <Label>Nazwa firmy / parafii</Label>
+                              <Input
+                                value={premiumInvoiceForm.companyName}
+                                onChange={(e) => setPremiumInvoiceField('companyName', e.target.value)}
+                                placeholder="Parafia pw. ..."
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <Label>NIP / VAT ID</Label>
+                              <Input
+                                value={premiumInvoiceForm.taxId}
+                                onChange={(e) => setPremiumInvoiceField('taxId', e.target.value)}
+                                placeholder="np. 1234567890 lub PL1234567890"
+                              />
+                            </div>
+                          </>
+                        )}
+                        <div className="sm:col-span-2">
+                          <Label>Ulica i numer</Label>
+                          <Input
+                            value={premiumInvoiceForm.street}
+                            onChange={(e) => setPremiumInvoiceField('street', e.target.value)}
+                            placeholder="ul. Kwiatowa 12"
+                          />
+                        </div>
+                        <div>
+                          <Label>Kod pocztowy</Label>
+                          <Input
+                            value={premiumInvoiceForm.postalCode}
+                            onChange={(e) => setPremiumInvoiceField('postalCode', e.target.value)}
+                            placeholder="00-000"
+                          />
+                        </div>
+                        <div>
+                          <Label>Miasto</Label>
+                          <Input
+                            value={premiumInvoiceForm.city}
+                            onChange={(e) => setPremiumInvoiceField('city', e.target.value)}
+                            placeholder="Warszawa"
+                          />
+                        </div>
+                        <div>
+                          <Label>Kraj (kod)</Label>
+                          <Input
+                            value={premiumInvoiceForm.country}
+                            onChange={(e) => setPremiumInvoiceField('country', e.target.value.toUpperCase())}
+                            placeholder="PL"
+                            maxLength={2}
+                          />
+                        </div>
+                      </div>
+                      <label className="mt-3 flex items-start gap-2 text-xs text-indigo-800 dark:text-indigo-200">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={premiumInvoiceForm.consentEmailInvoice}
+                          onChange={(e) => setPremiumInvoiceField('consentEmailInvoice', e.target.checked)}
+                        />
+                        Zezwalam na wysłanie faktury e-mailem na podany adres.
+                      </label>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      onClick={handleStartStripeOneTimeCheckout}
+                      disabled={premiumOneTimeCheckoutLoading}
+                      className="w-full"
+                    >
+                      <CreditCard className="w-4 h-4 mr-2" />
+                      {premiumOneTimeCheckoutLoading ? 'Przechodzę do płatności...' : 'Odnów Premium na rok (jednorazowo)'}
+                    </Button>
+                  </div>
                 )}
               </div>
             ) : (
@@ -13044,6 +13262,115 @@ export default function MinistranciApp() {
                   <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
                     Wybierz sposób płatności: abonament roczny (auto-odnowienie) albo jednorazowo na 1 rok.
                   </p>
+                </div>
+
+                <div className="p-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/20">
+                  <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+                    Dane do faktury (obowiazkowe)
+                  </p>
+                  <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 mt-1">
+                    Wystawiamy tylko faktury: firmowe lub prywatne.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 mt-3">
+                    <Button
+                      type="button"
+                      variant={premiumInvoiceForm.invoiceType === 'company' ? 'default' : 'outline'}
+                      className="w-full"
+                      onClick={() => setPremiumInvoiceField('invoiceType', 'company')}
+                    >
+                      Firma / parafia
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={premiumInvoiceForm.invoiceType === 'private' ? 'default' : 'outline'}
+                      className="w-full"
+                      onClick={() => setPremiumInvoiceField('invoiceType', 'private')}
+                    >
+                      Osoba prywatna
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-2 mt-3 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <Label>E-mail do faktury</Label>
+                      <Input
+                        type="email"
+                        value={premiumInvoiceForm.email}
+                        onChange={(e) => setPremiumInvoiceField('email', e.target.value)}
+                        placeholder="np. parafia@domena.pl"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label>Imię i nazwisko</Label>
+                      <Input
+                        value={premiumInvoiceForm.fullName}
+                        onChange={(e) => setPremiumInvoiceField('fullName', e.target.value)}
+                        placeholder="Jan Kowalski"
+                      />
+                    </div>
+                    {premiumInvoiceForm.invoiceType === 'company' && (
+                      <>
+                        <div className="sm:col-span-2">
+                          <Label>Nazwa firmy / parafii</Label>
+                          <Input
+                            value={premiumInvoiceForm.companyName}
+                            onChange={(e) => setPremiumInvoiceField('companyName', e.target.value)}
+                            placeholder="Parafia pw. ..."
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Label>NIP / VAT ID</Label>
+                          <Input
+                            value={premiumInvoiceForm.taxId}
+                            onChange={(e) => setPremiumInvoiceField('taxId', e.target.value)}
+                            placeholder="np. 1234567890 lub PL1234567890"
+                          />
+                        </div>
+                      </>
+                    )}
+                    <div className="sm:col-span-2">
+                      <Label>Ulica i numer</Label>
+                      <Input
+                        value={premiumInvoiceForm.street}
+                        onChange={(e) => setPremiumInvoiceField('street', e.target.value)}
+                        placeholder="ul. Kwiatowa 12"
+                      />
+                    </div>
+                    <div>
+                      <Label>Kod pocztowy</Label>
+                      <Input
+                        value={premiumInvoiceForm.postalCode}
+                        onChange={(e) => setPremiumInvoiceField('postalCode', e.target.value)}
+                        placeholder="00-000"
+                      />
+                    </div>
+                    <div>
+                      <Label>Miasto</Label>
+                      <Input
+                        value={premiumInvoiceForm.city}
+                        onChange={(e) => setPremiumInvoiceField('city', e.target.value)}
+                        placeholder="Warszawa"
+                      />
+                    </div>
+                    <div>
+                      <Label>Kraj (kod)</Label>
+                      <Input
+                        value={premiumInvoiceForm.country}
+                        onChange={(e) => setPremiumInvoiceField('country', e.target.value.toUpperCase())}
+                        placeholder="PL"
+                        maxLength={2}
+                      />
+                    </div>
+                  </div>
+                  <label className="mt-3 flex items-start gap-2 text-xs text-indigo-800 dark:text-indigo-200">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={premiumInvoiceForm.consentEmailInvoice}
+                      onChange={(e) => setPremiumInvoiceField('consentEmailInvoice', e.target.checked)}
+                    />
+                    Zezwalam na wysłanie faktury e-mailem na podany adres.
+                  </label>
                 </div>
 
                 <div className="space-y-2">

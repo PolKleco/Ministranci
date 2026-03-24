@@ -52,9 +52,10 @@ W Stripe:
 ## 6. Test działania
 1. Zaloguj się jako ksiądz
 2. Otwórz modal `Subskrypcja Premium`
-3. Kliknij `Zapłać online za Premium (rok)`
-4. Zrób testową płatność
-5. Po powrocie do aplikacji zobaczysz premium i liczbę dni do końca okresu
+3. Wypełnij obowiązkowe dane do faktury (`firma/parafia` albo `osoba prywatna`) i zaznacz zgodę na wysyłkę e-mailem
+4. Kliknij `Zapłać online za Premium (rok)` albo `Zapłać jednorazowo za 1 rok`
+5. Zrób testową płatność
+6. Po powrocie do aplikacji zobaczysz premium i liczbę dni do końca okresu
 
 ## 7. Jak działa odliczanie
 - Data końca trzymana jest w `parafie.premium_expires_at`

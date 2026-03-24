@@ -1,6 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest } from 'next/server';
 
+export type InvoiceType = 'company' | 'private';
+
+export type InvoiceData = {
+  invoiceType: InvoiceType;
+  email: string;
+  fullName: string;
+  companyName: string | null;
+  taxId: string | null;
+  street: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  consentEmailInvoice: boolean;
+};
+
 export const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_KEY!,
@@ -23,6 +38,100 @@ export function isMissingColumnError(error: { message?: string } | null) {
     message.includes("Could not find the '") ||
     message.includes('schema cache')
   );
+}
+
+const normalizeText = (value: unknown) => String(value ?? '').trim();
+
+const normalizeTaxId = (value: unknown) => (
+  normalizeText(value)
+    .replace(/[\s-]/g, '')
+    .toUpperCase()
+);
+
+const normalizePostalCode = (value: unknown) => (
+  normalizeText(value)
+    .replace(/\s+/g, '')
+    .toUpperCase()
+);
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isValidCountry(value: string) {
+  return /^[A-Z]{2}$/.test(value);
+}
+
+function isValidTaxId(value: string) {
+  // Accept plain NIP (10 digits) or VAT format with country prefix (e.g. PL123...).
+  return /^[0-9]{10}$/.test(value) || /^[A-Z]{2}[A-Z0-9]{8,14}$/.test(value);
+}
+
+export function parseInvoiceData(input: unknown): { ok: true; data: InvoiceData } | { ok: false; error: string } {
+  if (!input || typeof input !== 'object') {
+    return { ok: false, error: 'Brak danych do faktury.' };
+  }
+
+  const raw = input as Record<string, unknown>;
+  const invoiceType = normalizeText(raw.invoiceType);
+  if (invoiceType !== 'company' && invoiceType !== 'private') {
+    return { ok: false, error: 'Wybierz typ faktury: firma lub osoba prywatna.' };
+  }
+
+  const email = normalizeText(raw.email).toLowerCase();
+  const fullName = normalizeText(raw.fullName);
+  const companyNameRaw = normalizeText(raw.companyName);
+  const taxIdRaw = normalizeTaxId(raw.taxId);
+  const street = normalizeText(raw.street);
+  const postalCode = normalizePostalCode(raw.postalCode);
+  const city = normalizeText(raw.city);
+  const country = normalizeText(raw.country || 'PL').toUpperCase();
+  const consentEmailInvoice = raw.consentEmailInvoice === true;
+
+  if (!isValidEmail(email)) {
+    return { ok: false, error: 'Podaj poprawny adres e-mail do faktury.' };
+  }
+  if (fullName.length < 3) {
+    return { ok: false, error: 'Podaj imie i nazwisko nabywcy.' };
+  }
+  if (street.length < 3) {
+    return { ok: false, error: 'Podaj ulice i numer.' };
+  }
+  if (postalCode.length < 3) {
+    return { ok: false, error: 'Podaj kod pocztowy.' };
+  }
+  if (city.length < 2) {
+    return { ok: false, error: 'Podaj miasto.' };
+  }
+  if (!isValidCountry(country)) {
+    return { ok: false, error: 'Podaj kod kraju, np. PL.' };
+  }
+  if (!consentEmailInvoice) {
+    return { ok: false, error: 'Aby kontynuowac, zaznacz zgode na wysylke faktury e-mailem.' };
+  }
+
+  if (invoiceType === 'company') {
+    if (companyNameRaw.length < 2) {
+      return { ok: false, error: 'Podaj nazwe firmy lub parafii do faktury.' };
+    }
+    if (!isValidTaxId(taxIdRaw)) {
+      return { ok: false, error: 'Podaj poprawny NIP/VAT ID.' };
+    }
+  }
+
+  const data: InvoiceData = {
+    invoiceType,
+    email,
+    fullName,
+    companyName: invoiceType === 'company' ? companyNameRaw : null,
+    taxId: invoiceType === 'company' ? taxIdRaw : null,
+    street,
+    postalCode,
+    city,
+    country,
+    consentEmailInvoice,
+  };
+  return { ok: true, data };
 }
 
 function isMissingImpersonationSchema(error: { message?: string } | null) {

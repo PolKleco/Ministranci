@@ -21,6 +21,33 @@ type StripeEvent = {
 };
 
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing', 'past_due']);
+const RESEND_API_KEY = process.env.RESEND_API_KEY?.trim() || '';
+const BILLING_NOTIFICATION_FROM = process.env.BILLING_NOTIFICATION_FROM?.trim() || 'onboarding@resend.dev';
+const BILLING_NOTIFICATION_RECIPIENTS = Array.from(new Set(
+  (
+    process.env.BILLING_NOTIFICATION_EMAILS ||
+    process.env.INTERNAL_ADMIN_EMAILS ||
+    process.env.NEXT_PUBLIC_ADMIN_EMAILS ||
+    ''
+  )
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+));
+
+type ParafiaBillingSnapshot = {
+  parafiaName: string;
+  invoiceType: string | null;
+  invoiceEmail: string | null;
+  invoiceFullName: string | null;
+  invoiceCompanyName: string | null;
+  invoiceTaxId: string | null;
+  invoiceStreet: string | null;
+  invoicePostalCode: string | null;
+  invoiceCity: string | null;
+  invoiceCountry: string | null;
+  invoiceEmailConsent: boolean | null;
+};
 
 const normalizeParafiaId = (value: unknown) => {
   if (typeof value !== 'string') return null;
@@ -29,6 +56,8 @@ const normalizeParafiaId = (value: unknown) => {
 };
 
 const getString = (value: unknown) => (typeof value === 'string' ? value : null);
+const getNumber = (value: unknown) => (typeof value === 'number' ? value : null);
+const getBoolean = (value: unknown) => (typeof value === 'boolean' ? value : null);
 
 const getObjectValue = (obj: Record<string, unknown>, key: string) => obj[key];
 
@@ -37,6 +66,174 @@ const getNestedString = (value: unknown, key: string) => {
   const record = value as Record<string, unknown>;
   return getString(record[key]);
 };
+
+function toInvoiceTypeLabel(invoiceType: string | null) {
+  if (invoiceType === 'company') return 'Firma / parafia';
+  if (invoiceType === 'private') return 'Osoba prywatna';
+  return '-';
+}
+
+function toConsentLabel(consent: boolean | null) {
+  if (consent === true) return 'TAK';
+  if (consent === false) return 'NIE';
+  return '-';
+}
+
+function formatAmount(amountMinor: number | null, currency: string | null) {
+  if (amountMinor === null || !currency) return '-';
+  return `${(amountMinor / 100).toFixed(2)} ${currency.toUpperCase()}`;
+}
+
+function formatAddress(snapshot: ParafiaBillingSnapshot) {
+  const street = snapshot.invoiceStreet || '';
+  const postal = snapshot.invoicePostalCode || '';
+  const city = snapshot.invoiceCity || '';
+  const country = snapshot.invoiceCountry || '';
+  const joined = [street, [postal, city].filter(Boolean).join(' '), country]
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .join(', ');
+  return joined || '-';
+}
+
+async function loadParafiaBillingSnapshot(parafiaId: string): Promise<ParafiaBillingSnapshot> {
+  const baseFallback: ParafiaBillingSnapshot = {
+    parafiaName: 'Parafia',
+    invoiceType: null,
+    invoiceEmail: null,
+    invoiceFullName: null,
+    invoiceCompanyName: null,
+    invoiceTaxId: null,
+    invoiceStreet: null,
+    invoicePostalCode: null,
+    invoiceCity: null,
+    invoiceCountry: null,
+    invoiceEmailConsent: null,
+  };
+
+  const selectWithInvoiceFields = [
+    'nazwa',
+    'invoice_type',
+    'invoice_email',
+    'invoice_full_name',
+    'invoice_company_name',
+    'invoice_tax_id',
+    'invoice_street',
+    'invoice_postal_code',
+    'invoice_city',
+    'invoice_country',
+    'invoice_email_consent',
+  ].join(', ');
+
+  const { data, error } = await supabaseAdmin
+    .from('parafie')
+    .select(selectWithInvoiceFields)
+    .eq('id', parafiaId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (!isMissingColumnError(error)) {
+      console.error('Webhook Stripe: nie udalo sie pobrac danych parafii do e-maila billing:', error);
+      return baseFallback;
+    }
+
+    const { data: fallbackData } = await supabaseAdmin
+      .from('parafie')
+      .select('nazwa')
+      .eq('id', parafiaId)
+      .limit(1)
+      .maybeSingle();
+    const fallbackName = getString((fallbackData as Record<string, unknown> | null)?.nazwa) || 'Parafia';
+    return { ...baseFallback, parafiaName: fallbackName };
+  }
+
+  const row = (data || {}) as Record<string, unknown>;
+  return {
+    parafiaName: getString(row.nazwa) || 'Parafia',
+    invoiceType: getString(row.invoice_type),
+    invoiceEmail: getString(row.invoice_email),
+    invoiceFullName: getString(row.invoice_full_name),
+    invoiceCompanyName: getString(row.invoice_company_name),
+    invoiceTaxId: getString(row.invoice_tax_id),
+    invoiceStreet: getString(row.invoice_street),
+    invoicePostalCode: getString(row.invoice_postal_code),
+    invoiceCity: getString(row.invoice_city),
+    invoiceCountry: getString(row.invoice_country),
+    invoiceEmailConsent: getBoolean(row.invoice_email_consent),
+  };
+}
+
+async function sendPaidCheckoutNotificationEmail(
+  eventId: string,
+  parafiaId: string,
+  sessionMode: string | null,
+  sessionObject: Record<string, unknown>
+) {
+  if (!RESEND_API_KEY) return;
+  if (BILLING_NOTIFICATION_RECIPIENTS.length === 0) return;
+
+  const billingSnapshot = await loadParafiaBillingSnapshot(parafiaId);
+  const amountTotal = getNumber(getObjectValue(sessionObject, 'amount_total'));
+  const currency = getString(getObjectValue(sessionObject, 'currency'));
+  const checkoutSessionId = getString(getObjectValue(sessionObject, 'id'));
+  const paymentIntentId = getString(getObjectValue(sessionObject, 'payment_intent'));
+  const stripeCustomerEmail = (
+    getNestedString(getObjectValue(sessionObject, 'customer_details'), 'email') ||
+    getString(getObjectValue(sessionObject, 'customer_email'))
+  );
+  const flowLabel = sessionMode === 'payment'
+    ? 'Jednorazowa platnosc Premium (1 rok)'
+    : 'Subskrypcja Premium (auto-odnowienie)';
+  const nowIso = new Date().toISOString();
+  const subject = `[Premium] Oplacona platnosc - ${billingSnapshot.parafiaName}`;
+  const text = [
+    'Nowa oplacona platnosc Premium.',
+    '',
+    `Parafia: ${billingSnapshot.parafiaName}`,
+    `Typ platnosci: ${flowLabel}`,
+    `Kwota: ${formatAmount(amountTotal, currency)}`,
+    `Kupujacy e-mail (Stripe): ${stripeCustomerEmail || '-'}`,
+    `Parafia ID: ${parafiaId}`,
+    `Checkout Session ID: ${checkoutSessionId || '-'}`,
+    `Payment Intent ID: ${paymentIntentId || '-'}`,
+    `Stripe Event ID: ${eventId}`,
+    `Data (UTC): ${nowIso}`,
+    '',
+    'Dane do faktury (z formularza):',
+    `- Typ: ${toInvoiceTypeLabel(billingSnapshot.invoiceType)}`,
+    `- Nabywca: ${billingSnapshot.invoiceFullName || '-'}`,
+    `- Firma / parafia: ${billingSnapshot.invoiceCompanyName || '-'}`,
+    `- NIP / VAT ID: ${billingSnapshot.invoiceTaxId || '-'}`,
+    `- E-mail do faktury: ${billingSnapshot.invoiceEmail || '-'}`,
+    `- Adres: ${formatAddress(billingSnapshot)}`,
+    `- Kraj: ${billingSnapshot.invoiceCountry || '-'}`,
+    `- Zgoda na wysylke faktury e-mailem: ${toConsentLabel(billingSnapshot.invoiceEmailConsent)}`,
+  ].join('\n');
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: BILLING_NOTIFICATION_FROM,
+        to: BILLING_NOTIFICATION_RECIPIENTS,
+        subject,
+        text,
+      }),
+    });
+
+    if (!response.ok) {
+      const details = await response.text().catch(() => '');
+      console.error('Webhook Stripe: wysylka maila billing nieudana:', response.status, details);
+    }
+  } catch (err) {
+    console.error('Webhook Stripe: blad wysylki maila billing:', err);
+  }
+}
 
 async function findParafiaIdByColumn(column: 'stripe_subscription_id' | 'stripe_customer_id', value: string) {
   const { data, error } = await supabaseAdmin
@@ -238,6 +435,10 @@ export async function POST(request: NextRequest) {
           premium_status: 'active',
           premium_source: 'stripe',
         });
+      }
+
+      if (paymentStatus === 'paid' && hintedParafiaId) {
+        await sendPaidCheckoutNotificationEmail(event.id, hintedParafiaId, sessionMode, object);
       }
     }
 

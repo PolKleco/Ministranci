@@ -29,7 +29,13 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PREMIUM_PRICE_ID=price_...
 STRIPE_PREMIUM_ONE_TIME_PRICE_ID=price_...
 NEXT_PUBLIC_APP_URL=https://twoja-domena.pl
+RESEND_API_KEY=re_...
+BILLING_NOTIFICATION_FROM=powiadomienia@twoja-domena.pl
+BILLING_NOTIFICATION_EMAILS=twoj-email@domena.pl
 ```
+
+`RESEND_API_KEY`, `BILLING_NOTIFICATION_FROM` i `BILLING_NOTIFICATION_EMAILS` sa opcjonalne:
+- po ustawieniu dostaniesz e-mail po oplaconej platnosci z danymi do faktury.
 
 Na lokalnym dev możesz dać:
 - `NEXT_PUBLIC_APP_URL=http://localhost:3000`

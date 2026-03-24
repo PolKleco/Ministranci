@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildStripeFormPayload, stripeRequest } from '@/lib/stripe';
-import { findParafiaForAdmin, getAuthUser, isMissingColumnError, parseInvoiceData, type InvoiceData, supabaseAdmin } from '../_shared';
+import {
+  findParafiaForAdmin,
+  getAuthUser,
+  isMissingColumnError,
+  parseInvoiceData,
+  persistParafiaInvoiceData,
+  type InvoiceData,
+  supabaseAdmin,
+} from '../_shared';
 
 type StripeCustomerResponse = {
   id: string;
@@ -88,6 +96,8 @@ export async function POST(request: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || request.nextUrl.origin;
     const parafiaName = typeof parafia.nazwa === 'string' ? parafia.nazwa : 'Parafia';
 
+    await persistParafiaInvoiceData(parafiaId, authUser.id, invoiceData);
+
     let customerId = typeof parafia.stripe_customer_id === 'string'
       ? parafia.stripe_customer_id
       : null;
@@ -128,15 +138,6 @@ export async function POST(request: NextRequest) {
       ['client_reference_id', parafiaId],
       ['success_url', `${appUrl}/app?stripe=success`],
       ['cancel_url', `${appUrl}/app?stripe=cancel`],
-      ['invoice_creation[enabled]', true],
-      ['invoice_creation[invoice_data][metadata][invoice_type]', invoiceData.invoiceType],
-      ['invoice_creation[invoice_data][metadata][invoice_email]', invoiceData.email],
-      ['invoice_creation[invoice_data][metadata][invoice_full_name]', invoiceData.fullName],
-      ['invoice_creation[invoice_data][metadata][invoice_company_name]', invoiceData.companyName],
-      ['invoice_creation[invoice_data][metadata][invoice_tax_id]', invoiceData.taxId],
-      ['invoice_creation[invoice_data][metadata][invoice_email_consent]', invoiceData.consentEmailInvoice ? 'true' : 'false'],
-      ['invoice_creation[invoice_data][custom_fields][0][name]', 'Nabywca'],
-      ['invoice_creation[invoice_data][custom_fields][0][value]', invoiceData.fullName],
       ['metadata[parafia_id]', parafiaId],
       ['metadata[admin_id]', authUser.id],
       ['metadata[payment_flow]', 'one_time_yearly'],
@@ -149,8 +150,6 @@ export async function POST(request: NextRequest) {
     ];
     if (invoiceData.invoiceType === 'company') {
       checkoutEntries.push(['tax_id_collection[enabled]', true]);
-      checkoutEntries.push(['invoice_creation[invoice_data][custom_fields][1][name]', 'NIP']);
-      checkoutEntries.push(['invoice_creation[invoice_data][custom_fields][1][value]', normalizeTaxIdForStripe(invoiceData)]);
     }
     const checkoutPayload = buildStripeFormPayload(checkoutEntries);
 

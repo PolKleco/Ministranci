@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildStripeFormPayload, stripeRequest } from '@/lib/stripe';
-import { findParafiaForAdmin, getAuthUser, isMissingColumnError, parseInvoiceData, type InvoiceData, supabaseAdmin } from '../_shared';
+import {
+  findParafiaForAdmin,
+  getAuthUser,
+  isMissingColumnError,
+  parseInvoiceData,
+  persistParafiaInvoiceData,
+  type InvoiceData,
+  supabaseAdmin,
+} from '../_shared';
 
 type StripeCustomerResponse = {
   id: string;
@@ -88,6 +96,8 @@ export async function POST(request: NextRequest) {
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || request.nextUrl.origin;
     const parafiaName = typeof parafia.nazwa === 'string' ? parafia.nazwa : 'Parafia';
+
+    await persistParafiaInvoiceData(parafiaId, authUser.id, invoiceData);
 
     let customerId = typeof parafia.stripe_customer_id === 'string'
       ? parafia.stripe_customer_id

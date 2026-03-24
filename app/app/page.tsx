@@ -69,7 +69,7 @@ const buildInitialPremiumInvoiceForm = (email = ''): PremiumInvoiceForm => ({
   postalCode: '',
   city: '',
   country: 'PL',
-  consentEmailInvoice: false,
+  consentEmailInvoice: true,
 });
 const ADMIN_PREVIEW_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
   .split(',')
@@ -579,6 +579,9 @@ interface PremiumInvoiceForm {
   country: string;
   consentEmailInvoice: boolean;
 }
+
+type PremiumInvoiceField = keyof PremiumInvoiceForm;
+type PremiumInvoiceErrors = Partial<Record<PremiumInvoiceField, string>>;
 
 interface AdminImpersonationSession {
   id: string;
@@ -1862,6 +1865,7 @@ export default function MinistranciApp() {
   const [premiumOneTimeCheckoutLoading, setPremiumOneTimeCheckoutLoading] = useState(false);
   const [premiumPortalLoading, setPremiumPortalLoading] = useState(false);
   const [premiumInvoiceForm, setPremiumInvoiceForm] = useState<PremiumInvoiceForm>(() => buildInitialPremiumInvoiceForm(''));
+  const [premiumInvoiceErrors, setPremiumInvoiceErrors] = useState<PremiumInvoiceErrors>({});
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
@@ -3631,8 +3635,18 @@ export default function MinistranciApp() {
     });
   }, [currentParafia?.nazwa, currentUser]);
 
-  const setPremiumInvoiceField = <K extends keyof PremiumInvoiceForm>(key: K, value: PremiumInvoiceForm[K]) => {
+  const setPremiumInvoiceField = <K extends PremiumInvoiceField>(key: K, value: PremiumInvoiceForm[K]) => {
     setPremiumInvoiceForm((prev) => ({ ...prev, [key]: value }));
+    setPremiumInvoiceErrors((prev) => {
+      if (!prev[key] && key !== 'invoiceType') return prev;
+      const next = { ...prev };
+      delete next[key];
+      if (key === 'invoiceType') {
+        delete next.companyName;
+        delete next.taxId;
+      }
+      return next;
+    });
   };
 
   const getNormalizedInvoicePayload = (): PremiumInvoiceForm => ({
@@ -3644,39 +3658,59 @@ export default function MinistranciApp() {
     street: premiumInvoiceForm.street.trim(),
     postalCode: premiumInvoiceForm.postalCode.trim().toUpperCase(),
     city: premiumInvoiceForm.city.trim(),
-    country: premiumInvoiceForm.country.trim().toUpperCase() || 'PL',
+    country: 'PL',
   });
 
-  const validatePremiumInvoiceForm = (): string | null => {
+  const validatePremiumInvoiceForm = (): { data: PremiumInvoiceForm; errors: PremiumInvoiceErrors } => {
     const data = getNormalizedInvoicePayload();
+    const errors: PremiumInvoiceErrors = {};
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
-      return 'Podaj poprawny e-mail do faktury.';
+      errors.email = 'Podaj poprawny e-mail do faktury.';
     }
     if (data.fullName.length < 3) {
-      return 'Podaj imie i nazwisko do faktury.';
+      errors.fullName = 'Podaj imie i nazwisko do faktury.';
     }
     if (data.invoiceType === 'company' && data.companyName.length < 2) {
-      return 'Podaj nazwe firmy lub parafii do faktury.';
+      errors.companyName = 'Podaj nazwe firmy lub parafii do faktury.';
     }
     if (data.invoiceType === 'company' && !(/^([0-9]{10}|[A-Z]{2}[A-Z0-9]{8,14})$/.test(data.taxId))) {
-      return 'Podaj poprawny NIP/VAT ID.';
+      errors.taxId = 'Podaj poprawny NIP/VAT ID.';
     }
     if (data.street.length < 3) {
-      return 'Podaj ulice i numer.';
+      errors.street = 'Podaj ulice i numer.';
     }
     if (data.postalCode.length < 3) {
-      return 'Podaj kod pocztowy.';
+      errors.postalCode = 'Podaj kod pocztowy.';
     }
     if (data.city.length < 2) {
-      return 'Podaj miasto.';
+      errors.city = 'Podaj miasto.';
     }
-    if (!/^[A-Z]{2}$/.test(data.country)) {
-      return 'Podaj kod kraju, np. PL.';
+    if (data.country !== 'PL') {
+      errors.country = 'Sprzedaz Premium jest teraz dostepna tylko w Polsce (PL).';
     }
     if (!data.consentEmailInvoice) {
-      return 'Aby kontynuowac, zaznacz zgode na wysylke faktury e-mailem.';
+      errors.consentEmailInvoice = 'Aby kontynuowac, zaznacz zgode na wysylke faktury e-mailem.';
     }
-    return null;
+    return { data, errors };
+  };
+
+  const getPremiumInvoiceFieldClass = (field: PremiumInvoiceField) => (
+    premiumInvoiceErrors[field]
+      ? 'border-red-500 focus-visible:ring-red-500 dark:border-red-400'
+      : ''
+  );
+
+  const getPremiumInvoiceLabelClass = (field: PremiumInvoiceField) => (
+    premiumInvoiceErrors[field]
+      ? 'text-red-700 dark:text-red-300'
+      : ''
+  );
+
+  const renderPremiumInvoiceError = (field: PremiumInvoiceField) => {
+    const message = premiumInvoiceErrors[field];
+    if (!message) return null;
+    return <p className="mt-1 text-xs text-red-700 dark:text-red-300">{message}</p>;
   };
 
   useEffect(() => {
@@ -3728,12 +3762,14 @@ export default function MinistranciApp() {
 
   const handleStartStripeCheckout = async () => {
     if (!currentParafia) return;
-    const validationError = validatePremiumInvoiceForm();
-    if (validationError) {
-      alert(validationError);
+    const { data: invoiceData, errors } = validatePremiumInvoiceForm();
+    const firstError = Object.values(errors)[0];
+    if (firstError) {
+      setPremiumInvoiceErrors(errors);
+      alert(firstError);
       return;
     }
-    const invoiceData = getNormalizedInvoicePayload();
+    setPremiumInvoiceErrors({});
     setPremiumCheckoutLoading(true);
     try {
       const res = await authFetch('/api/billing/stripe/checkout', {
@@ -3762,12 +3798,14 @@ export default function MinistranciApp() {
 
   const handleStartStripeOneTimeCheckout = async () => {
     if (!currentParafia) return;
-    const validationError = validatePremiumInvoiceForm();
-    if (validationError) {
-      alert(validationError);
+    const { data: invoiceData, errors } = validatePremiumInvoiceForm();
+    const firstError = Object.values(errors)[0];
+    if (firstError) {
+      setPremiumInvoiceErrors(errors);
+      alert(firstError);
       return;
     }
-    const invoiceData = getNormalizedInvoicePayload();
+    setPremiumInvoiceErrors({});
     setPremiumOneTimeCheckoutLoading(true);
     try {
       const res = await authFetch('/api/billing/stripe/checkout-onetime', {
@@ -13126,85 +13164,102 @@ export default function MinistranciApp() {
 
                       <div className="grid gap-2 mt-3 sm:grid-cols-2">
                         <div className="sm:col-span-2">
-                          <Label>E-mail do faktury</Label>
+                          <Label className={getPremiumInvoiceLabelClass('email')}>E-mail do faktury</Label>
                           <Input
                             type="email"
                             value={premiumInvoiceForm.email}
                             onChange={(e) => setPremiumInvoiceField('email', e.target.value)}
                             placeholder="np. parafia@domena.pl"
+                            className={getPremiumInvoiceFieldClass('email')}
                           />
+                          {renderPremiumInvoiceError('email')}
                         </div>
                         <div className="sm:col-span-2">
-                          <Label>Imię i nazwisko</Label>
+                          <Label className={getPremiumInvoiceLabelClass('fullName')}>Imię i nazwisko</Label>
                           <Input
                             value={premiumInvoiceForm.fullName}
                             onChange={(e) => setPremiumInvoiceField('fullName', e.target.value)}
                             placeholder="Jan Kowalski"
+                            className={getPremiumInvoiceFieldClass('fullName')}
                           />
+                          {renderPremiumInvoiceError('fullName')}
                         </div>
                         {premiumInvoiceForm.invoiceType === 'company' && (
                           <>
                             <div className="sm:col-span-2">
-                              <Label>Nazwa firmy / parafii</Label>
+                              <Label className={getPremiumInvoiceLabelClass('companyName')}>Nazwa firmy / parafii</Label>
                               <Input
                                 value={premiumInvoiceForm.companyName}
                                 onChange={(e) => setPremiumInvoiceField('companyName', e.target.value)}
                                 placeholder="Parafia pw. ..."
+                                className={getPremiumInvoiceFieldClass('companyName')}
                               />
+                              {renderPremiumInvoiceError('companyName')}
                             </div>
                             <div className="sm:col-span-2">
-                              <Label>NIP / VAT ID</Label>
+                              <Label className={getPremiumInvoiceLabelClass('taxId')}>NIP / VAT ID</Label>
                               <Input
                                 value={premiumInvoiceForm.taxId}
                                 onChange={(e) => setPremiumInvoiceField('taxId', e.target.value)}
                                 placeholder="np. 1234567890 lub PL1234567890"
+                                className={getPremiumInvoiceFieldClass('taxId')}
                               />
+                              {renderPremiumInvoiceError('taxId')}
                             </div>
                           </>
                         )}
                         <div className="sm:col-span-2">
-                          <Label>Ulica i numer</Label>
+                          <Label className={getPremiumInvoiceLabelClass('street')}>Ulica i numer</Label>
                           <Input
                             value={premiumInvoiceForm.street}
                             onChange={(e) => setPremiumInvoiceField('street', e.target.value)}
                             placeholder="ul. Kwiatowa 12"
+                            className={getPremiumInvoiceFieldClass('street')}
                           />
+                          {renderPremiumInvoiceError('street')}
                         </div>
                         <div>
-                          <Label>Kod pocztowy</Label>
+                          <Label className={getPremiumInvoiceLabelClass('postalCode')}>Kod pocztowy</Label>
                           <Input
                             value={premiumInvoiceForm.postalCode}
                             onChange={(e) => setPremiumInvoiceField('postalCode', e.target.value)}
                             placeholder="00-000"
+                            className={getPremiumInvoiceFieldClass('postalCode')}
                           />
+                          {renderPremiumInvoiceError('postalCode')}
                         </div>
                         <div>
-                          <Label>Miasto</Label>
+                          <Label className={getPremiumInvoiceLabelClass('city')}>Miasto</Label>
                           <Input
                             value={premiumInvoiceForm.city}
                             onChange={(e) => setPremiumInvoiceField('city', e.target.value)}
                             placeholder="Warszawa"
+                            className={getPremiumInvoiceFieldClass('city')}
                           />
+                          {renderPremiumInvoiceError('city')}
                         </div>
                         <div>
-                          <Label>Kraj (kod)</Label>
+                          <Label className={getPremiumInvoiceLabelClass('country')}>Kraj</Label>
                           <Input
-                            value={premiumInvoiceForm.country}
-                            onChange={(e) => setPremiumInvoiceField('country', e.target.value.toUpperCase())}
-                            placeholder="PL"
+                            value="PL"
+                            readOnly
+                            disabled
                             maxLength={2}
+                            className={`bg-gray-100 dark:bg-gray-800 ${getPremiumInvoiceFieldClass('country')}`}
                           />
+                          {renderPremiumInvoiceError('country')}
                         </div>
                       </div>
-                      <label className="mt-3 flex items-start gap-2 text-xs text-indigo-800 dark:text-indigo-200">
+                      <label className={`mt-3 flex items-start gap-2 text-xs ${premiumInvoiceErrors.consentEmailInvoice ? 'text-red-700 dark:text-red-300' : 'text-indigo-800 dark:text-indigo-200'}`}>
                         <input
                           type="checkbox"
-                          className="mt-0.5"
+                          className={`mt-0.5 ${premiumInvoiceErrors.consentEmailInvoice ? 'accent-red-600' : ''}`}
                           checked={premiumInvoiceForm.consentEmailInvoice}
                           onChange={(e) => setPremiumInvoiceField('consentEmailInvoice', e.target.checked)}
                         />
                         Zezwalam na wysłanie faktury e-mailem na podany adres.
                       </label>
+                      {renderPremiumInvoiceError('consentEmailInvoice')}
                     </div>
 
                     <Button
@@ -13292,85 +13347,102 @@ export default function MinistranciApp() {
 
                   <div className="grid gap-2 mt-3 sm:grid-cols-2">
                     <div className="sm:col-span-2">
-                      <Label>E-mail do faktury</Label>
+                      <Label className={getPremiumInvoiceLabelClass('email')}>E-mail do faktury</Label>
                       <Input
                         type="email"
                         value={premiumInvoiceForm.email}
                         onChange={(e) => setPremiumInvoiceField('email', e.target.value)}
                         placeholder="np. parafia@domena.pl"
+                        className={getPremiumInvoiceFieldClass('email')}
                       />
+                      {renderPremiumInvoiceError('email')}
                     </div>
                     <div className="sm:col-span-2">
-                      <Label>Imię i nazwisko</Label>
+                      <Label className={getPremiumInvoiceLabelClass('fullName')}>Imię i nazwisko</Label>
                       <Input
                         value={premiumInvoiceForm.fullName}
                         onChange={(e) => setPremiumInvoiceField('fullName', e.target.value)}
                         placeholder="Jan Kowalski"
+                        className={getPremiumInvoiceFieldClass('fullName')}
                       />
+                      {renderPremiumInvoiceError('fullName')}
                     </div>
                     {premiumInvoiceForm.invoiceType === 'company' && (
                       <>
                         <div className="sm:col-span-2">
-                          <Label>Nazwa firmy / parafii</Label>
+                          <Label className={getPremiumInvoiceLabelClass('companyName')}>Nazwa firmy / parafii</Label>
                           <Input
                             value={premiumInvoiceForm.companyName}
                             onChange={(e) => setPremiumInvoiceField('companyName', e.target.value)}
                             placeholder="Parafia pw. ..."
+                            className={getPremiumInvoiceFieldClass('companyName')}
                           />
+                          {renderPremiumInvoiceError('companyName')}
                         </div>
                         <div className="sm:col-span-2">
-                          <Label>NIP / VAT ID</Label>
+                          <Label className={getPremiumInvoiceLabelClass('taxId')}>NIP / VAT ID</Label>
                           <Input
                             value={premiumInvoiceForm.taxId}
                             onChange={(e) => setPremiumInvoiceField('taxId', e.target.value)}
                             placeholder="np. 1234567890 lub PL1234567890"
+                            className={getPremiumInvoiceFieldClass('taxId')}
                           />
+                          {renderPremiumInvoiceError('taxId')}
                         </div>
                       </>
                     )}
                     <div className="sm:col-span-2">
-                      <Label>Ulica i numer</Label>
+                      <Label className={getPremiumInvoiceLabelClass('street')}>Ulica i numer</Label>
                       <Input
                         value={premiumInvoiceForm.street}
                         onChange={(e) => setPremiumInvoiceField('street', e.target.value)}
                         placeholder="ul. Kwiatowa 12"
+                        className={getPremiumInvoiceFieldClass('street')}
                       />
+                      {renderPremiumInvoiceError('street')}
                     </div>
                     <div>
-                      <Label>Kod pocztowy</Label>
+                      <Label className={getPremiumInvoiceLabelClass('postalCode')}>Kod pocztowy</Label>
                       <Input
                         value={premiumInvoiceForm.postalCode}
                         onChange={(e) => setPremiumInvoiceField('postalCode', e.target.value)}
                         placeholder="00-000"
+                        className={getPremiumInvoiceFieldClass('postalCode')}
                       />
+                      {renderPremiumInvoiceError('postalCode')}
                     </div>
                     <div>
-                      <Label>Miasto</Label>
+                      <Label className={getPremiumInvoiceLabelClass('city')}>Miasto</Label>
                       <Input
                         value={premiumInvoiceForm.city}
                         onChange={(e) => setPremiumInvoiceField('city', e.target.value)}
                         placeholder="Warszawa"
+                        className={getPremiumInvoiceFieldClass('city')}
                       />
+                      {renderPremiumInvoiceError('city')}
                     </div>
                     <div>
-                      <Label>Kraj (kod)</Label>
+                      <Label className={getPremiumInvoiceLabelClass('country')}>Kraj</Label>
                       <Input
-                        value={premiumInvoiceForm.country}
-                        onChange={(e) => setPremiumInvoiceField('country', e.target.value.toUpperCase())}
-                        placeholder="PL"
+                        value="PL"
+                        readOnly
+                        disabled
                         maxLength={2}
+                        className={`bg-gray-100 dark:bg-gray-800 ${getPremiumInvoiceFieldClass('country')}`}
                       />
+                      {renderPremiumInvoiceError('country')}
                     </div>
                   </div>
-                  <label className="mt-3 flex items-start gap-2 text-xs text-indigo-800 dark:text-indigo-200">
+                  <label className={`mt-3 flex items-start gap-2 text-xs ${premiumInvoiceErrors.consentEmailInvoice ? 'text-red-700 dark:text-red-300' : 'text-indigo-800 dark:text-indigo-200'}`}>
                     <input
                       type="checkbox"
-                      className="mt-0.5"
+                      className={`mt-0.5 ${premiumInvoiceErrors.consentEmailInvoice ? 'accent-red-600' : ''}`}
                       checked={premiumInvoiceForm.consentEmailInvoice}
                       onChange={(e) => setPremiumInvoiceField('consentEmailInvoice', e.target.checked)}
                     />
                     Zezwalam na wysłanie faktury e-mailem na podany adres.
                   </label>
+                  {renderPremiumInvoiceError('consentEmailInvoice')}
                 </div>
 
                 <div className="space-y-2">

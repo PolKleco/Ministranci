@@ -106,6 +106,9 @@ export function parseInvoiceData(input: unknown): { ok: true; data: InvoiceData 
   if (!isValidCountry(country)) {
     return { ok: false, error: 'Podaj kod kraju, np. PL.' };
   }
+  if (country !== 'PL') {
+    return { ok: false, error: 'Sprzedaz Premium jest dostepna tylko w Polsce (PL).' };
+  }
   if (!consentEmailInvoice) {
     return { ok: false, error: 'Aby kontynuowac, zaznacz zgode na wysylke faktury e-mailem.' };
   }
@@ -128,10 +131,36 @@ export function parseInvoiceData(input: unknown): { ok: true; data: InvoiceData 
     street,
     postalCode,
     city,
-    country,
+    country: 'PL',
     consentEmailInvoice,
   };
   return { ok: true, data };
+}
+
+export async function persistParafiaInvoiceData(parafiaId: string, adminId: string, invoiceData: InvoiceData) {
+  const invoiceUpdates = {
+    invoice_type: invoiceData.invoiceType,
+    invoice_email: invoiceData.email,
+    invoice_full_name: invoiceData.fullName,
+    invoice_company_name: invoiceData.companyName,
+    invoice_tax_id: invoiceData.taxId,
+    invoice_street: invoiceData.street,
+    invoice_postal_code: invoiceData.postalCode,
+    invoice_city: invoiceData.city,
+    invoice_country: invoiceData.country,
+    invoice_email_consent: invoiceData.consentEmailInvoice,
+    invoice_updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabaseAdmin
+    .from('parafie')
+    .update(invoiceUpdates)
+    .eq('id', parafiaId)
+    .eq('admin_id', adminId);
+
+  if (error && !isMissingColumnError(error)) {
+    console.error('Nie udalo sie zapisac danych do faktury w parafii:', error);
+  }
 }
 
 function isMissingImpersonationSchema(error: { message?: string } | null) {

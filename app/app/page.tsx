@@ -4408,6 +4408,29 @@ export default function MinistranciApp() {
     setAuthLoading(false);
   };
 
+  const handleGoogleAuth = async () => {
+    if (!isLogin && !acceptedTerms) {
+      setAuthErrors({ general: 'Musisz zaakceptować regulamin i politykę prywatności.' });
+      return;
+    }
+
+    setAuthErrors({});
+    setAuthLoading(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/app`,
+      },
+    });
+
+    if (error) {
+      setAuthErrors({ general: 'Nie udało się zalogować przez Google. Spróbuj ponownie.' });
+      setAuthLoading(false);
+      return;
+    }
+  };
+
   const handleResetPassword = async () => {
     const errors: typeof authErrors = {};
 
@@ -6927,11 +6950,32 @@ export default function MinistranciApp() {
                 </button>
 
                 {/* Separator */}
-                <div className="relative py-1">
+                <div className="relative py-2">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-white/[0.06]" />
                   </div>
+                  <div className="relative flex justify-center">
+                    <span className="px-3 text-xs text-slate-500 bg-[#0b0f1d]">lub</span>
+                  </div>
                 </div>
+
+                <button
+                  onClick={handleGoogleAuth}
+                  disabled={authLoading}
+                  className="w-full py-3 rounded-xl text-sm font-semibold text-slate-100 transition-all duration-200 disabled:opacity-50 border border-white/[0.14] bg-white/[0.04] hover:bg-white/[0.07] flex items-center justify-center gap-2"
+                >
+                  {authLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4" viewBox="0 0 48 48" aria-hidden="true">
+                      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.6 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 3l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.3-.4-3.5z" />
+                      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.5 19 12 24 12c3 0 5.7 1.1 7.8 3l5.7-5.7C34.1 6.1 29.3 4 24 4c-7.7 0-14.4 4.3-17.7 10.7z" />
+                      <path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.3 34.8 26.8 36 24 36c-5.2 0-9.6-3.3-11.2-7.9l-6.6 5.1C9.5 39.6 16.2 44 24 44z" />
+                      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.5-2.4 4.6-4.6 6l.1-.1 6.3 5.3C36.7 39.6 44 34 44 24c0-1.3-.1-2.3-.4-3.5z" />
+                    </svg>
+                  )}
+                  Kontynuuj z Google
+                </button>
 
                 {/* Przełączanie logowanie/rejestracja */}
                 <div className="text-center">

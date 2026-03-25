@@ -305,6 +305,17 @@ interface Funkcja {
   godzina?: string;
 }
 
+type ZbiorkaObecnoscStatus = 'obecny' | 'nieobecny' | 'usprawiedliwiony';
+
+interface ZbiorkaObecnosc {
+  id: string;
+  sluzba_id: string;
+  ministrant_id: string;
+  parafia_id: string;
+  status: ZbiorkaObecnoscStatus;
+  punkty_przyznane: number;
+}
+
 interface Sluzba {
   id: string;
   nazwa: string;
@@ -315,6 +326,13 @@ interface Sluzba {
   status: 'zaplanowana' | 'wykonana';
   funkcje: Funkcja[];
   ekstra_punkty?: number | null;
+  typ?: 'wydarzenie' | 'zbiorka';
+  miejsce?: string | null;
+  notatka?: string | null;
+  zbiorka_dla_wszystkich?: boolean | null;
+  grupy_docelowe?: string[] | null;
+  punkty_za_obecnosc?: number | null;
+  punkty_za_nieobecnosc?: number | null;
 }
 
 
@@ -839,20 +857,22 @@ function StatystykiMiesiacaCard({ obecnosci, minusowePunkty }: StatystykiMiesiac
 
 interface KsiadzWydarzeniaHeaderProps {
   kolorLiturgiczny?: string | null;
-  nazwaLiturgiczna?: string | null;
   onOpenFunkcjeConfig: () => void;
   onOpenAddWydarzenie: () => void;
+  onOpenAddZbiorka: () => void;
   showFunkcjeButton?: boolean;
   showAddWydarzenieButton?: boolean;
+  showAddZbiorkaButton?: boolean;
 }
 
 function KsiadzWydarzeniaHeader({
   kolorLiturgiczny,
-  nazwaLiturgiczna,
   onOpenFunkcjeConfig,
   onOpenAddWydarzenie,
+  onOpenAddZbiorka,
   showFunkcjeButton = true,
   showAddWydarzenieButton = true,
+  showAddZbiorkaButton = true,
 }: KsiadzWydarzeniaHeaderProps) {
   const litBtn: Record<string, { gradient: string; hoverGradient: string; shadow: string }> = {
     zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', hoverGradient: 'hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', shadow: 'shadow-emerald-500/25' },
@@ -868,32 +888,33 @@ function KsiadzWydarzeniaHeader({
 
   return (
     <>
-      <div className={`relative overflow-hidden rounded-xl bg-gradient-to-r ${lb.gradient} px-3 py-2 shadow ${lb.shadow}`}>
-        <div className="relative flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">📅</span>
-            <h2 className="text-sm font-bold text-white">Wydarzenia</h2>
-            <span className="text-white/50 text-[10px] hidden sm:inline truncate max-w-[180px]">{nazwaLiturgiczna || ''}</span>
-          </div>
-          <span className="text-lg opacity-15 select-none">✝</span>
+      {(showAddWydarzenieButton || showAddZbiorkaButton) && (
+        <div className="grid gap-2 grid-cols-2">
+          {showAddZbiorkaButton && (
+            <button
+              className="inline-flex items-center justify-center rounded-md text-sm font-bold h-9 px-3 w-full bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 hover:from-orange-600 hover:via-amber-600 hover:to-yellow-600 text-white shadow-lg shadow-amber-500/20 transition-all duration-200"
+              onClick={onOpenAddZbiorka}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Dodaj zbiórkę
+            </button>
+          )}
+          {showAddWydarzenieButton && (
+            <button className={`inline-flex items-center justify-center rounded-md text-sm font-bold h-9 px-3 w-full bg-gradient-to-r ${lb.gradient} ${lb.hoverGradient} text-white shadow-lg ${lb.shadow} transition-all duration-200`}
+              onClick={onOpenAddWydarzenie}>
+              <Plus className="w-4 h-4 mr-2" />
+              Dodaj wydarzenie
+            </button>
+          )}
         </div>
-      </div>
-      <div className={`grid gap-2 ${showFunkcjeButton && showAddWydarzenieButton ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        {showFunkcjeButton && (
-          <button className="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-700 hover:via-sky-700 hover:to-blue-700 text-white shadow shadow-sky-500/20 transition-all duration-200"
-            onClick={onOpenFunkcjeConfig}>
-            <Settings className="w-4 h-4 mr-2" />
-            Funkcje ministrantów
-          </button>
-        )}
-        {showAddWydarzenieButton && (
-          <button className={`inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-3 w-full bg-gradient-to-r ${lb.gradient} ${lb.hoverGradient} text-white shadow-lg ${lb.shadow} transition-all duration-200`}
-            onClick={onOpenAddWydarzenie}>
-            <Plus className="w-4 h-4 mr-2" />
-            Dodaj wydarzenie
-          </button>
-        )}
-      </div>
+      )}
+      {showFunkcjeButton && (
+        <button className="inline-flex items-center justify-center rounded-md text-sm font-bold h-9 px-3 w-full bg-gradient-to-r from-cyan-600 via-sky-600 to-blue-600 hover:from-cyan-700 hover:via-sky-700 hover:to-blue-700 text-white shadow shadow-sky-500/20 transition-all duration-200"
+          onClick={onOpenFunkcjeConfig}>
+          <Settings className="w-4 h-4 mr-2" />
+          Funkcje ministrantów
+        </button>
+      )}
     </>
   );
 }
@@ -1711,6 +1732,8 @@ export default function MinistranciApp() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showSluzbaModal, setShowSluzbaModal] = useState(false);
+  const [showZbiorkaModal, setShowZbiorkaModal] = useState(false);
+  const [showZbiorkaAttendanceModal, setShowZbiorkaAttendanceModal] = useState(false);
   const [showPoslugiModal, setShowPoslugiModal] = useState(false);
   const [showGrupaModal, setShowGrupaModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -1731,6 +1754,8 @@ export default function MinistranciApp() {
   const [sluzbyArchiwum, setSluzbyArchiwum] = useState<Sluzba[]>([]);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [selectedSluzba, setSelectedSluzba] = useState<Sluzba | null>(null);
+  const [selectedZbiorka, setSelectedZbiorka] = useState<Sluzba | null>(null);
+  const [selectedZbiorkaAttendance, setSelectedZbiorkaAttendance] = useState<Sluzba | null>(null);
 
   // Grupy, funkcje i posługi (edytowalne)
   const [grupy, setGrupy] = useState<GrupaConfig[]>(DEFAULT_GRUPY);
@@ -1774,6 +1799,8 @@ export default function MinistranciApp() {
   const [editProfilForm, setEditProfilForm] = useState({ imie: '', nazwisko: '', email: '' });
   const [editDyzury, setEditDyzury] = useState(false);
   const [showGrafikModal, setShowGrafikModal] = useState(false);
+  const [grafikAddHourByDay, setGrafikAddHourByDay] = useState<Record<number, string>>({});
+  const [dyzurHourDraftById, setDyzurHourDraftById] = useState<Record<string, string>>({});
   const [showDyzuryAdminModal, setShowDyzuryAdminModal] = useState(false);
   const [showZatwierdzModal, setShowZatwierdzModal] = useState(false);
   const [searchMinistrant, setSearchMinistrant] = useState('');
@@ -1783,6 +1810,8 @@ export default function MinistranciApp() {
   const [deleteParafiaLoading, setDeleteParafiaLoading] = useState(false);
   const [deleteParafiaConfirmText, setDeleteParafiaConfirmText] = useState('');
   const [showDodajPunktyModal, setShowDodajPunktyModal] = useState(false);
+  const [showPunktyHistoriaModal, setShowPunktyHistoriaModal] = useState(false);
+  const [selectedPunktyHistoriaMember, setSelectedPunktyHistoriaMember] = useState<Member | null>(null);
   const [dodajPunktyForm, setDodajPunktyForm] = useState({ punkty: '', powod: '' });
   const [showRankingSettings, setShowRankingSettings] = useState(false);
   const [showResetPunktacjaModal, setShowResetPunktacjaModal] = useState(false);
@@ -1953,6 +1982,28 @@ export default function MinistranciApp() {
     alert('Nie masz uprawnień do konfiguracji rankingu.');
     return false;
   };
+  const selectedMemberPunktyHistoria = useMemo(() => {
+    if (!selectedPunktyHistoriaMember) return [];
+    const memberId = selectedPunktyHistoriaMember.profile_id;
+    return [
+      ...obecnosci
+        .filter((o) => o.ministrant_id === memberId)
+        .map((o) => ({
+          kind: 'obecnosc' as const,
+          id: o.id,
+          createdAt: o.created_at || `${o.data}T00:00:00`,
+          obec: o,
+        })),
+      ...punktyReczne
+        .filter((p) => p.ministrant_id === memberId)
+        .map((p) => ({
+          kind: 'korekta' as const,
+          id: p.id,
+          createdAt: p.created_at || `${p.data}T00:00:00`,
+          korekta: p,
+        })),
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [selectedPunktyHistoriaMember, obecnosci, punktyReczne]);
 
   const authFetch = useCallback(async (input: string, init: RequestInit = {}) => {
     const getAccessToken = async () => {
@@ -2283,6 +2334,19 @@ export default function MinistranciApp() {
   });
   const [sluzbaExternalAssignments, setSluzbaExternalAssignments] = useState<Record<string, string>>({});
   const [sluzbaEkstraPunkty, setSluzbaEkstraPunkty] = useState<number | null>(null);
+  const [zbiorkaSaving, setZbiorkaSaving] = useState(false);
+  const [zbiorkaAttendanceSaving, setZbiorkaAttendanceSaving] = useState(false);
+  const [zbiorkaForm, setZbiorkaForm] = useState({
+    data: '',
+    godzina: '',
+    miejsce: '',
+    notatka: '',
+    grupyDocelowe: [] as string[],
+    punktyZaObecnosc: 10,
+    punktyZaNieobecnosc: 10,
+  });
+  const [zbiorkaAttendance, setZbiorkaAttendance] = useState<Record<string, ZbiorkaObecnoscStatus>>({});
+  const [zbiorkaAssignmentsBySluzba, setZbiorkaAssignmentsBySluzba] = useState<Record<string, ZbiorkaObecnosc[]>>({});
 
   // Kalendarz liturgiczny
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -2408,6 +2472,27 @@ export default function MinistranciApp() {
     if (sluzbyData) {
       const nextSluzby = sluzbyData as Sluzba[];
       setSluzby(nextSluzby);
+
+      const zbiorkaSluzbyIds = nextSluzby.filter((s) => s.typ === 'zbiorka').map((s) => s.id);
+      if (zbiorkaSluzbyIds.length > 0) {
+        const { data: attendanceRows, error: attendanceError } = await supabase
+          .from('zbiorka_obecnosci')
+          .select('*')
+          .in('sluzba_id', zbiorkaSluzbyIds);
+        if (attendanceError) {
+          console.warn('Nie udało się załadować obecności zbiórek:', attendanceError.message);
+          setZbiorkaAssignmentsBySluzba({});
+        } else {
+          const bySluzba: Record<string, ZbiorkaObecnosc[]> = {};
+          (attendanceRows as ZbiorkaObecnosc[] || []).forEach((row) => {
+            if (!bySluzba[row.sluzba_id]) bySluzba[row.sluzba_id] = [];
+            bySluzba[row.sluzba_id].push(row);
+          });
+          setZbiorkaAssignmentsBySluzba(bySluzba);
+        }
+      } else {
+        setZbiorkaAssignmentsBySluzba({});
+      }
 
       // Recovery: jeśli w wydarzeniach istnieją funkcje, których nie ma w funkcje_config,
       // dołącz je do listy, aby były widoczne w "Funkcje ministrantów" i przy edycji.
@@ -3311,7 +3396,7 @@ export default function MinistranciApp() {
     loadParafiaData();
   };
 
-  const toggleDyzurAdmin = async (ministrantId: string, dzienTygodnia: number) => {
+  const toggleDyzurAdmin = async (ministrantId: string, dzienTygodnia: number, godzina?: string | null) => {
     if (!currentUser?.parafia_id) return;
 
     const existing = dyzury.find(d => d.ministrant_id === ministrantId && d.dzien_tygodnia === dzienTygodnia);
@@ -3323,9 +3408,30 @@ export default function MinistranciApp() {
         ministrant_id: ministrantId,
         parafia_id: currentUser.parafia_id,
         dzien_tygodnia: dzienTygodnia,
+        godzina: godzina?.trim() || null,
         status: 'zatwierdzona',
       });
     }
+    loadRankingData();
+  };
+
+  const updateDyzurHourAdmin = async (dyzurId: string, godzina: string) => {
+    const normalizedHour = godzina.trim();
+    const { error } = await supabase
+      .from('dyzury')
+      .update({ godzina: normalizedHour || null })
+      .eq('id', dyzurId);
+
+    if (error) {
+      alert('Nie udało się zapisać godziny dyżuru: ' + error.message);
+      return;
+    }
+
+    setDyzurHourDraftById((prev) => {
+      const next = { ...prev };
+      delete next[dyzurId];
+      return next;
+    });
     loadRankingData();
   };
 
@@ -5207,6 +5313,361 @@ export default function MinistranciApp() {
     setSluzbaExternalAssignments({});
   };
 
+  const resetZbiorkaFormState = () => {
+    setSelectedZbiorka(null);
+    setZbiorkaForm({
+      data: '',
+      godzina: '',
+      miejsce: '',
+      notatka: '',
+      grupyDocelowe: [],
+      punktyZaObecnosc: 10,
+      punktyZaNieobecnosc: 10,
+    });
+    setZbiorkaAttendance({});
+  };
+
+  const getMinistranciByTargetGroups = (targetGroupsRaw: string[] | null | undefined) => {
+    const allMinistranci = members.filter((m) => m.typ === 'ministrant' && m.zatwierdzony !== false);
+    const selectedGroups = new Set((targetGroupsRaw || []).map((group) => group.trim()).filter(Boolean));
+    return allMinistranci.filter((m) => selectedGroups.has((m.grupa || 'Bez grupy').trim()));
+  };
+
+  const applyZbiorkaRankingDelta = async (
+    ministrantId: string,
+    delta: number,
+    powod: string,
+    data: string,
+  ) => {
+    if (!currentUser?.parafia_id || delta === 0) return;
+    const { data: existingRanking, error: rankingFetchError } = await supabase
+      .from('ranking')
+      .select('*')
+      .eq('ministrant_id', ministrantId)
+      .eq('parafia_id', currentUser.parafia_id)
+      .maybeSingle();
+    if (rankingFetchError) throw rankingFetchError;
+
+    if (existingRanking) {
+      const newTotal = Number(existingRanking.total_pkt || 0) + delta;
+      const ranga = getRanga(newTotal);
+      const { error: rankingUpdateError } = await supabase
+        .from('ranking')
+        .update({
+          total_pkt: newTotal,
+          ranga: ranga?.nazwa || existingRanking.ranga,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingRanking.id);
+      if (rankingUpdateError) throw rankingUpdateError;
+    } else {
+      const ranga = getRanga(delta);
+      const { error: rankingInsertError } = await supabase
+        .from('ranking')
+        .insert({
+          ministrant_id: ministrantId,
+          parafia_id: currentUser.parafia_id,
+          total_pkt: delta,
+          total_obecnosci: 0,
+          ranga: ranga?.nazwa || 'Ready',
+        });
+      if (rankingInsertError) throw rankingInsertError;
+    }
+
+    const { error: historiaError } = await supabase.from('punkty_reczne').insert({
+      ministrant_id: ministrantId,
+      parafia_id: currentUser.parafia_id,
+      data,
+      powod,
+      punkty: delta,
+    });
+    if (historiaError) throw historiaError;
+  };
+
+  const openCreateZbiorkaModal = () => {
+    setSelectedSluzba(null);
+    resetZbiorkaFormState();
+    setShowZbiorkaModal(true);
+  };
+
+  const openEditZbiorkaModal = async (sluzba: Sluzba) => {
+    setSelectedSluzba(null);
+    setSelectedZbiorka(sluzba);
+    setZbiorkaForm({
+      data: sluzba.data || '',
+      godzina: sluzba.godzina || '',
+      miejsce: sluzba.miejsce || '',
+      notatka: sluzba.notatka || '',
+      grupyDocelowe: [],
+      punktyZaObecnosc: Math.max(0, Number(sluzba.punkty_za_obecnosc || 0)),
+      punktyZaNieobecnosc: Math.abs(Number(sluzba.punkty_za_nieobecnosc || 0)),
+    });
+
+    const { data: attendanceRows, error: attendanceError } = await supabase
+      .from('zbiorka_obecnosci')
+      .select('*')
+      .eq('sluzba_id', sluzba.id);
+
+    if (attendanceError) {
+      alert(`Nie udało się otworzyć zbiórki: ${attendanceError.message}. Uruchom migrację add-zbiorka-panel.sql w Supabase.`);
+      return;
+    }
+
+    const groupsFromAttendance = Array.from(new Set(
+      (attendanceRows as ZbiorkaObecnosc[] || [])
+        .map((row) => {
+          const ministrant = members.find((member) => member.profile_id === row.ministrant_id);
+          return (ministrant?.grupa || 'Bez grupy').trim();
+        })
+        .filter(Boolean)
+    ));
+    const storedGroups = Array.isArray(sluzba.grupy_docelowe)
+      ? sluzba.grupy_docelowe.map((group) => (typeof group === 'string' ? group.trim() : '')).filter(Boolean)
+      : [];
+    setZbiorkaForm((prev) => ({
+      ...prev,
+      grupyDocelowe: storedGroups.length > 0 ? storedGroups : groupsFromAttendance,
+    }));
+    setZbiorkaAttendance({});
+    setShowZbiorkaModal(true);
+  };
+
+  const openZbiorkaAttendanceModal = async (sluzba: Sluzba) => {
+    if (!currentUser?.parafia_id) return;
+    const targetMinistranci = getMinistranciByTargetGroups(sluzba.grupy_docelowe || []);
+    if (targetMinistranci.length === 0) {
+      alert('Ta zbiórka nie ma przypisanych ministrantów w wybranych grupach.');
+      return;
+    }
+
+    const { data: attendanceRows, error: attendanceError } = await supabase
+      .from('zbiorka_obecnosci')
+      .select('*')
+      .eq('sluzba_id', sluzba.id);
+
+    if (attendanceError) {
+      alert(`Nie udało się otworzyć panelu obecności: ${attendanceError.message}. Uruchom migrację add-zbiorka-panel.sql w Supabase.`);
+      return;
+    }
+
+    const existingAttendance = (attendanceRows as ZbiorkaObecnosc[] || []);
+    const hasOnlyLegacyDefaultAttendance = existingAttendance.length > 0
+      && existingAttendance.every((row) => row.status === 'usprawiedliwiony' && Number(row.punkty_przyznane || 0) === 0);
+    const existingStatusByMinistrant = new Map(
+      (hasOnlyLegacyDefaultAttendance ? [] : existingAttendance).map((row) => [row.ministrant_id, row.status])
+    );
+    const initialAttendance: Record<string, ZbiorkaObecnoscStatus> = {};
+    targetMinistranci.forEach((ministrant) => {
+      const existingStatus = existingStatusByMinistrant.get(ministrant.profile_id);
+      if (existingStatus) {
+        initialAttendance[ministrant.profile_id] = existingStatus;
+      }
+    });
+
+    setSelectedZbiorkaAttendance(sluzba);
+    setZbiorkaAttendance(initialAttendance);
+    setShowZbiorkaAttendanceModal(true);
+  };
+
+  const handleSaveZbiorkaAttendance = async () => {
+    if (!currentUser?.parafia_id || !selectedZbiorkaAttendance) return;
+
+    const targetMinistranci = getMinistranciByTargetGroups(selectedZbiorkaAttendance.grupy_docelowe || []);
+    if (targetMinistranci.length === 0) {
+      alert('Brak ministrantów w wybranych grupach dla tej zbiórki.');
+      return;
+    }
+
+    const punktyZaObecnosc = Math.max(0, Number(selectedZbiorkaAttendance.punkty_za_obecnosc || 0));
+    const punktyZaNieobecnosc = -Math.abs(Number(selectedZbiorkaAttendance.punkty_za_nieobecnosc || 0));
+
+    const statusToPoints = (status: ZbiorkaObecnoscStatus) => {
+      if (status === 'obecny') return punktyZaObecnosc;
+      if (status === 'nieobecny') return punktyZaNieobecnosc;
+      return 0;
+    };
+
+    setZbiorkaAttendanceSaving(true);
+    try {
+      const { data: existingAttendanceData, error: existingAttendanceError } = await supabase
+        .from('zbiorka_obecnosci')
+        .select('*')
+        .eq('sluzba_id', selectedZbiorkaAttendance.id);
+      if (existingAttendanceError) {
+        alert(`Nie udało się pobrać obecności: ${existingAttendanceError.message}`);
+        return;
+      }
+
+      const existingAttendance = (existingAttendanceData || []) as ZbiorkaObecnosc[];
+      const hasOnlyLegacyDefaultAttendance = existingAttendance.length > 0
+        && existingAttendance.every((row) => row.status === 'usprawiedliwiony' && Number(row.punkty_przyznane || 0) === 0);
+      const existingStatusByMinistrant = new Map(
+        (hasOnlyLegacyDefaultAttendance ? [] : existingAttendance).map((row) => [row.ministrant_id, row.status])
+      );
+
+      const nextAttendanceRows = targetMinistranci
+        .map((ministrant) => {
+          const status = zbiorkaAttendance[ministrant.profile_id] || existingStatusByMinistrant.get(ministrant.profile_id) || null;
+          if (!status) return null;
+          return {
+            sluzba_id: selectedZbiorkaAttendance.id,
+            parafia_id: currentUser.parafia_id!,
+            ministrant_id: ministrant.profile_id,
+            status,
+            punkty_przyznane: statusToPoints(status),
+          };
+        })
+        .filter((row): row is {
+          sluzba_id: string;
+          parafia_id: string;
+          ministrant_id: string;
+          status: ZbiorkaObecnoscStatus;
+          punkty_przyznane: number;
+        } => row !== null);
+
+      const { error: deleteAttendanceError } = await supabase
+        .from('zbiorka_obecnosci')
+        .delete()
+        .eq('sluzba_id', selectedZbiorkaAttendance.id);
+      if (deleteAttendanceError) {
+        alert(`Nie udało się zaktualizować obecności: ${deleteAttendanceError.message}`);
+        return;
+      }
+
+      const { error: insertAttendanceError } = await supabase
+        .from('zbiorka_obecnosci')
+        .insert(nextAttendanceRows);
+      if (insertAttendanceError) {
+        alert(`Nie udało się zapisać obecności: ${insertAttendanceError.message}`);
+        return;
+      }
+
+      const existingPointsByMinistrant = new Map(existingAttendance.map((row) => [row.ministrant_id, Number(row.punkty_przyznane || 0)]));
+      const nextPointsByMinistrant = new Map(nextAttendanceRows.map((row) => [row.ministrant_id, Number(row.punkty_przyznane || 0)]));
+      const nextStatusByMinistrant = new Map(nextAttendanceRows.map((row) => [row.ministrant_id, row.status]));
+      const allMinistrantIds = new Set<string>([
+        ...existingPointsByMinistrant.keys(),
+        ...nextPointsByMinistrant.keys(),
+      ]);
+
+      for (const ministrantId of allMinistrantIds) {
+        const prevPoints = existingPointsByMinistrant.get(ministrantId) || 0;
+        const nextPoints = nextPointsByMinistrant.get(ministrantId) || 0;
+        const delta = nextPoints - prevPoints;
+        if (delta === 0) continue;
+
+        const status = nextStatusByMinistrant.get(ministrantId);
+        const statusLabel = status ? `status: ${status}` : 'korekta listy';
+        const powod = `Zbiórka (${selectedZbiorkaAttendance.data}) — ${statusLabel}`;
+        await applyZbiorkaRankingDelta(ministrantId, delta, powod, selectedZbiorkaAttendance.data);
+      }
+
+      await loadSluzby();
+      loadRankingData();
+      setShowZbiorkaAttendanceModal(false);
+      setSelectedZbiorkaAttendance(null);
+      setZbiorkaAttendance({});
+    } catch (err) {
+      alert('Nie udało się zapisać obecności: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setZbiorkaAttendanceSaving(false);
+    }
+  };
+
+  const handleSaveZbiorka = async () => {
+    if (!currentUser?.parafia_id || !currentUser?.id) return;
+    if (!zbiorkaForm.data || !zbiorkaForm.godzina.trim()) {
+      alert('Uzupełnij datę i godzinę zbiórki.');
+      return;
+    }
+
+    if (zbiorkaForm.grupyDocelowe.length === 0) {
+      alert('Wybierz przynajmniej jedną grupę na liście uczestników.');
+      return;
+    }
+
+    const punktyZaObecnosc = Math.max(0, Number(zbiorkaForm.punktyZaObecnosc) || 0);
+    const punktyZaNieobecnosc = -Math.abs(Number(zbiorkaForm.punktyZaNieobecnosc) || 0);
+    const selectedGroups = Array.from(new Set(zbiorkaForm.grupyDocelowe.map((group) => group.trim()).filter(Boolean)));
+
+    const buildZbiorkaSaveErrorMessage = (prefix: string, error: { message?: string } | null | undefined) => {
+      const details = error?.message || 'Nieznany błąd';
+      if (
+        details.includes('zbiorka_obecnosci')
+        || details.includes('grupy_docelowe')
+        || details.includes('zbiorka_dla_wszystkich')
+        || details.includes('punkty_za_obecnosc')
+        || details.includes('punkty_za_nieobecnosc')
+        || details.includes('miejsce')
+        || details.includes('notatka')
+        || details.includes('typ')
+      ) {
+        return `${prefix}: ${details}. W Supabase uruchom migrację add-zbiorka-panel.sql.`;
+      }
+      return `${prefix}: ${details}`;
+    };
+
+    setZbiorkaSaving(true);
+    try {
+      const payload = {
+        nazwa: 'Zbiórka ministrantów',
+        data: zbiorkaForm.data,
+        godzina: zbiorkaForm.godzina,
+        status: 'zaplanowana',
+        typ: 'zbiorka',
+        miejsce: zbiorkaForm.miejsce.trim() || null,
+        notatka: zbiorkaForm.notatka.trim() || null,
+        zbiorka_dla_wszystkich: false,
+        grupy_docelowe: selectedGroups,
+        punkty_za_obecnosc: punktyZaObecnosc,
+        punkty_za_nieobecnosc: punktyZaNieobecnosc,
+      };
+
+      let sluzbaId = selectedZbiorka?.id || null;
+
+      if (selectedZbiorka) {
+        const { error: updateError } = await supabase
+          .from('sluzby')
+          .update(payload)
+          .eq('id', selectedZbiorka.id)
+          .eq('parafia_id', currentUser.parafia_id);
+        if (updateError) {
+          alert(buildZbiorkaSaveErrorMessage('Nie udało się zapisać zbiórki', updateError));
+          return;
+        }
+      } else {
+        const { data: createdSluzba, error: insertError } = await supabase
+          .from('sluzby')
+          .insert({
+            ...payload,
+            parafia_id: currentUser.parafia_id,
+            utworzono_przez: currentUser.id,
+          })
+          .select('id')
+          .single();
+        if (insertError || !createdSluzba) {
+          alert(buildZbiorkaSaveErrorMessage('Nie udało się utworzyć zbiórki', insertError));
+          return;
+        }
+        sluzbaId = createdSluzba.id;
+      }
+
+      if (!sluzbaId) {
+        alert('Brak identyfikatora zbiórki po zapisie.');
+        return;
+      }
+
+      await loadSluzby();
+      loadRankingData();
+      setShowZbiorkaModal(false);
+      resetZbiorkaFormState();
+    } catch (err) {
+      alert('Nie udało się zapisać zbiórki: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setZbiorkaSaving(false);
+    }
+  };
+
   const parseGodziny = (godzina: string): string[] => {
     const parts = godzina.split(',').map(g => g.trim()).filter(Boolean);
     return parts.length > 0 ? parts : [godzina];
@@ -5256,6 +5717,12 @@ export default function MinistranciApp() {
   };
 
   const handleEditSluzba = (sluzba: Sluzba) => {
+    if (sluzba.typ === 'zbiorka') {
+      void openEditZbiorkaModal(sluzba);
+      return;
+    }
+
+    setSelectedZbiorka(null);
     setSelectedSluzba(sluzba);
     const hours = parseGodziny(sluzba.godzina);
     const funkcjePerHour: FunkcjePerHourMap = {};
@@ -5372,7 +5839,7 @@ export default function MinistranciApp() {
   };
 
   const handleDeleteSluzbaFromList = async (sluzba: Sluzba) => {
-    if (!confirm('Czy na pewno chcesz usunąć to wydarzenie?')) return;
+    if (!confirm(sluzba.typ === 'zbiorka' ? 'Czy na pewno chcesz usunąć tę zbiórkę?' : 'Czy na pewno chcesz usunąć to wydarzenie?')) return;
     if (deletingSluzbaIds.has(sluzba.id)) return;
 
     setDeletingSluzbaIds((prev) => {
@@ -6417,16 +6884,68 @@ export default function MinistranciApp() {
   };
 
   const isSluzbaAssignedToMe = (sluzba: Sluzba) => {
+    if (sluzba.typ === 'zbiorka') {
+      const myGroup = (members.find((member) => member.profile_id === currentUser?.id)?.grupa || 'Bez grupy').trim();
+      const targetGroups = Array.isArray(sluzba.grupy_docelowe)
+        ? sluzba.grupy_docelowe.map((group) => (typeof group === 'string' ? group.trim() : '')).filter(Boolean)
+        : [];
+      if (targetGroups.length > 0) {
+        return targetGroups.includes(myGroup);
+      }
+      const attendance = zbiorkaAssignmentsBySluzba[sluzba.id] || [];
+      return attendance.some((row) => row.ministrant_id === currentUser?.id);
+    }
     return sluzba.funkcje.some(f => f.ministrant_id === currentUser?.id);
   };
 
   const getMyFunkcje = (sluzba: Sluzba) => {
+    if (sluzba.typ === 'zbiorka') return [];
     return sluzba.funkcje.filter(f => f.ministrant_id === currentUser?.id && f.aktywna);
   };
 
   const hasUnacceptedFunkcje = (sluzba: Sluzba) => {
+    if (sluzba.typ === 'zbiorka') return false;
     return sluzba.funkcje.some(f => f.ministrant_id === currentUser?.id && !f.zaakceptowana && f.aktywna);
   };
+
+  const zbiorkaHeaderTone = (() => {
+    const toneMap: Record<string, { title: string; description: string }> = {
+      zielony: {
+        title: 'bg-gradient-to-r from-emerald-700 to-teal-600 dark:from-emerald-300 dark:to-teal-300 bg-clip-text text-transparent',
+        description: 'text-emerald-700/80 dark:text-emerald-300/80',
+      },
+      bialy: {
+        title: 'bg-gradient-to-r from-amber-700 to-yellow-600 dark:from-amber-300 dark:to-yellow-300 bg-clip-text text-transparent',
+        description: 'text-amber-700/80 dark:text-amber-300/80',
+      },
+      czerwony: {
+        title: 'bg-gradient-to-r from-red-700 to-rose-600 dark:from-red-300 dark:to-rose-300 bg-clip-text text-transparent',
+        description: 'text-red-700/80 dark:text-red-300/80',
+      },
+      fioletowy: {
+        title: 'bg-gradient-to-r from-violet-700 to-purple-600 dark:from-violet-300 dark:to-purple-300 bg-clip-text text-transparent',
+        description: 'text-violet-700/80 dark:text-violet-300/80',
+      },
+      rozowy: {
+        title: 'bg-gradient-to-r from-pink-700 to-rose-600 dark:from-pink-300 dark:to-rose-300 bg-clip-text text-transparent',
+        description: 'text-pink-700/80 dark:text-pink-300/80',
+      },
+      zloty: {
+        title: 'bg-gradient-to-r from-yellow-700 to-amber-600 dark:from-yellow-300 dark:to-amber-300 bg-clip-text text-transparent',
+        description: 'text-yellow-700/80 dark:text-yellow-300/80',
+      },
+      niebieski: {
+        title: 'bg-gradient-to-r from-blue-700 to-indigo-600 dark:from-blue-300 dark:to-indigo-300 bg-clip-text text-transparent',
+        description: 'text-blue-700/80 dark:text-blue-300/80',
+      },
+      czarny: {
+        title: 'bg-gradient-to-r from-gray-800 to-slate-700 dark:from-gray-200 dark:to-slate-200 bg-clip-text text-transparent',
+        description: 'text-gray-600 dark:text-gray-300',
+      },
+    };
+
+    return toneMap[dzisLiturgiczny?.kolor || 'zielony'] || toneMap.zielony;
+  })();
 
   // ==================== EKRAN ŁADOWANIA ====================
 
@@ -9037,39 +9556,46 @@ export default function MinistranciApp() {
                   {(canManageEvents || canManageFunctionTemplates) && (
                     <KsiadzWydarzeniaHeader
                       kolorLiturgiczny={dzisLiturgiczny?.kolor}
-                      nazwaLiturgiczna={dzisLiturgiczny?.nazwa}
                       onOpenFunkcjeConfig={() => setShowFunkcjeConfigModal(true)}
                       onOpenAddWydarzenie={() => {
+                        setSelectedZbiorka(null);
                         setSelectedSluzba(null);
                         setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
                         setSluzbaExternalAssignments({});
                         setSluzbaEkstraPunkty(null);
                         setShowSluzbaModal(true);
                       }}
+                      onOpenAddZbiorka={() => {
+                        openCreateZbiorkaModal();
+                      }}
                       showFunkcjeButton={canManageFunctionTemplates}
                       showAddWydarzenieButton={canManageEvents}
+                      showAddZbiorkaButton={canManageEvents}
                     />
                   )}
 
                   {(() => {
+                    const sluzbyForViewer = canUseMinistrantEvents
+                      ? sluzby.filter((s) => s.typ !== 'zbiorka' || isSluzbaAssignedToMe(s))
+                      : sluzby;
                     const assignedCount = canUseMinistrantEvents
-                      ? sluzby.filter((s) => isSluzbaAssignedToMe(s)).length
-                      : sluzby.length;
+                      ? sluzbyForViewer.filter((s) => isSluzbaAssignedToMe(s)).length
+                      : sluzbyForViewer.length;
                     const shouldShowOnlyAssigned = canUseMinistrantEvents
                       && !showAllSluzbyForMinistrant
                       && assignedCount > 0;
                     const visibleSluzby = shouldShowOnlyAssigned
-                      ? sluzby.filter((s) => isSluzbaAssignedToMe(s))
-                      : sluzby;
+                      ? sluzbyForViewer.filter((s) => isSluzbaAssignedToMe(s))
+                      : sluzbyForViewer;
 
                     return (
                       <>
                         {canUseMinistrantEvents && sluzby.length > 0 && (
                           <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-gray-900 px-3 py-2">
                             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-                              Pokazano <strong>{visibleSluzby.length}</strong> z <strong>{sluzby.length}</strong> wydarzeń
+                              Pokazano <strong>{visibleSluzby.length}</strong> z <strong>{sluzbyForViewer.length}</strong> wydarzeń
                             </p>
-                            {assignedCount > 0 && assignedCount < sluzby.length && (
+                            {assignedCount > 0 && assignedCount < sluzbyForViewer.length && (
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -9121,6 +9647,12 @@ export default function MinistranciApp() {
                                     <span className="text-gray-300 dark:text-gray-600">|</span>
                                     <Clock className="w-3.5 h-3.5" />
                                     {sluzba.godzina}
+                                    {sluzba.typ === 'zbiorka' && sluzba.miejsce && (
+                                      <>
+                                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                                        <span className="truncate">{sluzba.miejsce}</span>
+                                      </>
+                                    )}
                                   </CardDescription>
                                 </div>
                                 {canManageEvents && (
@@ -9129,7 +9661,7 @@ export default function MinistranciApp() {
                                       variant="ghost"
                                       size="sm"
                                       className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                                      title="Edytuj wydarzenie"
+                                      title={sluzba.typ === 'zbiorka' ? 'Edytuj zbiórkę' : 'Edytuj wydarzenie'}
                                       onClick={() => handleEditSluzba(sluzba)}
                                     >
                                       <Pencil className="w-4 h-4" />
@@ -9138,7 +9670,7 @@ export default function MinistranciApp() {
                                       variant="ghost"
                                       size="sm"
                                       className="text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
-                                      title="Usuń wydarzenie"
+                                      title={sluzba.typ === 'zbiorka' ? 'Usuń zbiórkę' : 'Usuń wydarzenie'}
                                       disabled={deletingSluzbaIds.has(sluzba.id)}
                                       onClick={() => void handleDeleteSluzbaFromList(sluzba)}
                                     >
@@ -9153,8 +9685,58 @@ export default function MinistranciApp() {
                               </div>
                             </CardHeader>
                             <CardContent>
+                              {canManageEvents && sluzba.typ === 'zbiorka' && (
+                                <div className="space-y-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/15 p-3">
+                                  <div className="text-sm">
+                                    <span className="font-semibold">Miejsce:</span> {sluzba.miejsce || '—'}
+                                  </div>
+                                  <div className="text-sm">
+                                    <span className="font-semibold">Grupy:</span>{' '}
+                                    {(() => {
+                                      const targetGroups = Array.isArray(sluzba.grupy_docelowe)
+                                        ? sluzba.grupy_docelowe.map((group) => (typeof group === 'string' ? group.trim() : '')).filter(Boolean)
+                                        : [];
+                                      if (targetGroups.length > 0) {
+                                        return targetGroups.join(', ');
+                                      }
+                                      const assignedRows = zbiorkaAssignmentsBySluzba[sluzba.id] || [];
+                                      const fallbackGroups = Array.from(new Set(
+                                        assignedRows
+                                          .map((row) => {
+                                            const ministrant = members.find((member) => member.profile_id === row.ministrant_id);
+                                            return (ministrant?.grupa || 'Bez grupy').trim();
+                                          })
+                                          .filter(Boolean)
+                                      ));
+                                      return fallbackGroups.length > 0 ? fallbackGroups.join(', ') : '—';
+                                    })()}
+                                  </div>
+                                  {sluzba.notatka && (
+                                    <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                                      <span className="font-semibold">Notatka:</span> {sluzba.notatka}
+                                    </div>
+                                  )}
+                                  <div className="flex flex-wrap gap-2 text-xs">
+                                    <Badge variant="outline" className="border-green-300 dark:border-green-700 text-green-700 dark:text-green-300">
+                                      +{Number(sluzba.punkty_za_obecnosc || 0)} pkt za obecność
+                                    </Badge>
+                                    <Badge variant="outline" className="border-red-300 dark:border-red-700 text-red-700 dark:text-red-300">
+                                      {Number(sluzba.punkty_za_nieobecnosc || 0)} pkt za nieobecność
+                                    </Badge>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    className="w-full sm:w-auto"
+                                    onClick={() => void openZbiorkaAttendanceModal(sluzba)}
+                                  >
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    Sprawdź obecność
+                                  </Button>
+                                </div>
+                              )}
+
                               {/* Widok księdza — pełna lista funkcji */}
-                              {canManageEvents && (() => {
+                              {canManageEvents && sluzba.typ !== 'zbiorka' && (() => {
                                 const hours = parseGodziny(sluzba.godzina);
                                 const hasPerHour = hours.length > 1 && sluzba.funkcje.some(f => f.godzina);
                                 const isActiveSluzba = sluzba.status === 'zaplanowana';
@@ -9339,7 +9921,7 @@ export default function MinistranciApp() {
                               })()}
 
                               {/* Widok ministranta — tylko jego funkcje */}
-                              {shouldShowMinistrantView && (() => {
+                              {shouldShowMinistrantView && sluzba.typ !== 'zbiorka' && (() => {
                                 const dniDoWydarzenia = Math.ceil((new Date(sluzba.data).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
 
                                 return (
@@ -9594,8 +10176,18 @@ export default function MinistranciApp() {
                                 <div className="min-w-0">
                                   <p className="font-semibold">{member.imie}</p>
                                   {member.nazwisko && <p className="font-semibold text-gray-700 dark:text-gray-300 -mt-0.5">{member.nazwisko}</p>}
-                                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    {rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt
+                                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                    <span>{rankingData.find(r => r.ministrant_id === member.profile_id)?.total_pkt || 0} pkt</span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedPunktyHistoriaMember(member);
+                                        setShowPunktyHistoriaModal(true);
+                                      }}
+                                      className="inline-flex items-center justify-center h-5 px-2 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 dark:border-indigo-700/70 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300"
+                                    >
+                                      Sprawdź pkt
+                                    </button>
                                     {canManageRankingSettings && (
                                       <button
                                         onClick={(e) => {
@@ -9604,12 +10196,13 @@ export default function MinistranciApp() {
                                           setDodajPunktyForm({ punkty: '', powod: '' });
                                           setShowDodajPunktyModal(true);
                                         }}
-                                        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400 align-middle"
+                                        className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-800/50 text-green-600 dark:text-green-400"
+                                        title="Dodaj punkty"
                                       >
                                         <Plus className="w-3 h-3" />
                                       </button>
                                     )}
-                                  </p>
+                                  </div>
                                   {(getAssignedPermissionKeys(member.role).length > 0 || getPoslugaRoles(member.role).length > 0) && (
                                     <div className="mt-2">
                                       {(() => {
@@ -10694,6 +11287,7 @@ export default function MinistranciApp() {
         setShowSluzbaModal(open);
         if (!open) {
           setSelectedSluzba(null);
+          setSelectedZbiorka(null);
           setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
           setSluzbaExternalAssignments({});
           setSluzbaEkstraPunkty(null);
@@ -11062,6 +11656,274 @@ export default function MinistranciApp() {
               )}
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal tworzenia/edycji zbiórki */}
+      <Dialog open={showZbiorkaModal} onOpenChange={(open) => {
+        setShowZbiorkaModal(open);
+        if (!open) resetZbiorkaFormState();
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className={`text-xl sm:text-2xl font-extrabold tracking-tight ${zbiorkaHeaderTone.title}`}>
+              {selectedZbiorka ? 'Edytuj zbiórkę ministrantów' : 'Dodaj zbiórkę ministrantów'}
+            </DialogTitle>
+            <DialogDescription className={zbiorkaHeaderTone.description}>
+              Uzupełnij dane zbiórki i wskaż grupy. Obecność sprawdzisz przyciskiem „Sprawdź obecność” w utworzonej zbiórce.
+            </DialogDescription>
+          </DialogHeader>
+
+          {(() => {
+            const availableMinistranci = members
+              .filter((m) => m.typ === 'ministrant' && m.zatwierdzony !== false)
+              .sort((a, b) => `${a.imie} ${a.nazwisko || ''}`.localeCompare(`${b.imie} ${b.nazwisko || ''}`, 'pl'));
+            const availableGroups = Array.from(new Set(availableMinistranci.map((m) => (m.grupa || 'Bez grupy').trim())))
+              .sort((a, b) => a.localeCompare(b, 'pl'));
+            const groupCounts = availableMinistranci.reduce<Record<string, number>>((acc, ministrant) => {
+              const groupName = (ministrant.grupa || 'Bez grupy').trim();
+              acc[groupName] = (acc[groupName] || 0) + 1;
+              return acc;
+            }, {});
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-indigo-200/70 dark:border-indigo-900/50 bg-indigo-50/45 dark:bg-indigo-950/20 p-3">
+                  <div className="space-y-1">
+                    <Label>Data *</Label>
+                    <Input
+                      type="date"
+                      value={zbiorkaForm.data}
+                      onChange={(e) => setZbiorkaForm((prev) => ({ ...prev, data: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Godzina *</Label>
+                    <Input
+                      type="time"
+                      value={zbiorkaForm.godzina}
+                      onChange={(e) => setZbiorkaForm((prev) => ({ ...prev, godzina: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-sky-200/70 dark:border-sky-900/50 bg-sky-50/45 dark:bg-sky-950/20 p-3 space-y-1">
+                  <Label>Miejsce (np. kościół / salka)</Label>
+                  <Input
+                    value={zbiorkaForm.miejsce}
+                    onChange={(e) => setZbiorkaForm((prev) => ({ ...prev, miejsce: e.target.value }))}
+                  />
+                </div>
+
+                <div className="rounded-xl border border-violet-200/70 dark:border-violet-900/50 bg-violet-50/45 dark:bg-violet-950/20 p-3 space-y-1">
+                  <Label>Opis / notatka</Label>
+                  <textarea
+                    value={zbiorkaForm.notatka}
+                    onChange={(e) => setZbiorkaForm((prev) => ({ ...prev, notatka: e.target.value }))}
+                    rows={3}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    placeholder="Krótka informacja organizacyjna dla ministrantów"
+                  />
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-emerald-200/70 dark:border-emerald-900/50 bg-emerald-50/45 dark:bg-emerald-950/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-sm font-semibold">Lista uczestników</Label>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setZbiorkaForm((prev) => ({ ...prev, grupyDocelowe: [...availableGroups] }))}
+                      >
+                        Zaznacz wszystkich
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setZbiorkaForm((prev) => ({ ...prev, grupyDocelowe: [] }));
+                          setZbiorkaAttendance({});
+                        }}
+                      >
+                        Wyczyść
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                    Zbiórkę zobaczą tylko wybrane grupy.
+                  </p>
+                  {availableGroups.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Brak zatwierdzonych ministrantów w parafii.</p>
+                  ) : (
+                    <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                      {availableGroups.map((groupName) => {
+                        const checked = zbiorkaForm.grupyDocelowe.includes(groupName);
+                        return (
+                          <label
+                            key={groupName}
+                            className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-sm cursor-pointer transition-colors ${
+                              checked
+                                ? 'border-emerald-300 dark:border-emerald-700/80 bg-emerald-50/70 dark:bg-emerald-900/20'
+                                : 'border-emerald-200/70 dark:border-emerald-900/35 bg-white/85 dark:bg-gray-900/65'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{groupName}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                {groupCounts[groupName] || 0} ministrantów
+                              </p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const isChecked = e.target.checked;
+                                setZbiorkaForm((prev) => ({
+                                  ...prev,
+                                  grupyDocelowe: isChecked
+                                    ? [...prev.grupyDocelowe, groupName]
+                                    : prev.grupyDocelowe.filter((group) => group !== groupName),
+                                }));
+                              }}
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-amber-200/70 dark:border-amber-900/50 bg-amber-50/45 dark:bg-amber-950/20 p-3">
+                  <p className="text-sm text-amber-800 dark:text-amber-300">
+                    Obecność ministrantów ustawisz po utworzeniu zbiórki, przyciskiem „Sprawdź obecność”.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-rose-200/70 dark:border-rose-900/50 bg-rose-50/45 dark:bg-rose-950/20 p-3">
+                  <div>
+                    <Label>Dodaj punkty za obecność</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={zbiorkaForm.punktyZaObecnosc}
+                      onChange={(e) => setZbiorkaForm((prev) => ({ ...prev, punktyZaObecnosc: Math.max(0, Number(e.target.value) || 0) }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>Odejmij punkty za nieobecność</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={zbiorkaForm.punktyZaNieobecnosc}
+                      onChange={(e) => setZbiorkaForm((prev) => ({ ...prev, punktyZaNieobecnosc: Math.max(0, Number(e.target.value) || 0) }))}
+                    />
+                  </div>
+                </div>
+
+                <Button onClick={handleSaveZbiorka} className="w-full" disabled={zbiorkaSaving}>
+                  {zbiorkaSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Zapisywanie...
+                    </>
+                  ) : selectedZbiorka ? 'Zapisz zbiórkę' : 'Utwórz zbiórkę'}
+                </Button>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal obecności zbiórki */}
+      <Dialog open={showZbiorkaAttendanceModal} onOpenChange={(open) => {
+        setShowZbiorkaAttendanceModal(open);
+        if (!open) {
+          setSelectedZbiorkaAttendance(null);
+          setZbiorkaAttendance({});
+        }
+      }}>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className={`text-xl sm:text-2xl font-extrabold tracking-tight ${zbiorkaHeaderTone.title}`}>
+              Sprawdź obecność
+            </DialogTitle>
+            <DialogDescription className={zbiorkaHeaderTone.description}>
+              Oznacz obecność ministrantów przypisanych do tej zbiórki.
+            </DialogDescription>
+          </DialogHeader>
+
+          {(() => {
+            if (!selectedZbiorkaAttendance) {
+              return (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Brak wybranej zbiórki.
+                </p>
+              );
+            }
+
+            const targetMinistranci = getMinistranciByTargetGroups(selectedZbiorkaAttendance.grupy_docelowe || []);
+
+            return (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-100/60 dark:bg-amber-950/30 p-3 text-sm">
+                  <p><span className="font-semibold">Zbiórka:</span> {selectedZbiorkaAttendance.nazwa}</p>
+                  <p><span className="font-semibold">Data:</span> {new Date(selectedZbiorkaAttendance.data).toLocaleDateString('pl-PL')} {selectedZbiorkaAttendance.godzina}</p>
+                </div>
+
+                {targetMinistranci.length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Brak ministrantów w wybranych grupach tej zbiórki.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {targetMinistranci.map((ministrant) => (
+                      <div key={ministrant.profile_id} className="flex items-center justify-between gap-2 rounded-md border border-amber-100 dark:border-amber-900/30 px-2.5 py-2 bg-white/90 dark:bg-gray-900/70">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{ministrant.imie} {ministrant.nazwisko || ''}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{ministrant.grupa || 'Bez grupy'}</p>
+                        </div>
+                        <div className="w-[170px]">
+                          <Select
+                            value={zbiorkaAttendance[ministrant.profile_id]}
+                            onValueChange={(value) => setZbiorkaAttendance((prev) => ({
+                              ...prev,
+                              [ministrant.profile_id]: value as ZbiorkaObecnoscStatus,
+                            }))}
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue placeholder="Wybierz status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="obecny">Obecny</SelectItem>
+                              <SelectItem value="nieobecny">Nieobecny</SelectItem>
+                              <SelectItem value="usprawiedliwiony">Usprawiedliwiony</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={() => void handleSaveZbiorkaAttendance()}
+                  disabled={zbiorkaAttendanceSaving || targetMinistranci.length === 0}
+                >
+                  {zbiorkaAttendanceSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Zapisywanie obecności...
+                    </>
+                  ) : 'Zapisz obecność'}
+                </Button>
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
 
@@ -13019,7 +13881,17 @@ export default function MinistranciApp() {
       </Dialog>
 
       {/* Modal grafik dyżurów */}
-      <Dialog open={showGrafikModal} onOpenChange={(open) => { setShowGrafikModal(open); if (!open) setEditDyzury(false); }}>
+      <Dialog
+        open={showGrafikModal}
+        onOpenChange={(open) => {
+          setShowGrafikModal(open);
+          if (!open) {
+            setEditDyzury(false);
+            setGrafikAddHourByDay({});
+            setDyzurHourDraftById({});
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center justify-between">
@@ -13044,7 +13916,9 @@ export default function MinistranciApp() {
               <div className="space-y-2">
                 {DNI_TYGODNIA_FULL.map((dzien, i) => {
                   const dzienIdx = i === 6 ? 0 : i + 1;
-                  const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
+                  const dyzuryDnia = dyzury
+                    .filter(d => d.dzien_tygodnia === dzienIdx)
+                    .sort((a, b) => (a.godzina?.trim() || '').localeCompare(b.godzina?.trim() || '', 'pl'));
                   const isWeekend = i >= 5;
                   return (
                     <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${dyzuryDnia.length > 0 ? (isWeekend ? 'bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800/40' : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700') : 'bg-gray-50/50 dark:bg-gray-800/20 border-gray-100 dark:border-gray-800 opacity-60'}`}>
@@ -13088,7 +13962,9 @@ export default function MinistranciApp() {
             <div className="space-y-2">
               {DNI_TYGODNIA_FULL.map((dzien, i) => {
                 const dzienIdx = i === 6 ? 0 : i + 1;
-                const dyzuryDnia = dyzury.filter(d => d.dzien_tygodnia === dzienIdx);
+                const dyzuryDnia = dyzury
+                  .filter(d => d.dzien_tygodnia === dzienIdx)
+                  .sort((a, b) => (a.godzina?.trim() || '').localeCompare(b.godzina?.trim() || '', 'pl'));
                 const ministranciNaDyzurze = dyzuryDnia.map(d => d.ministrant_id);
                 const dostepniMinistranci = members.filter(m => m.typ === 'ministrant' && m.zatwierdzony !== false && !ministranciNaDyzurze.includes(m.profile_id));
                 const isWeekend = i >= 5;
@@ -13106,7 +13982,30 @@ export default function MinistranciApp() {
                             {isPending && <span className="text-xs">⏳</span>}
                             {!isPending && grupa?.emoji && <span className="text-xs">{grupa.emoji}</span>}
                             {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}
-                            {d.godzina?.trim() && <span className="text-[10px] opacity-80">• {d.godzina.trim()}</span>}
+                            <Input
+                              type="time"
+                              className="h-7 w-[105px] px-2 text-xs bg-white/80 dark:bg-gray-900/60 border border-gray-300 dark:border-gray-600"
+                              value={dyzurHourDraftById[d.id] ?? (d.godzina?.trim() || '')}
+                              onChange={(e) => setDyzurHourDraftById((prev) => ({ ...prev, [d.id]: e.target.value }))}
+                              onBlur={(e) => {
+                                const currentHour = d.godzina?.trim() || '';
+                                const nextHour = e.target.value.trim();
+                                if (nextHour !== currentHour) {
+                                  void updateDyzurHourAdmin(d.id, nextHour);
+                                } else {
+                                  setDyzurHourDraftById((prev) => {
+                                    const next = { ...prev };
+                                    delete next[d.id];
+                                    return next;
+                                  });
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  (e.currentTarget as HTMLInputElement).blur();
+                                }
+                              }}
+                            />
                             {isPending ? (
                               <>
                                 <button onClick={() => handleDyzurDecision(d.id, 'zatwierdzona')} className="ml-0.5 w-5 h-5 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors" title="Zatwierdź">
@@ -13128,20 +14027,30 @@ export default function MinistranciApp() {
                         );
                       })}
                       {dostepniMinistranci.length > 0 && (
-                        <select
-                          className="text-xs border border-dashed border-gray-300 dark:border-gray-600 rounded-full px-3 py-1.5 bg-white dark:bg-gray-700 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value) toggleDyzurAdmin(e.target.value, dzienIdx);
-                          }}
-                        >
-                          <option value="">+ dodaj</option>
-                          {dostepniMinistranci.map(m => (
-                            <option key={m.id} value={m.profile_id}>
-                              {m.imie} {m.nazwisko || ''}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Input
+                            type="time"
+                            className="h-8 w-[120px] px-2 text-xs"
+                            value={grafikAddHourByDay[dzienIdx] || ''}
+                            onChange={(e) => setGrafikAddHourByDay((prev) => ({ ...prev, [dzienIdx]: e.target.value }))}
+                          />
+                          <select
+                            className="text-xs border border-dashed border-gray-300 dark:border-gray-600 rounded-full px-3 py-1.5 bg-white dark:bg-gray-700 cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                void toggleDyzurAdmin(e.target.value, dzienIdx, grafikAddHourByDay[dzienIdx] || null);
+                              }
+                            }}
+                          >
+                            <option value="">+ dodaj</option>
+                            {dostepniMinistranci.map(m => (
+                              <option key={m.id} value={m.profile_id}>
+                                {m.imie} {m.nazwisko || ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       )}
                       {dyzuryDnia.length === 0 && dostepniMinistranci.length === 0 && (
                         <span className="text-xs text-gray-400 italic">Brak ministrantów</span>
@@ -13184,6 +14093,90 @@ export default function MinistranciApp() {
             <Button className="w-full" onClick={dodajPunktyRecznie} disabled={!dodajPunktyForm.punkty || parseInt(dodajPunktyForm.punkty) === 0}>
               Dodaj {dodajPunktyForm.punkty ? `${dodajPunktyForm.punkty} pkt` : 'punkty'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal historia punktów ministranta */}
+      <Dialog
+        open={showPunktyHistoriaModal}
+        onOpenChange={(open) => {
+          setShowPunktyHistoriaModal(open);
+          if (!open) setSelectedPunktyHistoriaMember(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Historia punktów
+              {selectedPunktyHistoriaMember && (
+                <span className="ml-2 text-base font-semibold text-gray-600 dark:text-gray-300">
+                  {`${selectedPunktyHistoriaMember.imie} ${selectedPunktyHistoriaMember.nazwisko || ''}`.trim()}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Aktualnie: {selectedPunktyHistoriaMember ? Number(rankingData.find((r) => r.ministrant_id === selectedPunktyHistoriaMember.profile_id)?.total_pkt || 0) : 0} pkt
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[65vh] overflow-y-auto pr-1 space-y-2">
+            {selectedMemberPunktyHistoria.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">Brak historii punktów.</p>
+            ) : (
+              selectedMemberPunktyHistoria.map((item) => {
+                if (item.kind === 'obecnosc') {
+                  const o = item.obec;
+                  const d = new Date(`${o.data}T00:00:00`);
+                  const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+                  const statusLabel = o.status === 'zatwierdzona' ? 'Zatwierdzona' : o.status === 'oczekuje' ? 'Oczekuje' : 'Odrzucona';
+                  const statusClass = o.status === 'zatwierdzona'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : o.status === 'oczekuje'
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+                  const eventLabel = o.typ === 'msza'
+                    ? 'Msza'
+                    : o.typ === 'nabożeństwo'
+                      ? (o.nazwa_nabożeństwa || 'Nabożeństwo')
+                      : `Wydarzenie: ${o.nazwa_nabożeństwa || '—'}`;
+                  return (
+                    <div key={o.id} className="rounded-xl border border-gray-200 dark:border-gray-700 p-2.5 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">{dayName} {d.toLocaleDateString('pl-PL')}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{eventLabel}</div>
+                        <div className={`mt-1 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${statusClass}`}>
+                          {statusLabel}
+                        </div>
+                      </div>
+                      <div className={`text-sm font-extrabold tabular-nums shrink-0 ${o.status === 'zatwierdzona' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
+                        {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? '...' : '0'}
+                      </div>
+                    </div>
+                  );
+                }
+
+                const p = item.korekta;
+                const d = new Date(`${p.data}T00:00:00`);
+                const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+                const isPlus = Number(p.punkty) > 0;
+                const powodLabel = p.powod?.trim() && p.powod.trim() !== 'Ręczna korekta punktów'
+                  ? p.powod.trim()
+                  : '';
+                return (
+                  <div key={p.id} className={`rounded-xl border p-2.5 flex items-center justify-between gap-3 ${isPlus ? 'border-teal-200 dark:border-teal-800 bg-teal-50/40 dark:bg-teal-900/10' : 'border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10'}`}>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold truncate">{dayName} {d.toLocaleDateString('pl-PL')}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        Ksiądz{powodLabel ? ` • ${powodLabel}` : ''}
+                      </div>
+                    </div>
+                    <div className={`text-sm font-extrabold tabular-nums shrink-0 ${isPlus ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {isPlus ? `+${p.punkty}` : p.punkty}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </DialogContent>
       </Dialog>

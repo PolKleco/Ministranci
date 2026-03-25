@@ -860,6 +860,9 @@ function KsiadzWydarzeniaHeader({
     czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', hoverGradient: 'hover:from-red-700 hover:via-rose-700 hover:to-red-600', shadow: 'shadow-red-500/25' },
     fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', hoverGradient: 'hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', shadow: 'shadow-purple-500/25' },
     rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', hoverGradient: 'hover:from-pink-600 hover:via-rose-500 hover:to-pink-500', shadow: 'shadow-pink-500/25' },
+    zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', hoverGradient: 'hover:from-amber-700 hover:via-yellow-600 hover:to-amber-500', shadow: 'shadow-amber-500/25' },
+    niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', hoverGradient: 'hover:from-blue-700 hover:via-indigo-700 hover:to-sky-700', shadow: 'shadow-blue-500/25' },
+    czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', hoverGradient: 'hover:from-slate-900 hover:via-black hover:to-zinc-900', shadow: 'shadow-gray-500/25' },
   };
   const lb = litBtn[kolorLiturgiczny || 'zielony'] || litBtn.zielony;
 
@@ -910,6 +913,9 @@ function MinistrantWydarzeniaHeader({
     czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
     fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
     rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+    zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+    niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', shadow: 'shadow-blue-500/20' },
+    czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', shadow: 'shadow-gray-500/20' },
   };
   const lg = litG[kolorLiturgiczny || 'zielony'] || litG.zielony;
 
@@ -1873,6 +1879,7 @@ export default function MinistranciApp() {
   const [premiumPortalLoading, setPremiumPortalLoading] = useState(false);
   const [premiumInvoiceForm, setPremiumInvoiceForm] = useState<PremiumInvoiceForm>(() => buildInitialPremiumInvoiceForm(''));
   const [premiumInvoiceErrors, setPremiumInvoiceErrors] = useState<PremiumInvoiceErrors>({});
+  const [premiumInvoiceRequested, setPremiumInvoiceRequested] = useState(false);
 
   // Dark mode
   const [darkMode, setDarkMode] = useState(false);
@@ -3452,6 +3459,9 @@ export default function MinistranciApp() {
       czerwony: 'bg-gradient-to-r from-red-600 to-rose-700 dark:from-red-400 dark:to-rose-400',
       fioletowy: 'bg-gradient-to-r from-purple-700 to-violet-700 dark:from-purple-400 dark:to-violet-400',
       rozowy: 'bg-gradient-to-r from-pink-600 to-rose-600 dark:from-pink-400 dark:to-rose-400',
+      zloty: 'bg-gradient-to-r from-amber-700 to-yellow-600 dark:from-amber-400 dark:to-yellow-300',
+      niebieski: 'bg-gradient-to-r from-blue-700 to-indigo-700 dark:from-blue-400 dark:to-indigo-400',
+      czarny: 'bg-gradient-to-r from-slate-800 to-zinc-900 dark:from-slate-300 dark:to-zinc-300',
     };
     return map[dzisLiturgiczny?.kolor || 'zielony'] || map.zielony;
   }, [dzisLiturgiczny?.kolor]);
@@ -3462,6 +3472,9 @@ export default function MinistranciApp() {
       czerwony: 'text-red-700 dark:text-red-300',
       fioletowy: 'text-violet-700 dark:text-violet-300',
       rozowy: 'text-pink-700 dark:text-pink-300',
+      zloty: 'text-amber-700 dark:text-amber-300',
+      niebieski: 'text-blue-700 dark:text-blue-300',
+      czarny: 'text-gray-800 dark:text-gray-100',
     };
     return map[dzisLiturgiczny?.kolor || 'zielony'] || map.zielony;
   }, [dzisLiturgiczny?.kolor]);
@@ -3707,6 +3720,12 @@ export default function MinistranciApp() {
     });
   }, [currentParafia?.nazwa, currentUser]);
 
+  useEffect(() => {
+    if (!showPremiumModal) return;
+    setPremiumInvoiceRequested(false);
+    setPremiumInvoiceErrors({});
+  }, [showPremiumModal]);
+
   const setPremiumInvoiceField = <K extends PremiumInvoiceField>(key: K, value: PremiumInvoiceForm[K]) => {
     setPremiumInvoiceForm((prev) => ({ ...prev, [key]: value }));
     setPremiumInvoiceErrors((prev) => {
@@ -3721,6 +3740,11 @@ export default function MinistranciApp() {
     });
   };
 
+  const togglePremiumInvoiceRequested = () => {
+    setPremiumInvoiceRequested((prev) => !prev);
+    setPremiumInvoiceErrors({});
+  };
+
   const getNormalizedInvoicePayload = (): PremiumInvoiceForm => ({
     ...premiumInvoiceForm,
     email: premiumInvoiceForm.email.trim().toLowerCase(),
@@ -3733,7 +3757,11 @@ export default function MinistranciApp() {
     country: 'PL',
   });
 
-  const validatePremiumInvoiceForm = (): { data: PremiumInvoiceForm; errors: PremiumInvoiceErrors } => {
+  const validatePremiumInvoiceForm = (): { data: PremiumInvoiceForm | null; errors: PremiumInvoiceErrors } => {
+    if (!premiumInvoiceRequested) {
+      return { data: null, errors: {} };
+    }
+
     const data = getNormalizedInvoicePayload();
     const errors: PremiumInvoiceErrors = {};
 
@@ -3847,7 +3875,10 @@ export default function MinistranciApp() {
       const res = await authFetch('/api/billing/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parafiaId: currentParafia.id, invoiceData }),
+        body: JSON.stringify({
+          parafiaId: currentParafia.id,
+          ...(invoiceData ? { invoiceData } : {}),
+        }),
       });
       const result = await res.json();
       if (!res.ok) {
@@ -3883,7 +3914,10 @@ export default function MinistranciApp() {
       const res = await authFetch('/api/billing/stripe/checkout-onetime', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parafiaId: currentParafia.id, invoiceData }),
+        body: JSON.stringify({
+          parafiaId: currentParafia.id,
+          ...(invoiceData ? { invoiceData } : {}),
+        }),
       });
       const result = await res.json();
       if (!res.ok) {
@@ -4096,7 +4130,7 @@ export default function MinistranciApp() {
             if (!parsed || typeof parsed !== 'object') return;
             const kolor = String((parsed as { kolor?: string }).kolor || '') as DzienLiturgiczny['kolor'];
             const ranga = String((parsed as { ranga?: string }).ranga || '') as DzienLiturgiczny['ranga'];
-            const dozwoloneKolory: DzienLiturgiczny['kolor'][] = ['zielony', 'bialy', 'czerwony', 'fioletowy', 'rozowy'];
+            const dozwoloneKolory: DzienLiturgiczny['kolor'][] = ['zielony', 'bialy', 'czerwony', 'fioletowy', 'rozowy', 'zloty', 'niebieski', 'czarny'];
             const dozwoloneRangi: DzienLiturgiczny['ranga'][] = ['uroczystosc', 'swieto', 'wspomnienie', 'wspomnienie_dowolne', 'dzien_powszedni'];
             if (!dozwoloneKolory.includes(kolor) || !dozwoloneRangi.includes(ranga)) return;
             next[date] = {
@@ -7498,6 +7532,9 @@ export default function MinistranciApp() {
             czerwony: { bg: 'bg-red-600', text: 'text-white' },
             fioletowy: { bg: 'bg-purple-700', text: 'text-white' },
             rozowy: { bg: 'bg-pink-400', text: 'text-white' },
+            zloty: { bg: 'bg-amber-500', text: 'text-white' },
+            niebieski: { bg: 'bg-blue-600', text: 'text-white' },
+            czarny: { bg: 'bg-gray-900', text: 'text-white' },
           };
           const k = KOLOR_BELKI[dzisLiturgiczny.kolor] || KOLOR_BELKI.zielony;
           return (
@@ -7520,6 +7557,9 @@ export default function MinistranciApp() {
               czerwony: { list: 'bg-white dark:bg-gray-900', trigger: 'text-red-700 dark:text-red-400 data-[state=active]:bg-red-100 dark:data-[state=active]:bg-red-900/40 data-[state=active]:text-red-900 dark:data-[state=active]:text-red-200 data-[state=active]:border-red-300 dark:data-[state=active]:border-red-700 [&_svg]:text-red-600 dark:[&_svg]:text-red-400' },
               fioletowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-purple-700 dark:text-purple-400 data-[state=active]:bg-purple-100 dark:data-[state=active]:bg-purple-900/40 data-[state=active]:text-purple-900 dark:data-[state=active]:text-purple-200 data-[state=active]:border-purple-300 dark:data-[state=active]:border-purple-700 [&_svg]:text-purple-600 dark:[&_svg]:text-purple-400' },
               rozowy: { list: 'bg-white dark:bg-gray-900', trigger: 'text-pink-600 dark:text-pink-400 data-[state=active]:bg-pink-100 dark:data-[state=active]:bg-pink-900/40 data-[state=active]:text-pink-900 dark:data-[state=active]:text-pink-200 data-[state=active]:border-pink-300 dark:data-[state=active]:border-pink-700 [&_svg]:text-pink-500 dark:[&_svg]:text-pink-400' },
+              zloty: { list: 'bg-white dark:bg-gray-900', trigger: 'text-amber-700 dark:text-amber-400 data-[state=active]:bg-amber-100 dark:data-[state=active]:bg-amber-900/40 data-[state=active]:text-amber-900 dark:data-[state=active]:text-amber-200 data-[state=active]:border-amber-300 dark:data-[state=active]:border-amber-700 [&_svg]:text-amber-600 dark:[&_svg]:text-amber-400' },
+              niebieski: { list: 'bg-white dark:bg-gray-900', trigger: 'text-blue-700 dark:text-blue-400 data-[state=active]:bg-blue-100 dark:data-[state=active]:bg-blue-900/40 data-[state=active]:text-blue-900 dark:data-[state=active]:text-blue-200 data-[state=active]:border-blue-300 dark:data-[state=active]:border-blue-700 [&_svg]:text-blue-600 dark:[&_svg]:text-blue-400' },
+              czarny: { list: 'bg-white dark:bg-gray-900', trigger: 'text-gray-800 dark:text-gray-200 data-[state=active]:bg-gray-200 dark:data-[state=active]:bg-gray-800 data-[state=active]:text-gray-900 dark:data-[state=active]:text-gray-100 data-[state=active]:border-gray-400 dark:data-[state=active]:border-gray-600 [&_svg]:text-gray-700 dark:[&_svg]:text-gray-300' },
             } as Record<string, { list: string; trigger: string }>)[dzisLiturgiczny.kolor] || { list: 'bg-white dark:bg-gray-900', trigger: 'text-green-700 dark:text-green-400' } : { list: 'bg-muted', trigger: '' };
             const tc = litColor.trigger;
             return (
@@ -7601,6 +7641,9 @@ export default function MinistranciApp() {
                       czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20', subtitle: 'text-red-200' },
                       fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20', subtitle: 'text-purple-200' },
                       rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20', subtitle: 'text-pink-200' },
+                      zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20', subtitle: 'text-amber-100' },
+                      niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', shadow: 'shadow-blue-500/20', subtitle: 'text-blue-100' },
+                      czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', shadow: 'shadow-gray-500/20', subtitle: 'text-gray-200' },
                     };
                     const litStyle = litGradient[dzisLiturgiczny?.kolor || 'zielony'] || litGradient.zielony;
                     return (
@@ -9057,7 +9100,7 @@ export default function MinistranciApp() {
                         return (
                           <Card key={sluzba.id} className={`overflow-hidden ${isMySluzba ? 'border-2 border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20' : 'border border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white via-white to-gray-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800/50'}`}>
                             {canManageEvents && (() => {
-                              const cg: Record<string, string> = { zielony: 'from-teal-500 to-emerald-500', bialy: 'from-amber-400 to-yellow-400', czerwony: 'from-red-500 to-rose-500', fioletowy: 'from-purple-600 to-violet-500', rozowy: 'from-pink-400 to-rose-400' };
+                              const cg: Record<string, string> = { zielony: 'from-teal-500 to-emerald-500', bialy: 'from-amber-400 to-yellow-400', czerwony: 'from-red-500 to-rose-500', fioletowy: 'from-purple-600 to-violet-500', rozowy: 'from-pink-400 to-rose-400', zloty: 'from-amber-500 to-yellow-500', niebieski: 'from-blue-500 to-indigo-500', czarny: 'from-slate-700 to-gray-900' };
                               return <div className={`h-1.5 bg-gradient-to-r ${cg[dzisLiturgiczny?.kolor || 'zielony'] || cg.zielony}`} />;
                             })()}
                             <CardHeader className="pb-2">
@@ -9065,7 +9108,7 @@ export default function MinistranciApp() {
                                 <div className="space-y-1">
                                   <CardTitle className="flex items-center gap-2.5 text-lg">
                                     {(() => {
-                                      const cc: Record<string, string> = { zielony: 'from-teal-600 to-emerald-700 dark:from-teal-400 dark:to-emerald-400', bialy: 'from-amber-600 to-yellow-700 dark:from-amber-400 dark:to-yellow-400', czerwony: 'from-red-600 to-rose-700 dark:from-red-400 dark:to-rose-400', fioletowy: 'from-purple-600 to-violet-700 dark:from-purple-400 dark:to-violet-400', rozowy: 'from-pink-500 to-rose-600 dark:from-pink-400 dark:to-rose-400' };
+                                      const cc: Record<string, string> = { zielony: 'from-teal-600 to-emerald-700 dark:from-teal-400 dark:to-emerald-400', bialy: 'from-amber-600 to-yellow-700 dark:from-amber-400 dark:to-yellow-400', czerwony: 'from-red-600 to-rose-700 dark:from-red-400 dark:to-rose-400', fioletowy: 'from-purple-600 to-violet-700 dark:from-purple-400 dark:to-violet-400', rozowy: 'from-pink-500 to-rose-600 dark:from-pink-400 dark:to-rose-400', zloty: 'from-amber-700 to-yellow-600 dark:from-amber-300 dark:to-yellow-300', niebieski: 'from-blue-700 to-indigo-700 dark:from-blue-300 dark:to-indigo-300', czarny: 'from-gray-800 to-zinc-900 dark:from-gray-200 dark:to-zinc-100' };
                                       return <span className={`bg-gradient-to-r ${cc[dzisLiturgiczny?.kolor || 'zielony'] || cc.zielony} bg-clip-text text-transparent font-extrabold`}>{sluzba.nazwa}</span>;
                                     })()}
                                     {sluzba.ekstra_punkty && sluzba.ekstra_punkty > 0 && (
@@ -9159,6 +9202,30 @@ export default function MinistranciApp() {
                                     hourBox: 'bg-pink-50/75 dark:bg-pink-900/16 border-pink-200/85 dark:border-pink-800/45',
                                     hourTitle: 'text-pink-700 dark:text-pink-300',
                                     singleBox: 'border-pink-200/80 dark:border-pink-800/40 bg-pink-50/45 dark:bg-pink-900/14',
+                                  },
+                                  zloty: {
+                                    row: 'border-amber-200/90 dark:border-amber-800/45 bg-gradient-to-r from-white via-amber-50/80 to-yellow-50/75 dark:from-gray-800 dark:via-amber-950/26 dark:to-yellow-950/22',
+                                    label: 'text-amber-900 dark:text-amber-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-amber-200 dark:border-amber-800/60',
+                                    hourBox: 'bg-amber-50/75 dark:bg-amber-900/16 border-amber-200/85 dark:border-amber-800/45',
+                                    hourTitle: 'text-amber-700 dark:text-amber-300',
+                                    singleBox: 'border-amber-200/80 dark:border-amber-800/40 bg-amber-50/45 dark:bg-amber-900/14',
+                                  },
+                                  niebieski: {
+                                    row: 'border-blue-200/90 dark:border-blue-800/45 bg-gradient-to-r from-white via-blue-50/80 to-indigo-50/75 dark:from-gray-800 dark:via-blue-950/26 dark:to-indigo-950/22',
+                                    label: 'text-blue-900 dark:text-blue-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-blue-200 dark:border-blue-800/60',
+                                    hourBox: 'bg-blue-50/75 dark:bg-blue-900/16 border-blue-200/85 dark:border-blue-800/45',
+                                    hourTitle: 'text-blue-700 dark:text-blue-300',
+                                    singleBox: 'border-blue-200/80 dark:border-blue-800/40 bg-blue-50/45 dark:bg-blue-900/14',
+                                  },
+                                  czarny: {
+                                    row: 'border-gray-300/90 dark:border-gray-700/50 bg-gradient-to-r from-white via-gray-100/70 to-zinc-100/70 dark:from-gray-800 dark:via-gray-900/35 dark:to-zinc-900/30',
+                                    label: 'text-gray-900 dark:text-gray-100',
+                                    selectTrigger: 'bg-white/95 dark:bg-gray-900/70 border-gray-300 dark:border-gray-700/70',
+                                    hourBox: 'bg-gray-100/70 dark:bg-gray-900/30 border-gray-300/80 dark:border-gray-700/60',
+                                    hourTitle: 'text-gray-700 dark:text-gray-300',
+                                    singleBox: 'border-gray-300/80 dark:border-gray-700/60 bg-gray-100/45 dark:bg-gray-900/25',
                                   },
                                 };
                                 const litStyle = litFunkcjaStyle[litColor] || litFunkcjaStyle.zielony;
@@ -9721,6 +9788,9 @@ export default function MinistranciApp() {
                   czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
                   fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
                   rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+                  zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', shadow: 'shadow-blue-500/20' },
+                  czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', shadow: 'shadow-gray-500/20' },
                 };
                 const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
                 return (
@@ -9885,6 +9955,9 @@ export default function MinistranciApp() {
                   czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
                   fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
                   rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+                  zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', shadow: 'shadow-blue-500/20' },
+                  czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', shadow: 'shadow-gray-500/20' },
                 };
                 const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
                 return (
@@ -10173,6 +10246,9 @@ export default function MinistranciApp() {
                   czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
                   fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
                   rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+                  zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', shadow: 'shadow-blue-500/20' },
+                  czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', shadow: 'shadow-gray-500/20' },
                 };
                 const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
                 return (
@@ -10407,6 +10483,9 @@ export default function MinistranciApp() {
                   czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', shadow: 'shadow-red-500/20' },
                   fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', shadow: 'shadow-purple-500/20' },
                   rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', shadow: 'shadow-pink-500/20' },
+                  zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', shadow: 'shadow-amber-500/20' },
+                  niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', shadow: 'shadow-blue-500/20' },
+                  czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', shadow: 'shadow-gray-500/20' },
                 };
                 const lg = litG[dzisLiturgiczny?.kolor || 'zielony'] || litG.zielony;
                 return (
@@ -12223,6 +12302,9 @@ export default function MinistranciApp() {
               czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', subtitleColor: 'text-red-100', border: 'border-red-500', activeBg: 'bg-red-50 dark:bg-red-900/20', activeBorder: 'border-red-500', btnGradient: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500' },
               fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', subtitleColor: 'text-purple-100', border: 'border-purple-500', activeBg: 'bg-purple-50 dark:bg-purple-900/20', activeBorder: 'border-purple-500', btnGradient: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600' },
               rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', subtitleColor: 'text-pink-100', border: 'border-pink-500', activeBg: 'bg-pink-50 dark:bg-pink-900/20', activeBorder: 'border-pink-500', btnGradient: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400' },
+              zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', subtitleColor: 'text-amber-100', border: 'border-amber-500', activeBg: 'bg-amber-50 dark:bg-amber-900/20', activeBorder: 'border-amber-500', btnGradient: 'from-amber-500 via-yellow-500 to-amber-400', btnHover: 'hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500' },
+              niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', subtitleColor: 'text-blue-100', border: 'border-blue-500', activeBg: 'bg-blue-50 dark:bg-blue-900/20', activeBorder: 'border-blue-500', btnGradient: 'from-blue-500 via-indigo-500 to-sky-500', btnHover: 'hover:from-blue-600 hover:via-indigo-600 hover:to-sky-600' },
+              czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', subtitleColor: 'text-gray-200', border: 'border-gray-600', activeBg: 'bg-gray-100 dark:bg-gray-800/30', activeBorder: 'border-gray-600', btnGradient: 'from-slate-700 via-gray-800 to-zinc-800', btnHover: 'hover:from-slate-800 hover:via-gray-900 hover:to-zinc-900' },
             };
             const lm = litModal[dzisLiturgiczny?.kolor || 'zielony'] || litModal.zielony;
             return (
@@ -12367,7 +12449,7 @@ export default function MinistranciApp() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             {(() => {
-              const lc: Record<string, string> = { zielony: 'text-emerald-700 dark:text-emerald-400', bialy: 'text-amber-600 dark:text-amber-400', czerwony: 'text-red-600 dark:text-red-400', fioletowy: 'text-purple-700 dark:text-purple-400', rozowy: 'text-pink-600 dark:text-pink-400' };
+              const lc: Record<string, string> = { zielony: 'text-emerald-700 dark:text-emerald-400', bialy: 'text-amber-600 dark:text-amber-400', czerwony: 'text-red-600 dark:text-red-400', fioletowy: 'text-purple-700 dark:text-purple-400', rozowy: 'text-pink-600 dark:text-pink-400', zloty: 'text-amber-700 dark:text-amber-400', niebieski: 'text-blue-700 dark:text-blue-400', czarny: 'text-gray-800 dark:text-gray-100' };
               return <DialogTitle className={`text-lg font-bold ${lc[dzisLiturgiczny?.kolor || 'zielony'] || lc.zielony}`}>{editingWatek ? (newWatekForm.kategoria === 'ogłoszenie' ? 'Edytuj ogłoszenie' : 'Edytuj wątek') : newWatekForm.kategoria === 'ogłoszenie' ? 'Nowe ogłoszenie' : 'Nowa dyskusja'}</DialogTitle>;
             })()}
             <DialogDescription>
@@ -12524,7 +12606,7 @@ export default function MinistranciApp() {
               />
             </div>
             {(() => {
-              const lb: Record<string, string> = { zielony: 'bg-gradient-to-r from-teal-600 via-emerald-600 to-green-600 hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', bialy: 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', czerwony: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-500 hover:from-red-700 hover:via-rose-700 hover:to-red-600', fioletowy: 'bg-gradient-to-r from-purple-700 via-violet-600 to-purple-600 hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', rozowy: 'bg-gradient-to-r from-pink-500 via-rose-400 to-pink-400 hover:from-pink-600 hover:via-rose-500 hover:to-pink-500' };
+              const lb: Record<string, string> = { zielony: 'bg-gradient-to-r from-teal-600 via-emerald-600 to-green-600 hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', bialy: 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', czerwony: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-500 hover:from-red-700 hover:via-rose-700 hover:to-red-600', fioletowy: 'bg-gradient-to-r from-purple-700 via-violet-600 to-purple-600 hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', rozowy: 'bg-gradient-to-r from-pink-500 via-rose-400 to-pink-400 hover:from-pink-600 hover:via-rose-500 hover:to-pink-500', zloty: 'bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-400 hover:from-amber-700 hover:via-yellow-600 hover:to-amber-500', niebieski: 'bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 hover:from-blue-700 hover:via-indigo-700 hover:to-sky-700', czarny: 'bg-gradient-to-r from-slate-800 via-gray-900 to-zinc-800 hover:from-slate-900 hover:via-black hover:to-zinc-900' };
               return (
                 <Button onClick={editingWatek ? updateWatek : createWatek} className={`w-full text-white border-0 ${lb[dzisLiturgiczny?.kolor || 'zielony'] || lb.zielony}`} disabled={!newWatekForm.archiwum_data || (newWatekForm.kategoria === 'ogłoszenie' ? (tiptapEditor ? tiptapEditor.isEmpty : (!newWatekForm.tresc || newWatekForm.tresc === '<p></p>')) : !newWatekForm.tytul.trim())}>
                   <Send className="w-4 h-4 mr-2" />
@@ -12541,7 +12623,7 @@ export default function MinistranciApp() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             {(() => {
-              const lc: Record<string, string> = { zielony: 'text-emerald-700 dark:text-emerald-400', bialy: 'text-amber-600 dark:text-amber-400', czerwony: 'text-red-600 dark:text-red-400', fioletowy: 'text-purple-700 dark:text-purple-400', rozowy: 'text-pink-600 dark:text-pink-400' };
+              const lc: Record<string, string> = { zielony: 'text-emerald-700 dark:text-emerald-400', bialy: 'text-amber-600 dark:text-amber-400', czerwony: 'text-red-600 dark:text-red-400', fioletowy: 'text-purple-700 dark:text-purple-400', rozowy: 'text-pink-600 dark:text-pink-400', zloty: 'text-amber-700 dark:text-amber-400', niebieski: 'text-blue-700 dark:text-blue-400', czarny: 'text-gray-800 dark:text-gray-100' };
               return <DialogTitle className={`text-lg font-bold ${lc[dzisLiturgiczny?.kolor || 'zielony'] || lc.zielony}`}>Nowa ankieta</DialogTitle>;
             })()}
             <DialogDescription>
@@ -12637,7 +12719,7 @@ export default function MinistranciApp() {
               <Label htmlFor="wyniki_ukryte" className="font-normal">Ukryj wyniki (ministranci nie widzą kto jak głosował)</Label>
             </div>
             {(() => {
-              const lb: Record<string, string> = { zielony: 'bg-gradient-to-r from-teal-600 via-emerald-600 to-green-600 hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', bialy: 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', czerwony: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-500 hover:from-red-700 hover:via-rose-700 hover:to-red-600', fioletowy: 'bg-gradient-to-r from-purple-700 via-violet-600 to-purple-600 hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', rozowy: 'bg-gradient-to-r from-pink-500 via-rose-400 to-pink-400 hover:from-pink-600 hover:via-rose-500 hover:to-pink-500' };
+              const lb: Record<string, string> = { zielony: 'bg-gradient-to-r from-teal-600 via-emerald-600 to-green-600 hover:from-teal-700 hover:via-emerald-700 hover:to-green-700', bialy: 'bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-400 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500', czerwony: 'bg-gradient-to-r from-red-600 via-rose-600 to-red-500 hover:from-red-700 hover:via-rose-700 hover:to-red-600', fioletowy: 'bg-gradient-to-r from-purple-700 via-violet-600 to-purple-600 hover:from-purple-800 hover:via-violet-700 hover:to-purple-700', rozowy: 'bg-gradient-to-r from-pink-500 via-rose-400 to-pink-400 hover:from-pink-600 hover:via-rose-500 hover:to-pink-500', zloty: 'bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-400 hover:from-amber-700 hover:via-yellow-600 hover:to-amber-500', niebieski: 'bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-600 hover:from-blue-700 hover:via-indigo-700 hover:to-sky-700', czarny: 'bg-gradient-to-r from-slate-800 via-gray-900 to-zinc-800 hover:from-slate-900 hover:via-black hover:to-zinc-900' };
               return (
                 <Button onClick={createAnkieta} className={`w-full text-white border-0 ${lb[dzisLiturgiczny?.kolor || 'zielony'] || lb.zielony}`} disabled={!newAnkietaForm.pytanie.trim() || !newAnkietaForm.archiwum_data}>
                   <Vote className="w-4 h-4 mr-2" />
@@ -13422,11 +13504,22 @@ export default function MinistranciApp() {
                   <div className="space-y-3">
                     <div className="p-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/20">
                       <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-                        Dane do faktury (obowiazkowe)
+                        Dane do faktury (opcjonalne)
                       </p>
                       <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 mt-1">
-                        Wystawiamy tylko faktury: firmowe lub prywatne.
+                        Rozwiń tylko jeśli chcesz otrzymać fakturę.
                       </p>
+                      <Button
+                        type="button"
+                        variant={premiumInvoiceRequested ? 'default' : 'outline'}
+                        className="mt-3 w-full"
+                        onClick={togglePremiumInvoiceRequested}
+                      >
+                        {premiumInvoiceRequested ? 'Faktura: włączona' : 'Chcę fakturę'}
+                      </Button>
+
+                      {premiumInvoiceRequested && (
+                        <>
                       <div className="grid grid-cols-2 gap-2 mt-3">
                         <Button
                           type="button"
@@ -13544,6 +13637,8 @@ export default function MinistranciApp() {
                         Zezwalam na wysłanie faktury e-mailem na podany adres.
                       </label>
                       {renderPremiumInvoiceError('consentEmailInvoice')}
+                        </>
+                      )}
                     </div>
 
                     <Button
@@ -13605,11 +13700,22 @@ export default function MinistranciApp() {
 
                 <div className="p-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/20">
                   <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
-                    Dane do faktury (obowiazkowe)
+                    Dane do faktury (opcjonalne)
                   </p>
                   <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 mt-1">
-                    Wystawiamy tylko faktury: firmowe lub prywatne.
+                    Rozwiń tylko jeśli chcesz otrzymać fakturę.
                   </p>
+                  <Button
+                    type="button"
+                    variant={premiumInvoiceRequested ? 'default' : 'outline'}
+                    className="mt-3 w-full"
+                    onClick={togglePremiumInvoiceRequested}
+                  >
+                    {premiumInvoiceRequested ? 'Faktura: włączona' : 'Chcę fakturę'}
+                  </Button>
+
+                  {premiumInvoiceRequested && (
+                    <>
                   <div className="grid grid-cols-2 gap-2 mt-3">
                     <Button
                       type="button"
@@ -13727,6 +13833,8 @@ export default function MinistranciApp() {
                     Zezwalam na wysłanie faktury e-mailem na podany adres.
                   </label>
                   {renderPremiumInvoiceError('consentEmailInvoice')}
+                    </>
+                  )}
                 </div>
 
                 <div className="space-y-2">

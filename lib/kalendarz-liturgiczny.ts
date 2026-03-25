@@ -5,7 +5,7 @@
 export interface DzienLiturgiczny {
   date: string;
   nazwa: string;
-  kolor: 'zielony' | 'bialy' | 'czerwony' | 'fioletowy' | 'rozowy';
+  kolor: 'zielony' | 'bialy' | 'czerwony' | 'fioletowy' | 'rozowy' | 'zloty' | 'niebieski' | 'czarny';
   ranga: 'uroczystosc' | 'swieto' | 'wspomnienie' | 'wspomnienie_dowolne' | 'dzien_powszedni';
   okres: string;
 }
@@ -470,6 +470,9 @@ export const KOLORY_LITURGICZNE: Record<string, { nazwa: string; bg: string; tex
   czerwony: { nazwa: 'Czerwony', bg: 'bg-red-100', text: 'text-red-900', border: 'border-red-300', dot: 'bg-red-500' },
   fioletowy: { nazwa: 'Fioletowy', bg: 'bg-purple-100', text: 'text-purple-900', border: 'border-purple-300', dot: 'bg-purple-500' },
   rozowy: { nazwa: 'Różowy', bg: 'bg-pink-100', text: 'text-pink-900', border: 'border-pink-300', dot: 'bg-pink-400' },
+  zloty: { nazwa: 'Złoty', bg: 'bg-amber-100', text: 'text-amber-900', border: 'border-amber-300', dot: 'bg-amber-500' },
+  niebieski: { nazwa: 'Niebieski', bg: 'bg-blue-100', text: 'text-blue-900', border: 'border-blue-300', dot: 'bg-blue-500' },
+  czarny: { nazwa: 'Czarny', bg: 'bg-gray-900', text: 'text-white', border: 'border-gray-700', dot: 'bg-gray-900' },
 };
 
 export const RANGI: Record<string, string> = {

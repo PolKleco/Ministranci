@@ -45,24 +45,31 @@ async function attachCompanyTaxId(customerId: string, invoiceData: InvoiceData) 
   }
 }
 
-const buildCustomerPayload = (invoiceData: InvoiceData, parafiaId: string, adminId: string, fallbackName: string) => {
-  const displayName = invoiceData.invoiceType === 'company'
-    ? (invoiceData.companyName || fallbackName)
-    : invoiceData.fullName;
+const buildCustomerPayload = (
+  invoiceData: InvoiceData | null,
+  parafiaId: string,
+  adminId: string,
+  fallbackName: string,
+  fallbackEmail: string
+) => {
+  const displayName = invoiceData
+    ? (invoiceData.invoiceType === 'company' ? (invoiceData.companyName || fallbackName) : invoiceData.fullName)
+    : fallbackName;
+
   return buildStripeFormPayload([
-    ['email', invoiceData.email],
+    ['email', invoiceData?.email || fallbackEmail],
     ['name', displayName],
-    ['address[line1]', invoiceData.street],
-    ['address[city]', invoiceData.city],
-    ['address[postal_code]', invoiceData.postalCode],
-    ['address[country]', invoiceData.country],
+    ['address[line1]', invoiceData?.street || null],
+    ['address[city]', invoiceData?.city || null],
+    ['address[postal_code]', invoiceData?.postalCode || null],
+    ['address[country]', invoiceData?.country || null],
     ['metadata[parafia_id]', parafiaId],
     ['metadata[admin_id]', adminId],
-    ['metadata[invoice_type]', invoiceData.invoiceType],
-    ['metadata[invoice_full_name]', invoiceData.fullName],
-    ['metadata[invoice_company_name]', invoiceData.companyName],
-    ['metadata[invoice_tax_id]', invoiceData.taxId],
-    ['metadata[invoice_email_consent]', invoiceData.consentEmailInvoice ? 'true' : 'false'],
+    ['metadata[invoice_type]', invoiceData?.invoiceType || null],
+    ['metadata[invoice_full_name]', invoiceData?.fullName || null],
+    ['metadata[invoice_company_name]', invoiceData?.companyName || null],
+    ['metadata[invoice_tax_id]', invoiceData?.taxId || null],
+    ['metadata[invoice_email_consent]', invoiceData ? (invoiceData.consentEmailInvoice ? 'true' : 'false') : null],
   ]);
 };
 
@@ -78,11 +85,16 @@ export async function POST(request: NextRequest) {
     if (!parafiaId) {
       return NextResponse.json({ error: 'Brak parafiaId' }, { status: 400 });
     }
-    const parsedInvoice = parseInvoiceData(body?.invoiceData);
-    if (!parsedInvoice.ok) {
-      return NextResponse.json({ error: parsedInvoice.error }, { status: 400 });
+    const rawInvoiceData = body?.invoiceData;
+    const hasInvoiceData = Boolean(rawInvoiceData && typeof rawInvoiceData === 'object');
+    let invoiceData: InvoiceData | null = null;
+    if (hasInvoiceData) {
+      const parsedInvoice = parseInvoiceData(rawInvoiceData);
+      if (!parsedInvoice.ok) {
+        return NextResponse.json({ error: parsedInvoice.error }, { status: 400 });
+      }
+      invoiceData = parsedInvoice.data;
     }
-    const invoiceData = parsedInvoice.data;
 
     const parafia = await findParafiaForAdmin(parafiaId, authUser.id);
     if (!parafia) {
@@ -97,20 +109,35 @@ export async function POST(request: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || request.nextUrl.origin;
     const parafiaName = typeof parafia.nazwa === 'string' ? parafia.nazwa : 'Parafia';
 
-    await persistParafiaInvoiceData(parafiaId, authUser.id, invoiceData);
+    const fallbackEmail = typeof authUser.email === 'string' ? authUser.email.trim().toLowerCase() : '';
+    if (!fallbackEmail && !invoiceData?.email) {
+      return NextResponse.json({ error: 'Brak e-maila użytkownika do płatności.' }, { status: 400 });
+    }
+
+    if (invoiceData) {
+      await persistParafiaInvoiceData(parafiaId, authUser.id, invoiceData);
+    }
 
     let customerId = typeof parafia.stripe_customer_id === 'string'
       ? parafia.stripe_customer_id
       : null;
 
     if (!customerId) {
-      const customerPayload = buildCustomerPayload(invoiceData, parafiaId, authUser.id, parafiaName);
+      const customerPayload = buildCustomerPayload(
+        invoiceData,
+        parafiaId,
+        authUser.id,
+        parafiaName,
+        fallbackEmail
+      );
       const customer = await stripeRequest<StripeCustomerResponse>('/customers', {
         method: 'POST',
         form: customerPayload,
       });
       customerId = customer.id;
-      await attachCompanyTaxId(customerId, invoiceData);
+      if (invoiceData) {
+        await attachCompanyTaxId(customerId, invoiceData);
+      }
 
       const { error: persistCustomerError } = await supabaseAdmin
         .from('parafie')
@@ -124,9 +151,17 @@ export async function POST(request: NextRequest) {
     } else {
       await stripeRequest<StripeCustomerResponse>(`/customers/${encodeURIComponent(customerId)}`, {
         method: 'POST',
-        form: buildCustomerPayload(invoiceData, parafiaId, authUser.id, parafiaName),
+        form: buildCustomerPayload(
+          invoiceData,
+          parafiaId,
+          authUser.id,
+          parafiaName,
+          fallbackEmail
+        ),
       });
-      await attachCompanyTaxId(customerId, invoiceData);
+      if (invoiceData) {
+        await attachCompanyTaxId(customerId, invoiceData);
+      }
     }
 
     const checkoutPayload = buildStripeFormPayload([
@@ -141,23 +176,23 @@ export async function POST(request: NextRequest) {
       ['cancel_url', `${appUrl}/app?stripe=cancel`],
       ['subscription_data[metadata][parafia_id]', parafiaId],
       ['subscription_data[metadata][admin_id]', authUser.id],
-      ['subscription_data[metadata][invoice_type]', invoiceData.invoiceType],
-      ['subscription_data[metadata][invoice_email]', invoiceData.email],
-      ['subscription_data[metadata][invoice_full_name]', invoiceData.fullName],
-      ['subscription_data[metadata][invoice_company_name]', invoiceData.companyName],
-      ['subscription_data[metadata][invoice_tax_id]', invoiceData.taxId],
-      ['subscription_data[metadata][invoice_email_consent]', invoiceData.consentEmailInvoice ? 'true' : 'false'],
+      ['subscription_data[metadata][invoice_type]', invoiceData?.invoiceType || null],
+      ['subscription_data[metadata][invoice_email]', invoiceData?.email || null],
+      ['subscription_data[metadata][invoice_full_name]', invoiceData?.fullName || null],
+      ['subscription_data[metadata][invoice_company_name]', invoiceData?.companyName || null],
+      ['subscription_data[metadata][invoice_tax_id]', invoiceData?.taxId || null],
+      ['subscription_data[metadata][invoice_email_consent]', invoiceData ? (invoiceData.consentEmailInvoice ? 'true' : 'false') : null],
       ['metadata[parafia_id]', parafiaId],
       ['metadata[admin_id]', authUser.id],
-      ['metadata[invoice_type]', invoiceData.invoiceType],
-      ['metadata[invoice_email]', invoiceData.email],
-      ['metadata[invoice_full_name]', invoiceData.fullName],
-      ['metadata[invoice_company_name]', invoiceData.companyName],
-      ['metadata[invoice_tax_id]', invoiceData.taxId],
-      ['metadata[invoice_email_consent]', invoiceData.consentEmailInvoice ? 'true' : 'false'],
+      ['metadata[invoice_type]', invoiceData?.invoiceType || null],
+      ['metadata[invoice_email]', invoiceData?.email || null],
+      ['metadata[invoice_full_name]', invoiceData?.fullName || null],
+      ['metadata[invoice_company_name]', invoiceData?.companyName || null],
+      ['metadata[invoice_tax_id]', invoiceData?.taxId || null],
+      ['metadata[invoice_email_consent]', invoiceData ? (invoiceData.consentEmailInvoice ? 'true' : 'false') : null],
     ]);
 
-    if (invoiceData.invoiceType === 'company') {
+    if (invoiceData?.invoiceType === 'company') {
       checkoutPayload.append('tax_id_collection[enabled]', 'true');
     }
 

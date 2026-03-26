@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 const headingFontClass = 'font-serif';
+const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=net.ministranci.twa';
 
 function useReveal(threshold = 0.1) {
   const ref = useRef<HTMLDivElement>(null);
@@ -156,6 +157,18 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  const handleAppEntryClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (typeof navigator === 'undefined') return;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (!isAndroid) return;
+
+    // Zachowujemy domyślne zachowanie przy kliknięciach z modyfikatorami (np. otwarcie w nowej karcie).
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+
+    event.preventDefault();
+    window.location.assign(ANDROID_PLAY_STORE_URL);
+  };
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#050510] text-slate-100">
       <style>{`
@@ -199,6 +212,7 @@ export default function LandingPage() {
             </a>
             <Link
               href="/app"
+              onClick={handleAppEntryClick}
               className="inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-5 py-2 text-sm font-semibold text-amber-300 transition-colors hover:bg-amber-500/20"
             >
               Otwórz aplikację
@@ -240,6 +254,7 @@ export default function LandingPage() {
               <div className="intro-2 mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
                 <Link
                   href="/app?auth=register"
+                  onClick={handleAppEntryClick}
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-7 py-4 text-base font-semibold text-slate-950 transition-all hover:shadow-[0_0_30px_rgba(245,158,11,0.3)]"
                 >
                   Załóż darmowe konto parafii
@@ -499,6 +514,7 @@ export default function LandingPage() {
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Link
               href="/app?auth=register"
+              onClick={handleAppEntryClick}
               className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-8 py-4 text-base font-semibold text-slate-950"
             >
               Załóż darmowe konto parafii

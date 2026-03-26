@@ -3056,10 +3056,19 @@ export default function MinistranciApp() {
     const baseLiturgDay = days.find(d => d.date === data) || null;
     const liturgDay = baseLiturgDay ? applyLiturgicalDayOverride(baseLiturgDay) : null;
 
-    // Mnożnik sezonowy
-    let mnoznik = getConfigValue('mnoznik_domyslny', 1);
-    if (liturgDay?.okres === 'Wielki Post') mnoznik = getConfigValue('mnoznik_wielki_post', 1.5);
-    else if (liturgDay?.okres === 'Adwent') mnoznik = getConfigValue('mnoznik_adwent', 1.5);
+    // Mnożnik sezonowy:
+    // brak klucza sezonowego powinien dziedziczyć wartość domyślną,
+    // a nie wracać do historycznego fallbacku 1.5.
+    const domyslnyMnoznikRaw = getConfigValue('mnoznik_domyslny', 1);
+    const domyslnyMnoznik = Number.isFinite(domyslnyMnoznikRaw) && domyslnyMnoznikRaw > 0 ? domyslnyMnoznikRaw : 1;
+    let mnoznik = domyslnyMnoznik;
+    if (liturgDay?.okres === 'Wielki Post') {
+      const wielkiPostRaw = getConfigValue('mnoznik_wielki_post', domyslnyMnoznik);
+      mnoznik = Number.isFinite(wielkiPostRaw) && wielkiPostRaw > 0 ? wielkiPostRaw : domyslnyMnoznik;
+    } else if (liturgDay?.okres === 'Adwent') {
+      const adwentRaw = getConfigValue('mnoznik_adwent', domyslnyMnoznik);
+      mnoznik = Number.isFinite(adwentRaw) && adwentRaw > 0 ? adwentRaw : domyslnyMnoznik;
+    }
 
     // Punkty bazowe na podstawie rangi
     let bazowe = getConfigValue('msza_dzien_powszedni', 5);

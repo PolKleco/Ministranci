@@ -415,7 +415,7 @@ create table obecnosci (
   parafia_id uuid references parafie(id) on delete cascade not null,
   data date not null,
   godzina text default '',
-  typ text not null check (typ in ('msza', 'nabożeństwo', 'wydarzenie')),
+  typ text not null check (typ in ('msza', 'nabożeństwo', 'wydarzenie', 'aktywnosc')),
   nazwa_nabożeństwa text default '',
   status text default 'oczekuje' check (status in ('oczekuje', 'zatwierdzona', 'odrzucona')),
   punkty_bazowe numeric default 0,
@@ -652,7 +652,8 @@ begin
     -- Minusowe punkty
     (p_parafia_id, 'minus_nieobecnosc_dyzur', -5, 'Nieobecność na dyżurze'),
     -- Ogólne
-    (p_parafia_id, 'limit_dni_zgloszenie', 2, 'Limit dni na zgłoszenie obecności');
+    (p_parafia_id, 'limit_dni_zgloszenie', 2, 'Limit dni na zgłoszenie obecności'),
+    (p_parafia_id, 'zgloszenia_aktywnosci_wlaczone', 1, 'Czy ministranci mogą zgłaszać aktywności do dodatkowych punktów');
 
   -- Rangi
   insert into rangi_config (parafia_id, nazwa, min_pkt, kolor, kolejnosc) values

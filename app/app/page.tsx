@@ -76,6 +76,7 @@ const ADMIN_PREVIEW_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
   .map((email) => email.trim().toLowerCase())
   .filter(Boolean);
 const BLOCKED_PRIEST_EMAIL_DOMAINS = ['niepodam.pl'];
+const AKTYWNOSC_ZGLOSZENIA_KEY = 'zgloszenia_aktywnosci_wlaczone';
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -130,6 +131,12 @@ const getLocalISODate = (date: Date = new Date()) => {
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
+
+const buildInitialAktywnoscForm = () => ({
+  opis: '',
+  data: getLocalISODate(),
+  punkty: '',
+});
 
 const readLocalStorage = (key: string): string | null => {
   if (typeof window === 'undefined') return null;
@@ -448,7 +455,7 @@ interface Obecnosc {
   parafia_id: string;
   data: string;
   godzina: string;
-  typ: 'msza' | 'nabożeństwo' | 'wydarzenie';
+  typ: 'msza' | 'nabożeństwo' | 'wydarzenie' | 'aktywnosc';
   nazwa_nabożeństwa: string;
   status: 'oczekuje' | 'zatwierdzona' | 'odrzucona';
   punkty_bazowe: number;
@@ -624,6 +631,7 @@ interface PendingObecnosciCardProps {
   rejectingObecnosciIds: Set<string>;
   bulkApprovingObecnosci: boolean;
   onApprove: (id: string) => void;
+  onApproveWithCustomPoints: (id: string) => void;
   onReject: (id: string) => void;
   onApproveAll: () => void;
 }
@@ -636,6 +644,7 @@ function PendingObecnosciCard({
   rejectingObecnosciIds,
   bulkApprovingObecnosci,
   onApprove,
+  onApproveWithCustomPoints,
   onReject,
   onApproveAll,
 }: PendingObecnosciCardProps) {
@@ -661,18 +670,35 @@ function PendingObecnosciCard({
               const isDyzur = approvedDyzuryKeySet.has(`${o.ministrant_id}:${d.getDay()}`);
               const isApproving = approvingObecnosciIds.has(o.id);
               const isRejecting = rejectingObecnosciIds.has(o.id);
+              const isAktywnosc = o.typ === 'aktywnosc';
               return (
                 <div key={o.id} className="flex items-center justify-between gap-2 p-2 sm:p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
                   <div className="min-w-0">
-                    <div className="font-medium text-sm sm:text-base truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</div>
-                    <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
-                      {dayName} {d.toLocaleDateString('pl-PL')} {o.godzina && `• ${o.godzina}`}
-                      {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
-                    </div>
-                    <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
-                      {o.typ === 'wydarzenie' ? `⭐ ${o.nazwa_nabożeństwa}` : o.typ === 'nabożeństwo' ? o.nazwa_nabożeństwa : 'Msza'}
-                      {' • '}{o.punkty_finalne} pkt {o.mnoznik > 1 ? `(${o.punkty_bazowe} × ${o.mnoznik})` : ''}
-                    </div>
+                    {isAktywnosc ? (
+                      <>
+                        <div className="font-medium text-sm sm:text-base truncate">
+                          {member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'} zgłosił aktywność:
+                        </div>
+                        <div className="text-xs sm:text-sm text-gray-700 dark:text-gray-200 truncate">
+                          {o.nazwa_nabożeństwa || 'Brak opisu aktywności'}
+                        </div>
+                        <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                          {dayName} {d.toLocaleDateString('pl-PL')} • propozycja: {o.punkty_finalne} pkt
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-medium text-sm sm:text-base truncate">{member ? `${member.imie} ${member.nazwisko || ''}`.trim() : '?'}</div>
+                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                          {dayName} {d.toLocaleDateString('pl-PL')} {o.godzina && `• ${o.godzina}`}
+                          {isDyzur && <Badge variant="outline" className="ml-1 sm:ml-2 text-[10px] sm:text-xs">DYŻUR</Badge>}
+                        </div>
+                        <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">
+                          {o.typ === 'wydarzenie' ? `⭐ ${o.nazwa_nabożeństwa}` : o.typ === 'nabożeństwo' ? o.nazwa_nabożeństwa : 'Msza'}
+                          {' • '}{o.punkty_finalne} pkt {o.mnoznik > 1 ? `(${o.punkty_bazowe} × ${o.mnoznik})` : ''}
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="flex gap-1.5 sm:gap-2 shrink-0">
                     <Button
@@ -680,14 +706,28 @@ function PendingObecnosciCard({
                       className="bg-green-600 hover:bg-green-700"
                       onClick={() => onApprove(o.id)}
                       disabled={bulkApprovingObecnosci || isApproving || isRejecting}
+                      title="Zatwierdź"
                     >
                       <Check className="w-4 h-4" />
                     </Button>
+                    {isAktywnosc && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-indigo-300 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
+                        onClick={() => onApproveWithCustomPoints(o.id)}
+                        disabled={bulkApprovingObecnosci || isApproving || isRejecting}
+                        title="Przyznaj mniej / więcej punktów"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="destructive"
                       onClick={() => onReject(o.id)}
                       disabled={bulkApprovingObecnosci || isApproving || isRejecting}
+                      title="Odrzuć"
                     >
                       <X className="w-4 h-4" />
                     </Button>
@@ -1003,6 +1043,8 @@ interface RankingSettingsPanelProps {
   onAddOdznaka: () => void;
   limitDniConfig: PunktacjaConfig | null;
   getConfigValue: (klucz: string, fallback: number) => number;
+  aktywnoscZgloszeniaWlaczone: boolean;
+  onOpenToggleAktywnoscZgloszen: () => void;
 }
 
 function RankingSettingsPanel({
@@ -1042,12 +1084,25 @@ function RankingSettingsPanel({
   onAddOdznaka,
   limitDniConfig,
   getConfigValue,
+  aktywnoscZgloszeniaWlaczone,
+  onOpenToggleAktywnoscZgloszen,
 }: RankingSettingsPanelProps) {
   return (
     <>
       <div className="flex flex-wrap justify-end gap-2">
         <Button variant="outline" size="sm" className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300 dark:border-red-800 dark:hover:bg-red-900/20" onClick={onOpenResetPunktacja}>
           Wyzeruj punktację
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className={aktywnoscZgloszeniaWlaczone
+            ? 'text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:text-emerald-300 dark:border-emerald-700 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30'
+            : 'text-rose-700 border-rose-300 bg-rose-50 hover:bg-rose-100 dark:text-rose-300 dark:border-rose-700 dark:bg-rose-900/20 dark:hover:bg-rose-900/30'}
+          onClick={onOpenToggleAktywnoscZgloszen}
+        >
+          {aktywnoscZgloszeniaWlaczone ? <Unlock className="w-4 h-4 mr-2" /> : <Lock className="w-4 h-4 mr-2" />}
+          {aktywnoscZgloszeniaWlaczone ? 'Wyłącz zgłoszenia aktywności' : 'Włącz zgłoszenia aktywności'}
         </Button>
         <Button variant="outline" size="sm" onClick={onToggleShowRankingSettings}>
           <Settings className="w-4 h-4 mr-2" />
@@ -1793,6 +1848,13 @@ export default function MinistranciApp() {
   const [odznakiZdobyte, setOdznakiZdobyte] = useState<OdznakaZdobyta[]>([]);
   const [rankingData, setRankingData] = useState<RankingEntry[]>([]);
   const [showZglosModal, setShowZglosModal] = useState(false);
+  const [showAktywnoscModal, setShowAktywnoscModal] = useState(false);
+  const [aktywnoscForm, setAktywnoscForm] = useState(buildInitialAktywnoscForm);
+  const [aktywnoscSubmitting, setAktywnoscSubmitting] = useState(false);
+  const [showCustomPointsModal, setShowCustomPointsModal] = useState(false);
+  const [customPointsTarget, setCustomPointsTarget] = useState<Obecnosc | null>(null);
+  const [customPointsValue, setCustomPointsValue] = useState('');
+  const [customPointsSaving, setCustomPointsSaving] = useState(false);
   const [showDyzuryModal, setShowDyzuryModal] = useState(false);
   const [dyzurConfirm, setDyzurConfirm] = useState<{ dzien: number; type: 'first' | 'change'; godzina: string; replaceFromDzien: number | null } | null>(null);
   const [showEditProfilModal, setShowEditProfilModal] = useState(false);
@@ -1815,6 +1877,8 @@ export default function MinistranciApp() {
   const [dodajPunktyForm, setDodajPunktyForm] = useState({ punkty: '', powod: '' });
   const [showRankingSettings, setShowRankingSettings] = useState(false);
   const [showResetPunktacjaModal, setShowResetPunktacjaModal] = useState(false);
+  const [showToggleAktywnoscZgloszenModal, setShowToggleAktywnoscZgloszenModal] = useState(false);
+  const [toggleAktywnoscZgloszenSaving, setToggleAktywnoscZgloszenSaving] = useState(false);
   const [zglosForm, setZglosForm] = useState({ data: '', typ: 'msza' as 'msza' | 'nabożeństwo' | 'wydarzenie', nazwa_nabożeństwa: '', godzina: '', wydarzenie_id: '' });
   const [zglosSubmitting, setZglosSubmitting] = useState(false);
   const [zglosSuccess, setZglosSuccess] = useState(false);
@@ -2332,8 +2396,15 @@ export default function MinistranciApp() {
     godzina: '',
     funkcjePerHour: {} as FunkcjePerHourMap
   });
+  const [sluzbaValidationAttempted, setSluzbaValidationAttempted] = useState(false);
   const [sluzbaExternalAssignments, setSluzbaExternalAssignments] = useState<Record<string, string>>({});
   const [sluzbaEkstraPunkty, setSluzbaEkstraPunkty] = useState<number | null>(null);
+  const sluzbaCleanGodzina = sluzbaForm.godzina.split(',').map(g => g.trim()).filter(Boolean).join(', ');
+  const sluzbaRequiredErrors = {
+    nazwa: sluzbaValidationAttempted && !sluzbaForm.nazwa.trim(),
+    data: sluzbaValidationAttempted && !sluzbaForm.data,
+    godzina: sluzbaValidationAttempted && !sluzbaCleanGodzina,
+  };
   const [zbiorkaSaving, setZbiorkaSaving] = useState(false);
   const [zbiorkaAttendanceSaving, setZbiorkaAttendanceSaving] = useState(false);
   const [zbiorkaForm, setZbiorkaForm] = useState({
@@ -2883,6 +2954,67 @@ export default function MinistranciApp() {
     }
   };
 
+  const zglosAktywnosc = async () => {
+    if (!currentUser?.parafia_id || aktywnoscSubmitting) return;
+    if (!aktywnoscZgloszeniaWlaczone) {
+      alert('Ksiądz wyłączył możliwość zgłaszania aktywności dodatkowych.');
+      return;
+    }
+
+    const cleanOpis = aktywnoscForm.opis.trim();
+    const cleanData = aktywnoscForm.data;
+    const proposedPoints = Number.parseInt(aktywnoscForm.punkty, 10);
+    if (!cleanOpis || !cleanData || !Number.isFinite(proposedPoints) || proposedPoints <= 0) {
+      alert('Uzupełnij opis, datę i proponowaną liczbę punktów.');
+      return;
+    }
+
+    const todayStr = getLocalISODate();
+    const limitDni = getConfigValue('limit_dni_zgloszenie', 2);
+    const todayParts = todayStr.split('-').map(Number);
+    const dataParts = cleanData.split('-').map(Number);
+    const todayMs = Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]);
+    const dataMs = Date.UTC(dataParts[0], dataParts[1] - 1, dataParts[2]);
+    const diffDays = Math.floor((todayMs - dataMs) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      alert('Nie możesz zgłosić aktywności na przyszły dzień.');
+      return;
+    }
+    if (diffDays > limitDni) {
+      alert(`Nie możesz zgłosić aktywności — upłynął limit ${limitDni} dni od daty.`);
+      return;
+    }
+
+    setAktywnoscSubmitting(true);
+    try {
+      const { error } = await supabase.from('obecnosci').insert({
+        ministrant_id: currentUser.id,
+        parafia_id: currentUser.parafia_id,
+        data: cleanData,
+        godzina: '',
+        typ: 'aktywnosc',
+        nazwa_nabożeństwa: cleanOpis,
+        punkty_bazowe: proposedPoints,
+        mnoznik: 1,
+        punkty_finalne: proposedPoints,
+      });
+
+      if (error) {
+        alert('Błąd zgłoszenia aktywności: ' + error.message);
+        return;
+      }
+
+      setShowAktywnoscModal(false);
+      setAktywnoscForm(buildInitialAktywnoscForm());
+      loadRankingData();
+      setZglosSuccess(true);
+      setTimeout(() => setZglosSuccess(false), 3000);
+    } finally {
+      setAktywnoscSubmitting(false);
+    }
+  };
+
   const sprawdzOdznaki = async (ministrantId: string, parafiaId: string, newTotalObecnosci: number, newTotalPkt: number, newStreakTyg: number) => {
     // Pobierz aktualne odznaki zdobyte przez tego ministranta
     const { data: juzZdobyte } = await supabase.from('odznaki_zdobyte')
@@ -3025,19 +3157,35 @@ export default function MinistranciApp() {
     }
   };
 
-  const zatwierdzObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean }) => {
+  const zatwierdzObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean; approvedPoints?: number }) => {
     if (!currentUser) throw new Error('Brak danych użytkownika');
     if (!canApproveRankingSubmissions) throw new Error('Brak uprawnień do zatwierdzania zgłoszeń');
 
     const obecnosc = obecnosci.find(o => o.id === obecnoscId);
     if (!obecnosc) throw new Error('Nie znaleziono zgłoszenia');
+    const approvedPoints = typeof options?.approvedPoints === 'number'
+      ? Math.max(0, Math.round(options.approvedPoints))
+      : Math.max(0, Math.round(Number(obecnosc.punkty_finalne || 0)));
+    const shouldPersistApprovedPoints = typeof options?.approvedPoints === 'number' || obecnosc.typ === 'aktywnosc';
 
     let statusUpdated = false;
     try {
-      const { error: statusError } = await supabase.from('obecnosci').update({
+      const statusPatch: {
+        status: 'zatwierdzona';
+        zatwierdzona_przez: string;
+        punkty_bazowe?: number;
+        mnoznik?: number;
+        punkty_finalne?: number;
+      } = {
         status: 'zatwierdzona',
         zatwierdzona_przez: currentUser.id,
-      }).eq('id', obecnoscId);
+      };
+      if (shouldPersistApprovedPoints) {
+        statusPatch.punkty_bazowe = approvedPoints;
+        statusPatch.mnoznik = 1;
+        statusPatch.punkty_finalne = approvedPoints;
+      }
+      const { error: statusError } = await supabase.from('obecnosci').update(statusPatch).eq('id', obecnoscId);
       if (statusError) throw new Error(statusError.message);
       statusUpdated = true;
 
@@ -3053,7 +3201,7 @@ export default function MinistranciApp() {
       let streakTyg: number;
 
       if (existing) {
-        newTotalPkt = Number(existing.total_pkt) + obecnosc.punkty_finalne;
+        newTotalPkt = Number(existing.total_pkt) + approvedPoints;
         newTotalObecnosci = (existing.total_obecnosci || 0) + 1;
         streakTyg = existing.streak_tyg || 0;
         const ranga = getRanga(newTotalPkt);
@@ -3065,7 +3213,7 @@ export default function MinistranciApp() {
         }).eq('id', existing.id);
         if (rankingUpdateError) throw new Error(rankingUpdateError.message);
       } else {
-        newTotalPkt = obecnosc.punkty_finalne;
+        newTotalPkt = approvedPoints;
         newTotalObecnosci = 1;
         streakTyg = 0;
         const ranga = getRanga(newTotalPkt);
@@ -3091,7 +3239,7 @@ export default function MinistranciApp() {
           body: JSON.stringify({
             parafia_id: currentParafia.id,
             grupa_docelowa: 'wszyscy',
-            title: `Brawo! +${obecnosc.punkty_finalne} pkt`,
+            title: `Brawo! +${approvedPoints} pkt`,
             body: `Twoje zgłoszenie zostało zatwierdzone! Masz już ${newTotalPkt} pkt ${ministrant ? `${ministrant.imie} ${ministrant.nazwisko || ''}`.trim() : ''}`,
             url: '/app',
             kategoria: 'zatwierdzenie',
@@ -3105,10 +3253,22 @@ export default function MinistranciApp() {
       }
     } catch (err) {
       if (statusUpdated) {
-        await supabase.from('obecnosci').update({
+        const rollbackPatch: {
+          status: 'oczekuje';
+          zatwierdzona_przez: null;
+          punkty_bazowe?: number;
+          mnoznik?: number;
+          punkty_finalne?: number;
+        } = {
           status: 'oczekuje',
           zatwierdzona_przez: null,
-        }).eq('id', obecnoscId);
+        };
+        if (shouldPersistApprovedPoints) {
+          rollbackPatch.punkty_bazowe = obecnosc.punkty_bazowe;
+          rollbackPatch.mnoznik = obecnosc.mnoznik;
+          rollbackPatch.punkty_finalne = obecnosc.punkty_finalne;
+        }
+        await supabase.from('obecnosci').update(rollbackPatch).eq('id', obecnoscId);
       }
       throw err;
     }
@@ -3182,7 +3342,7 @@ export default function MinistranciApp() {
     loadRankingData();
   };
 
-  const handleApproveObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean }) => {
+  const handleApproveObecnosc = async (obecnoscId: string, options?: { skipReload?: boolean; approvedPoints?: number }) => {
     if (!ensureRankingApprovalPermission()) return;
     if (bulkApprovingObecnosci || approvingObecnosciIds.has(obecnoscId)) return;
     setApprovingObecnosciIds((prev) => {
@@ -3201,6 +3361,47 @@ export default function MinistranciApp() {
         next.delete(obecnoscId);
         return next;
       });
+    }
+  };
+
+  const handleApproveObecnoscWithCustomPoints = (obecnoscId: string) => {
+    if (!ensureRankingApprovalPermission()) return;
+    if (bulkApprovingObecnosci || approvingObecnosciIds.has(obecnoscId) || rejectingObecnosciIds.has(obecnoscId)) return;
+    const obecnosc = obecnosci.find((o) => o.id === obecnoscId);
+    if (!obecnosc) {
+      alert('Nie znaleziono zgłoszenia.');
+      return;
+    }
+    const currentPoints = Math.max(0, Math.round(Number(obecnosc.punkty_finalne || 0)));
+    setCustomPointsTarget(obecnosc);
+    setCustomPointsValue(String(currentPoints));
+    setShowCustomPointsModal(true);
+  };
+
+  const saveCustomPendingPoints = async () => {
+    if (!ensureRankingApprovalPermission()) return;
+    if (!customPointsTarget || customPointsSaving) return;
+
+    const normalized = customPointsValue.replace(',', '.').trim();
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      alert('Podaj poprawną liczbę punktów (0 lub więcej).');
+      return;
+    }
+
+    const updatedPoints = Math.round(parsed);
+    const obecnoscId = customPointsTarget.id;
+    setCustomPointsSaving(true);
+
+    try {
+      await handleApproveObecnosc(obecnoscId, { approvedPoints: updatedPoints });
+      setShowCustomPointsModal(false);
+      setCustomPointsTarget(null);
+      setCustomPointsValue('');
+    } catch {
+      // handleApproveObecnosc pokazuje komunikat błędu
+    } finally {
+      setCustomPointsSaving(false);
     }
   };
 
@@ -3538,6 +3739,10 @@ export default function MinistranciApp() {
     () => punktacjaConfig.find((p) => p.klucz === 'limit_dni_zgloszenie') ?? null,
     [punktacjaConfig]
   );
+  const aktywnoscZgloszeniaWlaczone = useMemo(
+    () => getConfigValue(AKTYWNOSC_ZGLOSZENIA_KEY, 1) > 0,
+    [getConfigValue]
+  );
   const pendingObecnosci = useMemo(
     () => obecnosci.filter((o) => o.status === 'oczekuje'),
     [obecnosci]
@@ -3642,6 +3847,42 @@ export default function MinistranciApp() {
     }
     loadRankingData();
     setShowResetPunktacjaModal(false);
+  };
+
+  const handleToggleAktywnoscZgloszen = async () => {
+    if (!ensureRankingSettingsPermission()) return;
+    if (!currentParafia || toggleAktywnoscZgloszenSaving) return;
+
+    const nextValue = aktywnoscZgloszeniaWlaczone ? 0 : 1;
+    const existing = punktacjaConfig.find((p) => p.klucz === AKTYWNOSC_ZGLOSZENIA_KEY);
+
+    setToggleAktywnoscZgloszenSaving(true);
+    try {
+      if (existing) {
+        const { error } = await supabase
+          .from('punktacja_config')
+          .update({ wartosc: nextValue, opis: 'Czy ministranci mogą zgłaszać aktywności do dodatkowych punktów' })
+          .eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('punktacja_config')
+          .insert({
+            parafia_id: currentParafia.id,
+            klucz: AKTYWNOSC_ZGLOSZENIA_KEY,
+            wartosc: nextValue,
+            opis: 'Czy ministranci mogą zgłaszać aktywności do dodatkowych punktów',
+          });
+        if (error) throw error;
+      }
+
+      await loadRankingData();
+      setShowToggleAktywnoscZgloszenModal(false);
+    } catch (err) {
+      alert('Nie udało się zmienić ustawienia zgłoszeń aktywności: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setToggleAktywnoscZgloszenSaving(false);
+    }
   };
 
   const updateRanga = async (id: string, nazwa: string, min_pkt: number) => {
@@ -5083,9 +5324,10 @@ export default function MinistranciApp() {
   };
 
   const handleCreateSluzba = async () => {
-    // Oczyść godzinę z pustych slotów
-    const cleanGodzina = sluzbaForm.godzina.split(',').map(g => g.trim()).filter(Boolean).join(', ');
-    if (!sluzbaForm.nazwa || !sluzbaForm.data || !cleanGodzina || !currentUser?.parafia_id) {
+    const cleanNazwa = sluzbaForm.nazwa.trim();
+    const cleanGodzina = sluzbaCleanGodzina;
+    setSluzbaValidationAttempted(true);
+    if (!cleanNazwa || !sluzbaForm.data || !cleanGodzina || !currentUser?.parafia_id) {
       alert('Wypełnij wymagane pola!');
       return;
     }
@@ -5130,7 +5372,7 @@ export default function MinistranciApp() {
       const { error: updateSluzbaError } = await supabase
         .from('sluzby')
         .update({
-          nazwa: sluzbaForm.nazwa,
+          nazwa: cleanNazwa,
           data: sluzbaForm.data,
           godzina: cleanGodzina,
           ekstra_punkty: sluzbaEkstraPunkty
@@ -5261,7 +5503,7 @@ export default function MinistranciApp() {
       const { data: newSluzba, error } = await supabase
         .from('sluzby')
         .insert({
-          nazwa: sluzbaForm.nazwa,
+          nazwa: cleanNazwa,
           data: sluzbaForm.data,
           godzina: cleanGodzina,
           parafia_id: currentUser.parafia_id,
@@ -5298,7 +5540,7 @@ export default function MinistranciApp() {
             parafia_id: currentParafia.id,
             grupa_docelowa: 'wszyscy',
             title: 'Nowe wydarzenie',
-            body: `${sluzbaForm.nazwa} — ${new Date(sluzbaForm.data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${cleanGodzina}`,
+            body: `${cleanNazwa} — ${new Date(sluzbaForm.data).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long' })} o ${cleanGodzina}`,
             url: '/app',
             kategoria: 'wydarzenie',
           }),
@@ -5308,6 +5550,7 @@ export default function MinistranciApp() {
 
     await loadSluzby();
     setShowSluzbaModal(false);
+    setSluzbaValidationAttempted(false);
     setSelectedSluzba(null);
     setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
     setSluzbaExternalAssignments({});
@@ -5765,6 +6008,7 @@ export default function MinistranciApp() {
       godzina: sluzba.godzina,
       funkcjePerHour,
     });
+    setSluzbaValidationAttempted(false);
     setSluzbaExternalAssignments(externalAssignments);
     setSluzbaEkstraPunkty(sluzba.ekstra_punkty ?? null);
     setShowSluzbaModal(true);
@@ -9106,12 +9350,28 @@ export default function MinistranciApp() {
                 return (
                   <div className="space-y-5">
                     {/* Przyciski akcji */}
-                    <div className="flex gap-3">
-                      <Button onClick={() => setShowZglosModal(true)} className="flex-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/25 font-bold">
-                        <Plus className="w-4 h-4 mr-2" />
-                        Zgłoś obecność
-                      </Button>
-                      <div className="flex-1 flex flex-col gap-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <Button onClick={() => setShowZglosModal(true)} className="w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 hover:from-blue-600 hover:via-indigo-600 hover:to-blue-700 text-white shadow-lg shadow-blue-500/25 font-bold">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Zgłoś obecność
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            if (!aktywnoscZgloszeniaWlaczone) return;
+                            setShowAktywnoscModal(true);
+                          }}
+                          variant="outline"
+                          disabled={!aktywnoscZgloszeniaWlaczone}
+                          className={aktywnoscZgloszeniaWlaczone
+                            ? 'w-full border-cyan-300 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 hover:border-cyan-400 dark:border-cyan-700 dark:bg-cyan-900/20 dark:text-cyan-300 dark:hover:bg-cyan-900/40 font-bold'
+                            : 'w-full border-gray-300 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-400 font-bold cursor-not-allowed'}
+                        >
+                          <Plus className="w-4 h-4 mr-2" />
+                          {aktywnoscZgloszeniaWlaczone ? 'Zgłoś aktywność' : 'Zgłoszenia aktywności wyłączone'}
+                        </Button>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
                         <Button onClick={() => setShowDyzuryModal(true)} className="w-full bg-gradient-to-r from-teal-500 via-cyan-500 to-teal-600 hover:from-teal-600 hover:via-cyan-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/20 font-bold">
                           <Clock className="w-4 h-4 mr-2" />
                           Moje dyżury
@@ -9253,6 +9513,11 @@ export default function MinistranciApp() {
                                       )}
                                       {o.typ === 'wydarzenie' && (
                                         <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-[10px] font-medium text-amber-600 dark:text-amber-400">⭐ {o.nazwa_nabożeństwa}</span>
+                                      )}
+                                      {o.typ === 'aktywnosc' && (
+                                        <span className="px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-[10px] font-medium text-cyan-700 dark:text-cyan-300 truncate max-w-[180px]">
+                                          Aktywność: {o.nazwa_nabożeństwa || '—'}
+                                        </span>
                                       )}
                                     </div>
                                     <span className={`font-extrabold text-sm tabular-nums ${o.status === 'zatwierdzona' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
@@ -9475,6 +9740,8 @@ export default function MinistranciApp() {
                       onAddOdznaka={addOdznaka}
                       limitDniConfig={limitDniConfig}
                       getConfigValue={getConfigValue}
+                      aktywnoscZgloszeniaWlaczone={aktywnoscZgloszeniaWlaczone}
+                      onOpenToggleAktywnoscZgloszen={() => setShowToggleAktywnoscZgloszenModal(true)}
                     />
                   )}
 
@@ -9487,6 +9754,7 @@ export default function MinistranciApp() {
                       rejectingObecnosciIds={rejectingObecnosciIds}
                       bulkApprovingObecnosci={bulkApprovingObecnosci}
                       onApprove={(id) => { void handleApproveObecnosc(id); }}
+                      onApproveWithCustomPoints={handleApproveObecnoscWithCustomPoints}
                       onReject={(id) => { void handleRejectObecnosc(id); }}
                       onApproveAll={() => { void zatwierdzWszystkie(); }}
                     />
@@ -9561,6 +9829,7 @@ export default function MinistranciApp() {
                         setSelectedZbiorka(null);
                         setSelectedSluzba(null);
                         setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
+                        setSluzbaValidationAttempted(false);
                         setSluzbaExternalAssignments({});
                         setSluzbaEkstraPunkty(null);
                         setShowSluzbaModal(true);
@@ -9920,12 +10189,82 @@ export default function MinistranciApp() {
                                 );
                               })()}
 
-                              {/* Widok ministranta — tylko jego funkcje */}
+                              {/* Widok ministranta — pełna lista funkcji + jego funkcje */}
                               {shouldShowMinistrantView && sluzba.typ !== 'zbiorka' && (() => {
                                 const dniDoWydarzenia = Math.ceil((new Date(sluzba.data).getTime() - new Date().setHours(0,0,0,0)) / (1000 * 60 * 60 * 24));
+                                const aktywneFunkcje = sluzba.funkcje.filter((f) => f.aktywna);
+                                const hours = parseGodziny(sluzba.godzina);
+                                const hasPerHour = hours.length > 1 && aktywneFunkcje.some((f) => f.godzina);
+                                const getFunkcjaOrderIndex = (typ: string) => {
+                                  const idx = FUNKCJE_TYPES.findIndex((item) => item === typ);
+                                  return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+                                };
+                                const sortFunkcje = (funkcje: Funkcja[]) => (
+                                  [...funkcje].sort((a, b) => {
+                                    const diff = getFunkcjaOrderIndex(a.typ) - getFunkcjaOrderIndex(b.typ);
+                                    if (diff !== 0) return diff;
+                                    return a.typ.localeCompare(b.typ, 'pl');
+                                  })
+                                );
+                                const renderFunkcjaAssignmentRow = (funkcja: Funkcja, label: string) => (
+                                  <div key={funkcja.id} className="flex items-center justify-between gap-2 p-2 bg-white dark:bg-gray-800/70 rounded-md border border-gray-100 dark:border-gray-700 shadow-sm">
+                                    <span className="font-semibold text-sm text-gray-700 dark:text-gray-200 shrink-0">{label}:</span>
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className={`text-sm truncate ${(funkcja.ministrant_id || funkcja.osoba_zewnetrzna) ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}`}>
+                                        {getMemberName(funkcja.ministrant_id, funkcja.osoba_zewnetrzna) || 'nie przypisano'}
+                                      </span>
+                                      {funkcja.ministrant_id && (
+                                        funkcja.zaakceptowana ? <CheckCircle className="w-4 h-4 text-green-500 dark:text-green-400 shrink-0" /> : <Hourglass className="w-4 h-4 text-amber-500 shrink-0" />
+                                      )}
+                                    </div>
+                                  </div>
+                                );
 
                                 return (
-                                  <div className="space-y-2">
+                                  <div className="space-y-3">
+                                    <div className="rounded-lg border border-indigo-100 dark:border-indigo-800/40 bg-indigo-50/40 dark:bg-indigo-900/10 p-2.5">
+                                      <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 mb-1.5">Funkcje w wydarzeniu</p>
+                                      {aktywneFunkcje.length === 0 ? (
+                                        <p className="text-xs text-gray-400 italic">Brak funkcji</p>
+                                      ) : hasPerHour ? (
+                                        <div className="space-y-2">
+                                          {hours.map((h) => {
+                                            const hourFunkcje = sortFunkcje(aktywneFunkcje.filter((f) => f.godzina === h));
+                                            if (hourFunkcje.length === 0) return null;
+                                            const typCounter: Record<string, number> = {};
+                                            return (
+                                              <div key={h} className="rounded-md border border-indigo-100 dark:border-indigo-800/35 bg-white/80 dark:bg-gray-900/40 p-2">
+                                                <p className="text-xs font-bold text-indigo-600 dark:text-indigo-300 mb-1 flex items-center gap-1">
+                                                  <Clock className="w-3 h-3" />
+                                                  {h}
+                                                </p>
+                                                <div className="space-y-1.5">
+                                                  {hourFunkcje.map((funkcja) => {
+                                                    typCounter[funkcja.typ] = (typCounter[funkcja.typ] || 0) + 1;
+                                                    const slot = typCounter[funkcja.typ];
+                                                    const label = slot > 1 ? `${funkcja.typ} (${slot})` : funkcja.typ;
+                                                    return renderFunkcjaAssignmentRow(funkcja, label);
+                                                  })}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-1.5">
+                                          {(() => {
+                                            const typCounter: Record<string, number> = {};
+                                            return sortFunkcje(aktywneFunkcje).map((funkcja) => {
+                                              typCounter[funkcja.typ] = (typCounter[funkcja.typ] || 0) + 1;
+                                              const slot = typCounter[funkcja.typ];
+                                              const label = slot > 1 ? `${funkcja.typ} (${slot})` : funkcja.typ;
+                                              return renderFunkcjaAssignmentRow(funkcja, label);
+                                            });
+                                          })()}
+                                        </div>
+                                      )}
+                                    </div>
+
                                     {isMySluzba ? (
                                       <>
                                         {myFunkcje.map((f) => (
@@ -9963,7 +10302,7 @@ export default function MinistranciApp() {
                                         )}
                                       </>
                                     ) : (
-                                      <p className="text-sm text-gray-400 text-center py-2">Nie jesteś przypisany do tego wydarzenia</p>
+                                      <p className="text-xs text-gray-400 text-center">Nie jesteś przypisany do funkcji w tym wydarzeniu.</p>
                                     )}
                                   </div>
                                 );
@@ -10857,6 +11196,33 @@ export default function MinistranciApp() {
                   </div>
                 );
               })()}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const dzis = getLocalISODate(new Date());
+                  const url = `https://niezbednik.niedziela.pl/liturgia/${dzis}`;
+                  if (typeof window !== 'undefined') {
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                  }
+                }}
+                className="w-full text-left rounded-2xl overflow-hidden border border-indigo-200/50 dark:border-indigo-700/50 bg-gradient-to-r from-indigo-500/10 to-blue-500/10 dark:from-indigo-500/20 dark:to-blue-500/20 hover:from-indigo-500/20 hover:to-blue-500/20 transition-colors shadow-md shadow-indigo-500/10"
+              >
+                <div className="px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 flex items-center justify-center shrink-0">
+                      <BookOpen className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-indigo-900 dark:text-indigo-200">Czytania z dnia</p>
+                      <p className="text-xs text-indigo-600/90 dark:text-indigo-300/80 truncate">
+                        Otwórz czytania liturgiczne na {new Date().toLocaleDateString('pl-PL')}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-indigo-500 dark:text-indigo-300 shrink-0" />
+                </div>
+              </button>
               {/* Modlitwa przed Mszą */}
               <Accordion type="single" collapsible>
                 <AccordionItem value="przed" className="border-0">
@@ -11286,6 +11652,7 @@ export default function MinistranciApp() {
       <Dialog open={showSluzbaModal} onOpenChange={(open) => {
         setShowSluzbaModal(open);
         if (!open) {
+          setSluzbaValidationAttempted(false);
           setSelectedSluzba(null);
           setSelectedZbiorka(null);
           setSluzbaForm({ nazwa: '', data: '', godzina: '', funkcjePerHour: {} });
@@ -11301,21 +11668,26 @@ export default function MinistranciApp() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Nazwa wydarzenia *</Label>
+              <Label className={sluzbaRequiredErrors.nazwa ? 'text-red-600 dark:text-red-400' : ''}>Nazwa wydarzenia *</Label>
               <Input
                 value={sluzbaForm.nazwa}
                 onChange={(e) => setSluzbaForm({ ...sluzbaForm, nazwa: e.target.value })}
                 placeholder="Msza Święta"
+                className={sluzbaRequiredErrors.nazwa ? 'border-red-500 focus-visible:ring-red-400' : ''}
               />
             </div>
 
             <div>
-              <Label>Data *</Label>
-              <Input
-                type="date"
-                value={sluzbaForm.data}
-                onChange={(e) => setSluzbaForm({ ...sluzbaForm, data: e.target.value })}
-              />
+              <Label className={sluzbaRequiredErrors.data ? 'text-red-600 dark:text-red-400' : ''}>Data *</Label>
+              <div className="relative">
+                <Calendar className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${sluzbaRequiredErrors.data ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                <Input
+                  type="date"
+                  value={sluzbaForm.data}
+                  onChange={(e) => setSluzbaForm({ ...sluzbaForm, data: e.target.value })}
+                  className={`pl-9 ${!sluzbaForm.data ? 'safari-muted-picker-hint' : ''} ${sluzbaRequiredErrors.data ? 'border-red-500 focus-visible:ring-red-400' : ''}`}
+                />
+              </div>
             </div>
 
             {(() => {
@@ -11323,41 +11695,44 @@ export default function MinistranciApp() {
               const rawParts = sluzbaForm.godzina.split(',').map(g => g.trim());
               const displayHours = rawParts.length > 0 && rawParts.some(p => p !== '') ? rawParts : [''];
               return (
-                <div className="border rounded-lg p-3 space-y-3 bg-gray-50 dark:bg-gray-900">
-                  <Label className="font-semibold block">Godzina *</Label>
+                <div className={`border rounded-lg p-3 space-y-3 ${sluzbaRequiredErrors.godzina ? 'border-red-500 bg-red-50/40 dark:bg-red-900/10' : 'bg-gray-50 dark:bg-gray-900'}`}>
+                  <Label className={`font-semibold block ${sluzbaRequiredErrors.godzina ? 'text-red-600 dark:text-red-400' : ''}`}>Godzina *</Label>
                   <div className="space-y-2">
                     {displayHours.map((godz, i) => (
                       <div key={i} className="flex items-center gap-2">
-                        <Input
-                          type="time"
-                          value={godz}
-                          className="flex-1"
-                          onChange={(e) => {
-                            const newHours = [...displayHours];
-                            const oldHour = newHours[i];
-                            newHours[i] = e.target.value;
-                            const newGodzina = newHours.join(', ');
-                            const newFunkcjePerHour = { ...sluzbaForm.funkcjePerHour };
-                            if (oldHour && oldHour !== e.target.value) {
-                              newFunkcjePerHour[e.target.value] = newFunkcjePerHour[oldHour] || {};
-                              delete newFunkcjePerHour[oldHour];
-                              setSluzbaExternalAssignments((prev) => {
-                                const next = { ...prev };
-                                const oldPrefix = `${oldHour}::`;
-                                const newPrefix = `${e.target.value}::`;
-                                Object.keys(prev).forEach((k) => {
-                                  if (k.startsWith(oldPrefix)) {
-                                    const suffix = k.slice(oldPrefix.length);
-                                    next[`${newPrefix}${suffix}`] = prev[k];
-                                    delete next[k];
-                                  }
+                        <div className="relative flex-1">
+                          <Clock className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${sluzbaRequiredErrors.godzina ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                          <Input
+                            type="time"
+                            value={godz}
+                            className={`pl-9 ${!godz ? 'safari-muted-picker-hint' : ''} ${sluzbaRequiredErrors.godzina ? 'border-red-500 focus-visible:ring-red-400' : ''}`}
+                            onChange={(e) => {
+                              const newHours = [...displayHours];
+                              const oldHour = newHours[i];
+                              newHours[i] = e.target.value;
+                              const newGodzina = newHours.join(', ');
+                              const newFunkcjePerHour = { ...sluzbaForm.funkcjePerHour };
+                              if (oldHour && oldHour !== e.target.value) {
+                                newFunkcjePerHour[e.target.value] = newFunkcjePerHour[oldHour] || {};
+                                delete newFunkcjePerHour[oldHour];
+                                setSluzbaExternalAssignments((prev) => {
+                                  const next = { ...prev };
+                                  const oldPrefix = `${oldHour}::`;
+                                  const newPrefix = `${e.target.value}::`;
+                                  Object.keys(prev).forEach((k) => {
+                                    if (k.startsWith(oldPrefix)) {
+                                      const suffix = k.slice(oldPrefix.length);
+                                      next[`${newPrefix}${suffix}`] = prev[k];
+                                      delete next[k];
+                                    }
+                                  });
+                                  return next;
                                 });
-                                return next;
-                              });
-                            }
-                            setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: newFunkcjePerHour });
-                          }}
-                        />
+                              }
+                              setSluzbaForm({ ...sluzbaForm, godzina: newGodzina, funkcjePerHour: newFunkcjePerHour });
+                            }}
+                          />
+                        </div>
                         {displayHours.length > 1 && (
                           <Button
                             variant="ghost"
@@ -13269,6 +13644,161 @@ export default function MinistranciApp() {
         </DialogContent>
       </Dialog>
 
+      {/* Modal zgłoszenia aktywności */}
+      <Dialog
+        open={showAktywnoscModal}
+        onOpenChange={(open) => {
+          setShowAktywnoscModal(open);
+          if (!open && !aktywnoscSubmitting) {
+            setAktywnoscForm(buildInitialAktywnoscForm());
+          }
+        }}
+      >
+        <DialogContent className="w-[calc(100%-1rem)] sm:max-w-md p-0 overflow-y-auto border-0 shadow-2xl max-h-[90dvh]">
+          <DialogTitle className="sr-only">Zgłoś aktywność</DialogTitle>
+          {(() => {
+            const litModal: Record<string, { gradient: string; subtitleColor: string; btnGradient: string; btnHover: string }> = {
+              zielony: { gradient: 'from-teal-600 via-emerald-600 to-green-600', subtitleColor: 'text-emerald-100', btnGradient: 'from-teal-500 via-emerald-500 to-green-500', btnHover: 'hover:from-teal-600 hover:via-emerald-600 hover:to-green-600' },
+              bialy: { gradient: 'from-amber-500 via-yellow-500 to-amber-400', subtitleColor: 'text-amber-100', btnGradient: 'from-amber-400 via-yellow-400 to-amber-300', btnHover: 'hover:from-amber-500 hover:via-yellow-500 hover:to-amber-400' },
+              czerwony: { gradient: 'from-red-600 via-rose-600 to-red-500', subtitleColor: 'text-red-100', btnGradient: 'from-red-500 via-rose-500 to-red-400', btnHover: 'hover:from-red-600 hover:via-rose-600 hover:to-red-500' },
+              fioletowy: { gradient: 'from-purple-700 via-violet-600 to-purple-600', subtitleColor: 'text-purple-100', btnGradient: 'from-purple-600 via-violet-500 to-purple-500', btnHover: 'hover:from-purple-700 hover:via-violet-600 hover:to-purple-600' },
+              rozowy: { gradient: 'from-pink-500 via-rose-400 to-pink-400', subtitleColor: 'text-pink-100', btnGradient: 'from-pink-400 via-rose-400 to-pink-300', btnHover: 'hover:from-pink-500 hover:via-rose-500 hover:to-pink-400' },
+              zloty: { gradient: 'from-amber-600 via-yellow-500 to-amber-400', subtitleColor: 'text-amber-100', btnGradient: 'from-amber-500 via-yellow-500 to-amber-400', btnHover: 'hover:from-amber-600 hover:via-yellow-600 hover:to-amber-500' },
+              niebieski: { gradient: 'from-blue-600 via-indigo-600 to-sky-600', subtitleColor: 'text-blue-100', btnGradient: 'from-blue-500 via-indigo-500 to-sky-500', btnHover: 'hover:from-blue-600 hover:via-indigo-600 hover:to-sky-600' },
+              czarny: { gradient: 'from-slate-800 via-gray-900 to-zinc-800', subtitleColor: 'text-gray-200', btnGradient: 'from-slate-700 via-gray-800 to-zinc-800', btnHover: 'hover:from-slate-800 hover:via-gray-900 hover:to-zinc-900' },
+            };
+            const lm = litModal[dzisLiturgiczny?.kolor || 'zielony'] || litModal.zielony;
+            const canSubmit = !!aktywnoscForm.opis.trim() && !!aktywnoscForm.data && Number.parseInt(aktywnoscForm.punkty, 10) > 0;
+
+            return (
+              <>
+                <div className={`bg-gradient-to-r ${lm.gradient} p-4`}>
+                  <h3 className="font-extrabold text-white text-lg flex items-center gap-2">
+                    <Plus className="w-5 h-5" />
+                    Zgłoś aktywność
+                  </h3>
+                  <p className={`${lm.subtitleColor} text-xs mt-1`}>
+                    Ksiądz może zatwierdzić, przyznać mniej/więcej punktów albo odrzucić zgłoszenie.
+                  </p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Co zrobiłeś? *</Label>
+                    <textarea
+                      value={aktywnoscForm.opis}
+                      onChange={(e) => setAktywnoscForm((prev) => ({ ...prev, opis: e.target.value.slice(0, 240) }))}
+                      placeholder="Np. pomoc przy przygotowaniu liturgii"
+                      rows={3}
+                      className="mt-1 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] dark:bg-input/30"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Kiedy? *</Label>
+                    <Input
+                      type="date"
+                      value={aktywnoscForm.data}
+                      max={getLocalISODate()}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value;
+                        setAktywnoscForm((prev) => ({ ...prev, data: selectedDate }));
+                        requestAnimationFrame(() => e.target.blur());
+                      }}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-bold uppercase tracking-wider text-gray-500">Ile punktów proponujesz? *</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={aktywnoscForm.punkty}
+                      onChange={(e) => setAktywnoscForm((prev) => ({ ...prev, punkty: e.target.value.replace(/[^\d]/g, '') }))}
+                      placeholder="Np. 8"
+                      className="mt-1"
+                    />
+                  </div>
+                  <Button
+                    onClick={zglosAktywnosc}
+                    className={`w-full h-12 bg-gradient-to-r ${lm.btnGradient} ${lm.btnHover} text-white font-extrabold text-base`}
+                    disabled={aktywnoscSubmitting || !canSubmit}
+                  >
+                    <Send className="w-5 h-5 mr-2" />
+                    {aktywnoscSubmitting ? 'Wysyłanie...' : 'Wyślij do zatwierdzenia'}
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: przyznaj mniej / więcej punktów i zatwierdź */}
+      <Dialog
+        open={showCustomPointsModal}
+        onOpenChange={(open) => {
+          setShowCustomPointsModal(open);
+          if (!open && !customPointsSaving) {
+            setCustomPointsTarget(null);
+            setCustomPointsValue('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Przyznaj mniej / więcej punktów</DialogTitle>
+            <DialogDescription>
+              Ustaw punktację dla aktywności. Zapis od razu zatwierdzi zgłoszenie.
+            </DialogDescription>
+          </DialogHeader>
+          {customPointsTarget && (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 p-3">
+                <p className="text-xs text-indigo-700 dark:text-indigo-300 font-semibold">
+                  {(() => {
+                    const member = memberByProfileId.get(customPointsTarget.ministrant_id);
+                    return member ? `${member.imie} ${member.nazwisko || ''}`.trim() : 'Ministrant';
+                  })()}
+                </p>
+                <p className="text-sm text-indigo-900 dark:text-indigo-100 mt-1 break-words">
+                  {customPointsTarget.nazwa_nabożeństwa || 'Brak opisu aktywności'}
+                </p>
+              </div>
+
+              <div>
+                <Label>Liczba punktów</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={customPointsValue}
+                  onChange={(e) => setCustomPointsValue(e.target.value)}
+                  placeholder="Np. 8"
+                  className="mt-1"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowCustomPointsModal(false);
+                setCustomPointsTarget(null);
+                setCustomPointsValue('');
+              }}
+              disabled={customPointsSaving}
+            >
+              Anuluj
+            </Button>
+            <Button type="button" onClick={() => { void saveCustomPendingPoints(); }} disabled={customPointsSaving || !customPointsTarget}>
+              {customPointsSaving ? 'Zapisywanie i zatwierdzanie...' : 'Zmień punkty i zatwierdź aktywność'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Pogląd ogłoszenia - widok ministranta */}
       <Dialog open={!!previewOgloszenie} onOpenChange={(open) => { if (!open) setPreviewOgloszenie(null); }}>
         <DialogContent className="sm:max-w-md">
@@ -14138,7 +14668,9 @@ export default function MinistranciApp() {
                     ? 'Msza'
                     : o.typ === 'nabożeństwo'
                       ? (o.nazwa_nabożeństwa || 'Nabożeństwo')
-                      : `Wydarzenie: ${o.nazwa_nabożeństwa || '—'}`;
+                      : o.typ === 'wydarzenie'
+                        ? `Wydarzenie: ${o.nazwa_nabożeństwa || '—'}`
+                        : `Aktywność: ${o.nazwa_nabożeństwa || '—'}`;
                   return (
                     <div key={o.id} className="rounded-xl border border-gray-200 dark:border-gray-700 p-2.5 flex items-center justify-between gap-3">
                       <div className="min-w-0">
@@ -14220,6 +14752,39 @@ export default function MinistranciApp() {
             <Button variant="destructive" onClick={handleResetPunktacja}>
               <RotateCcw className="w-4 h-4 mr-2" />
               Wyzeruj punktację
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: włącz/wyłącz zgłoszenia aktywności */}
+      <Dialog open={showToggleAktywnoscZgloszenModal} onOpenChange={setShowToggleAktywnoscZgloszenModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{aktywnoscZgloszeniaWlaczone ? 'Wyłącz zgłoszenia aktywności' : 'Włącz zgłoszenia aktywności'}</DialogTitle>
+            <DialogDescription>
+              Możesz włączyć lub wyłączyć możliwość zgłaszania przez ministrantów aktywności do dodatkowych punktów.
+              {aktywnoscZgloszeniaWlaczone
+                ? ' Po wyłączeniu ministranci nie będą mogli wysyłać nowych zgłoszeń aktywności.'
+                : ' Po włączeniu ministranci znów będą mogli zgłaszać aktywności.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowToggleAktywnoscZgloszenModal(false)} disabled={toggleAktywnoscZgloszenSaving}>
+              Anuluj
+            </Button>
+            <Button
+              onClick={() => { void handleToggleAktywnoscZgloszen(); }}
+              className={aktywnoscZgloszeniaWlaczone
+                ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'}
+              disabled={toggleAktywnoscZgloszenSaving}
+            >
+              {toggleAktywnoscZgloszenSaving
+                ? 'Zapisywanie...'
+                : aktywnoscZgloszeniaWlaczone
+                  ? 'Wyłącz zgłoszenia'
+                  : 'Włącz zgłoszenia'}
             </Button>
           </DialogFooter>
         </DialogContent>

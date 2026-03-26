@@ -9932,19 +9932,23 @@ export default function MinistranciApp() {
                       </div>
                     </div>
 
-                    {/* === KARY === */}
+                    {/* === MINUSOWE PUNKTY === */}
                     {myMinusowe.length > 0 && (
                       <div className="rounded-2xl overflow-hidden border border-red-200 dark:border-red-800">
                         <div className="bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2.5">
-                          <h3 className="font-bold text-white flex items-center gap-2 text-sm uppercase tracking-wider"><Target className="w-4 h-4" /> Kary</h3>
+                          <h3 className="font-bold text-white flex items-center gap-2 text-sm uppercase tracking-wider"><Target className="w-4 h-4" /> Minusowe punkty</h3>
                         </div>
                         <div className="bg-white dark:bg-gray-900 p-3 space-y-1.5">
-                          {myMinusowe.map(m => (
-                            <div key={m.id} className="flex items-center justify-between p-2.5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30">
-                              <span className="text-sm">{new Date(m.data).toLocaleDateString('pl-PL')} — {m.powod}</span>
-                              <span className="font-extrabold text-red-600 dark:text-red-400 tabular-nums">{m.punkty}</span>
-                            </div>
-                          ))}
+                          {myMinusowe.map((m) => {
+                            const cleanedPowod = (m.powod || '').replace(/\s*\[auto_dyzur:[^\]]+\]\s*/gi, '').trim();
+                            const powodDisplay = cleanedPowod || m.powod || 'Brak opisu';
+                            return (
+                              <div key={m.id} className="flex items-center justify-between p-2.5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30">
+                                <span className="text-sm">{new Date(m.data).toLocaleDateString('pl-PL')} — {powodDisplay}</span>
+                                <span className="font-extrabold text-red-600 dark:text-red-400 tabular-nums">{m.punkty}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

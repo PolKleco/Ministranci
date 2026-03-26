@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "aab": "bash scripts/build-aab.sh",
+    "aab:bump": "bash scripts/build-aab.sh --bump"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

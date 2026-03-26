@@ -77,6 +77,7 @@ const ADMIN_PREVIEW_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
   .filter(Boolean);
 const BLOCKED_PRIEST_EMAIL_DOMAINS = ['niepodam.pl'];
 const AKTYWNOSC_ZGLOSZENIA_KEY = 'zgloszenia_aktywnosci_wlaczone';
+const AUTO_DYZUR_MINUS_LOOKBACK_DAYS = 35;
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -275,6 +276,7 @@ interface Profile {
   nazwisko: string;
   typ: UserType | 'nowy';
   parafia_id: string | null;
+  created_at?: string;
 }
 
 interface Parafia {
@@ -577,6 +579,28 @@ interface AppConfigEntry {
   klucz: string;
   wartosc: string | null;
 }
+
+type WelcomeBannerVariant = {
+  aktywny: boolean;
+  tytul: string;
+  opis: string;
+  bezterminowo: boolean;
+  dniWyswietlania: number;
+  startAt: string;
+};
+
+type WelcomeBannerRole = 'ksiadz' | 'ministrant';
+
+type WelcomeBannerRoleConfig = {
+  nowi: WelcomeBannerVariant;
+  wszyscy: WelcomeBannerVariant;
+  parafia: WelcomeBannerVariant & { parafiaId: string };
+};
+
+type WelcomeBannerConfig = {
+  ksiadz: WelcomeBannerRoleConfig;
+  ministrant: WelcomeBannerRoleConfig;
+};
 
 interface LiturgicalDayOverride {
   nazwa: string;
@@ -1931,6 +1955,8 @@ export default function MinistranciApp() {
   const [replyToMessageId, setReplyToMessageId] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<'wiadomosc' | 'watek' | null>(null);
   const [showInfoBanner, setShowInfoBanner] = useState(true);
+  const [infoBanerReady, setInfoBanerReady] = useState(false);
+  const [infoBanerEnabled, setInfoBanerEnabled] = useState(true);
   const [infoBanerTresc, setInfoBanerTresc] = useState({ tytul: '', opis: '' });
   const [modlitwyTresc, setModlitwyTresc] = useState({ przed: '', po: '' });
   const [editingModlitwa, setEditingModlitwa] = useState<'przed' | 'po' | null>(null);
@@ -2754,6 +2780,186 @@ export default function MinistranciApp() {
       supabase.from('ranking').select('*').eq('parafia_id', pid).order('total_pkt', { ascending: false }),
     ]);
 
+    const shouldSyncAutoDyzurMinus =
+      currentUser?.typ === 'ksiadz'
+      && !!currentUser.id
+      && !!currentParafia?.admin_id
+      && currentParafia.admin_id === currentUser.id;
+
+    if (shouldSyncAutoDyzurMinus) {
+      const pConfigRows = (pConfig || []) as PunktacjaConfig[];
+      const dyzuryRows = (dyzuryData || []) as Dyzur[];
+      const obecnosciRows = (obecnosciData || []) as Obecnosc[];
+      const minusoweRows = (minusoweData || []) as MinusowePunkty[];
+
+      const minusDyzurConfig = pConfigRows.find((cfg) => cfg.klucz === 'minus_nieobecnosc_dyzur');
+      const penaltyValue = -Math.abs(Math.round(Number(minusDyzurConfig?.wartosc ?? -5)));
+      const limitCfg = pConfigRows.find((cfg) => cfg.klucz === 'limit_dni_zgloszenie');
+      const reportWindowDays = Math.max(0, Math.round(Number(limitCfg?.wartosc ?? 2)));
+
+      const applyRankingDeltaForAutoPenalty = async (ministrantId: string, delta: number) => {
+        if (!delta) return true;
+        const { data: existingRanking, error: rankingFetchError } = await supabase
+          .from('ranking')
+          .select('*')
+          .eq('ministrant_id', ministrantId)
+          .eq('parafia_id', pid)
+          .maybeSingle();
+        if (rankingFetchError) {
+          console.warn('Nie udało się pobrać rankingu do auto-kary dyżuru:', rankingFetchError.message);
+          return false;
+        }
+
+        if (existingRanking) {
+          const nextTotal = Number(existingRanking.total_pkt || 0) + delta;
+          const nextRanga = getRanga(nextTotal);
+          const { error: rankingUpdateError } = await supabase
+            .from('ranking')
+            .update({
+              total_pkt: nextTotal,
+              ranga: nextRanga?.nazwa || existingRanking.ranga || 'Ready',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingRanking.id);
+          if (rankingUpdateError) {
+            console.warn('Nie udało się zaktualizować rankingu po auto-karze dyżuru:', rankingUpdateError.message);
+            return false;
+          }
+          return true;
+        }
+
+        const baseRanga = getRanga(delta);
+        const { error: rankingInsertError } = await supabase
+          .from('ranking')
+          .insert({
+            ministrant_id: ministrantId,
+            parafia_id: pid,
+            total_pkt: delta,
+            total_obecnosci: 0,
+            ranga: baseRanga?.nazwa || 'Ready',
+          });
+        if (rankingInsertError) {
+          console.warn('Nie udało się utworzyć rankingu po auto-karze dyżuru:', rankingInsertError.message);
+          return false;
+        }
+        return true;
+      };
+
+      if (penaltyValue !== 0) {
+        const approvedDyzury = dyzuryRows.filter((dyzur) => dyzur.status === 'zatwierdzona' && dyzur.aktywny !== false);
+        const attendanceKeySet = new Set(
+          obecnosciRows
+            .filter((o) => o.typ !== 'aktywnosc' && o.status !== 'odrzucona')
+            .map((o) => `${o.ministrant_id}|${o.data}`)
+        );
+
+        const existingAutoEntries = minusoweRows
+          .map((row) => {
+            const match = (row.powod || '').match(/\[auto_dyzur:([^\]]+)\]/);
+            return match ? { key: match[1], row } : null;
+          })
+          .filter((entry): entry is { key: string; row: MinusowePunkty } => entry !== null);
+
+        const existingAutoKeySet = new Set(existingAutoEntries.map((entry) => entry.key));
+        const expectedAutoPenalties = new Map<string, { ministrantId: string; dataISO: string; powod: string; punkty: number }>();
+
+        const cutoffDate = new Date();
+        cutoffDate.setHours(0, 0, 0, 0);
+        // Kara pojawia się dopiero po upływie całego okna zgłoszenia (diffDays > limitDni).
+        cutoffDate.setDate(cutoffDate.getDate() - (reportWindowDays + 1));
+        const startDate = new Date(cutoffDate);
+        startDate.setDate(startDate.getDate() - AUTO_DYZUR_MINUS_LOOKBACK_DAYS);
+
+        for (const dyzur of approvedDyzury) {
+          for (const probe = new Date(startDate); probe <= cutoffDate; probe.setDate(probe.getDate() + 1)) {
+            if (probe.getDay() !== dyzur.dzien_tygodnia) continue;
+
+            const dataISO = getLocalISODate(probe);
+            if (attendanceKeySet.has(`${dyzur.ministrant_id}|${dataISO}`)) continue;
+
+            const autoKey = `${dyzur.ministrant_id}:${dataISO}`;
+            const dayName = DNI_TYGODNIA_FULL[dyzur.dzien_tygodnia === 0 ? 6 : dyzur.dzien_tygodnia - 1];
+            const powod = `Brak na dyżurze (${dayName}, ${dataISO}) [auto_dyzur:${autoKey}]`;
+            expectedAutoPenalties.set(autoKey, {
+              ministrantId: dyzur.ministrant_id,
+              dataISO,
+              powod,
+              punkty: penaltyValue,
+            });
+          }
+        }
+
+        let autoSyncChanged = false;
+
+        for (const existingEntry of existingAutoEntries) {
+          if (expectedAutoPenalties.has(existingEntry.key)) continue;
+
+          const rollbackDelta = Math.abs(Number(existingEntry.row.punkty || penaltyValue));
+          const { error: minusDeleteError } = await supabase
+            .from('minusowe_punkty')
+            .delete()
+            .eq('id', existingEntry.row.id);
+          if (minusDeleteError) {
+            console.warn('Nie udało się usunąć nieaktualnej auto-kary dyżuru:', minusDeleteError.message);
+            continue;
+          }
+
+          const rollbackOk = await applyRankingDeltaForAutoPenalty(existingEntry.row.ministrant_id, rollbackDelta);
+          if (!rollbackOk) {
+            const { error: restoreError } = await supabase.from('minusowe_punkty').insert({
+              ministrant_id: existingEntry.row.ministrant_id,
+              parafia_id: existingEntry.row.parafia_id,
+              data: existingEntry.row.data,
+              powod: existingEntry.row.powod,
+              punkty: existingEntry.row.punkty,
+            });
+            if (restoreError) {
+              console.warn('Nie udało się odtworzyć auto-kary dyżuru po błędzie rollbacku rankingu:', restoreError.message);
+            }
+            continue;
+          }
+          autoSyncChanged = true;
+        }
+
+        for (const [autoKey, penalty] of expectedAutoPenalties) {
+          if (existingAutoKeySet.has(autoKey)) continue;
+
+          const { error: minusInsertError } = await supabase.from('minusowe_punkty').insert({
+            ministrant_id: penalty.ministrantId,
+            parafia_id: pid,
+            data: penalty.dataISO,
+            powod: penalty.powod,
+            punkty: penalty.punkty,
+          });
+          if (minusInsertError) {
+            console.warn('Nie udało się dodać auto-kary dyżuru:', minusInsertError.message);
+            continue;
+          }
+
+          const rankingOk = await applyRankingDeltaForAutoPenalty(penalty.ministrantId, penalty.punkty);
+          if (!rankingOk) {
+            const { error: rollbackMinusError } = await supabase
+              .from('minusowe_punkty')
+              .delete()
+              .eq('ministrant_id', penalty.ministrantId)
+              .eq('parafia_id', pid)
+              .eq('data', penalty.dataISO)
+              .eq('powod', penalty.powod);
+            if (rollbackMinusError) {
+              console.warn('Nie udało się wycofać auto-kary dyżuru po błędzie aktualizacji rankingu:', rollbackMinusError.message);
+            }
+            continue;
+          }
+          autoSyncChanged = true;
+        }
+
+        if (autoSyncChanged) {
+          await loadRankingData();
+          return;
+        }
+      }
+    }
+
     if (pConfig) setPunktacjaConfig(pConfig as PunktacjaConfig[]);
     if (rConfig) setRangiConfig(rConfig as RangaConfig[]);
     if (oConfig) setOdznakiConfig(oConfig as OdznakaConfig[]);
@@ -2763,7 +2969,7 @@ export default function MinistranciApp() {
     if (punktyReczneData) setPunktyReczne(punktyReczneData as PunktyReczne[]);
     if (odznakiZdobyteData) setOdznakiZdobyte(odznakiZdobyteData as OdznakaZdobyta[]);
     if (rankingRows) setRankingData(rankingRows as RankingEntry[]);
-  }, [currentUser?.parafia_id]);
+  }, [currentUser?.parafia_id, currentUser?.id, currentUser?.typ, currentParafia?.admin_id]);
 
   // ==================== ŁADOWANIE — TABLICA OGŁOSZEŃ ====================
 
@@ -4419,20 +4625,166 @@ export default function MinistranciApp() {
   // Zaladuj baner powitalny z app_config
   useEffect(() => {
     if (!currentUser?.typ) return;
-    const prefix = currentUser.typ === 'ksiadz' ? 'baner_ksiadz' : 'baner_ministrant';
-    supabase.from('app_config').select('klucz, wartosc').in('klucz', [`${prefix}_tytul`, `${prefix}_opis`])
-      .then(({ data }) => {
-        if (data && data.length > 0) {
-          const rows = data as AppConfigEntry[];
-          const get = (k: string) => rows.find((d) => d.klucz === k)?.wartosc || '';
-          const tytul = get(`${prefix}_tytul`);
-          const opis = get(`${prefix}_opis`);
-          if (tytul || opis) {
-            setInfoBanerTresc({ tytul, opis });
+    let cancelled = false;
+    setInfoBanerReady(false);
+    setInfoBanerEnabled(false);
+    setInfoBanerTresc({ tytul: '', opis: '' });
+
+    const parseWelcomeBannerConfig = (raw: string): WelcomeBannerConfig | null => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw) as Partial<WelcomeBannerConfig> & Partial<WelcomeBannerRoleConfig>;
+        const sanitizeVariant = (value: unknown): WelcomeBannerVariant => {
+          const source = (value || {}) as Partial<WelcomeBannerVariant>;
+          const dniRaw = Number(source.dniWyswietlania);
+          const legacyDniRaw = Number((source as { dniOdRejestracji?: number }).dniOdRejestracji);
+          const normalizedDaysRaw = Number.isFinite(dniRaw) ? dniRaw : legacyDniRaw;
+          const dniWyswietlania = Number.isFinite(normalizedDaysRaw) ? Math.max(1, Math.min(3650, Math.round(normalizedDaysRaw))) : 30;
+          return {
+            aktywny: Boolean(source.aktywny),
+            tytul: typeof source.tytul === 'string' ? source.tytul : '',
+            opis: typeof source.opis === 'string' ? source.opis : '',
+            bezterminowo: source.bezterminowo !== undefined ? Boolean(source.bezterminowo) : false,
+            dniWyswietlania,
+            startAt: typeof source.startAt === 'string' ? source.startAt : '',
+          };
+        };
+        const sanitizeRoleConfig = (value: unknown): WelcomeBannerRoleConfig => {
+          const source = (value || {}) as Partial<WelcomeBannerRoleConfig>;
+          return {
+            nowi: sanitizeVariant(source.nowi),
+            wszyscy: sanitizeVariant(source.wszyscy),
+            parafia: {
+              ...sanitizeVariant(source.parafia),
+              parafiaId: typeof source.parafia?.parafiaId === 'string' ? source.parafia.parafiaId : '',
+            },
+          };
+        };
+
+        if (parsed.ksiadz || parsed.ministrant) {
+          return {
+            ksiadz: sanitizeRoleConfig(parsed.ksiadz),
+            ministrant: sanitizeRoleConfig(parsed.ministrant),
+          };
+        }
+
+        // Backward compatibility: old v2 shape without split -> apply to both roles.
+        const shared = sanitizeRoleConfig(parsed);
+        return {
+          ksiadz: {
+            nowi: { ...shared.nowi },
+            wszyscy: { ...shared.wszyscy },
+            parafia: { ...shared.parafia },
+          },
+          ministrant: {
+            nowi: { ...shared.nowi },
+            wszyscy: { ...shared.wszyscy },
+            parafia: { ...shared.parafia },
+          },
+        };
+      } catch {
+        return null;
+      }
+    };
+
+    const isTruthyFlag = (value: string) => {
+      const raw = value.trim().toLowerCase();
+      if (!raw) return true;
+      return ['1', 'true', 'yes', 'on'].includes(raw);
+    };
+    const isVariantWithinDisplayWindow = (variant: WelcomeBannerVariant) => {
+      if (!variant.aktywny) return false;
+      if (variant.bezterminowo) return true;
+      const days = Math.max(1, Number(variant.dniWyswietlania) || 1);
+      if (!variant.startAt) return true;
+      const startAtDate = new Date(variant.startAt);
+      if (Number.isNaN(startAtDate.getTime())) return true;
+      const elapsedDays = (Date.now() - startAtDate.getTime()) / (1000 * 60 * 60 * 24);
+      return elapsedDays < days;
+    };
+
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('app_config')
+          .select('klucz, wartosc')
+          .in('klucz', [
+            'baner_powitalny_v2',
+            'baner_ministrant_aktywny',
+            'baner_ministrant_tytul',
+            'baner_ministrant_opis',
+            'baner_ksiadz_aktywny',
+            'baner_ksiadz_tytul',
+            'baner_ksiadz_opis',
+          ]);
+        if (cancelled) return;
+        const rows = (data || []) as AppConfigEntry[];
+        const get = (k: string) => rows.find((d) => d.klucz === k)?.wartosc || '';
+
+        const configV2 = parseWelcomeBannerConfig(get('baner_powitalny_v2'));
+        let selected: WelcomeBannerVariant | null = null;
+
+        if (configV2) {
+          const roleKey: WelcomeBannerRole = currentUser.typ === 'ksiadz' ? 'ksiadz' : 'ministrant';
+          const roleConfig = configV2[roleKey];
+          const createdAtDate = currentUser.created_at ? new Date(currentUser.created_at) : null;
+          const createdAtValid = !!createdAtDate && !Number.isNaN(createdAtDate.getTime());
+          const daysSinceRegister = createdAtValid
+            ? Math.max(0, (Date.now() - createdAtDate.getTime()) / (1000 * 60 * 60 * 24))
+            : Number.POSITIVE_INFINITY;
+
+          const showNowi = roleConfig.nowi.aktywny && (
+            roleConfig.nowi.bezterminowo
+              ? true
+              : daysSinceRegister < Math.max(1, Number(roleConfig.nowi.dniWyswietlania) || 1)
+          );
+
+          if (showNowi) {
+            selected = roleConfig.nowi;
+          } else if (
+            isVariantWithinDisplayWindow(roleConfig.parafia)
+            && !!roleConfig.parafia.parafiaId
+            && !!currentUser.parafia_id
+            && roleConfig.parafia.parafiaId === currentUser.parafia_id
+          ) {
+            selected = roleConfig.parafia;
+          } else if (isVariantWithinDisplayWindow(roleConfig.wszyscy)) {
+            selected = roleConfig.wszyscy;
+          }
+        } else {
+          // Legacy fallback
+          const prefix = currentUser.typ === 'ksiadz' ? 'baner_ksiadz' : 'baner_ministrant';
+          const legacyActive = isTruthyFlag(get(`${prefix}_aktywny`));
+          if (legacyActive) {
+            selected = {
+              aktywny: true,
+              tytul: get(`${prefix}_tytul`),
+              opis: get(`${prefix}_opis`),
+              bezterminowo: false,
+              dniWyswietlania: 30,
+              startAt: '',
+            };
           }
         }
-      });
-  }, [currentUser?.typ]);
+
+        setInfoBanerEnabled(!!selected?.aktywny);
+        setInfoBanerTresc({
+          tytul: selected?.tytul || '',
+          opis: selected?.opis || '',
+        });
+        setInfoBanerReady(true);
+      } catch {
+        if (cancelled) return;
+        setInfoBanerEnabled(false);
+        setInfoBanerTresc({ tytul: '', opis: '' });
+        setInfoBanerReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.typ, currentUser?.created_at, currentUser?.parafia_id]);
 
   // Zaladuj modlitwy z app_config
   useEffect(() => {
@@ -8466,7 +8818,7 @@ export default function MinistranciApp() {
               )}
 
               {/* Baner informacyjny */}
-              {!selectedWatek && showInfoBanner && (
+              {!selectedWatek && showInfoBanner && infoBanerReady && infoBanerEnabled && (
                 <Card className="border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20">
                   <CardContent className="py-3 px-4">
                     <div className="flex items-start justify-between gap-3">
@@ -9339,6 +9691,15 @@ export default function MinistranciApp() {
                 const myOdznaki = odznakiZdobyte.filter(o => o.ministrant_id === currentUser.id);
                 const myMinusowe = minusowePunkty.filter(m => m.ministrant_id === currentUser.id);
                 const totalMinusowe = myMinusowe.reduce((sum, m) => sum + Number(m.punkty), 0);
+                const approvedObecnosci = myObecnosci.filter((o) => o.status === 'zatwierdzona');
+                const punktyZeSluzby = approvedObecnosci
+                  .filter((o) => o.typ !== 'aktywnosc')
+                  .reduce((sum, o) => sum + Number(o.punkty_finalne || 0), 0);
+                const punktyZAktywnosci = approvedObecnosci
+                  .filter((o) => o.typ === 'aktywnosc')
+                  .reduce((sum, o) => sum + Number(o.punkty_finalne || 0), 0);
+                const punktyZKorekt = myPunktyReczne.reduce((sum, p) => sum + Number(p.punkty || 0), 0);
+                const punktyZAktywnosciLacznie = punktyZAktywnosci + punktyZKorekt;
                 const myPosition = rankingData.findIndex(r => r.ministrant_id === currentUser.id) + 1;
                 const myMember = members.find(m => m.profile_id === currentUser.id);
                 const myGrupa = myMember?.grupa ? grupy.find(g => g.id === myMember.grupa) : null;
@@ -9421,15 +9782,15 @@ export default function MinistranciApp() {
                             <div className="text-xs mt-1 opacity-70">Brakuje {nextRanga.min_pkt - totalPkt} XP do {nextRanga.nazwa}</div>
                           </div>
                         )}
-                        <div className="grid grid-cols-3 gap-2 mt-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4">
                           {[
-                            { icon: <Flame className="w-4 h-4" />, val: `${myRanking?.streak_tyg || 0} tyg.`, label: 'Seria' },
-                            { icon: <Calendar className="w-4 h-4" />, val: myRanking?.total_obecnosci || 0, label: 'Służba' },
-                            { icon: <Target className="w-4 h-4" />, val: totalMinusowe, label: 'Kary' },
+                            { icon: <Calendar className="w-4 h-4" />, val: `+${punktyZeSluzby}`, label: 'Punkty służba' },
+                            { icon: <Sparkles className="w-4 h-4" />, val: `${punktyZAktywnosciLacznie > 0 ? '+' : ''}${punktyZAktywnosciLacznie}`, label: 'Punkty aktywności' },
+                            { icon: <Target className="w-4 h-4" />, val: `-${Math.abs(totalMinusowe)}`, label: 'Minusowe punkty' },
                           ].map((s, i) => (
                             <div key={i} className="bg-white/10 backdrop-blur-sm rounded-xl p-2 text-center">
                               <div className="flex items-center justify-center mb-0.5 opacity-80">{s.icon}</div>
-                              <div className="font-extrabold text-sm">{s.val}</div>
+                              <div className="font-extrabold text-sm tabular-nums">{s.val}</div>
                               <div className="text-[10px] uppercase tracking-wider opacity-60">{s.label}</div>
                             </div>
                           ))}

@@ -218,7 +218,15 @@ export async function POST(request: NextRequest) {
         const { data, error } = await supabaseAdmin
           .from('app_config')
           .select('*')
-          .in('klucz', ['baner_ministrant_tytul', 'baner_ministrant_opis', 'baner_ksiadz_tytul', 'baner_ksiadz_opis']);
+          .in('klucz', [
+            'baner_powitalny_v2',
+            'baner_ministrant_aktywny',
+            'baner_ministrant_tytul',
+            'baner_ministrant_opis',
+            'baner_ksiadz_aktywny',
+            'baner_ksiadz_tytul',
+            'baner_ksiadz_opis',
+          ]);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         return NextResponse.json({ ok: true, data: data || [] });
       }

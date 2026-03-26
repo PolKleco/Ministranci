@@ -154,6 +154,41 @@ type AdminImpersonationSession = {
 
 type RenderAttributes = Record<string, string | number | null | undefined>;
 type AppConfigRow = { klucz: string; wartosc: string };
+type WelcomeBannerVariant = {
+  aktywny: boolean;
+  tytul: string;
+  opis: string;
+  bezterminowo: boolean;
+  dniWyswietlania: number;
+  startAt: string;
+};
+type WelcomeBannerRole = 'ksiadz' | 'ministrant';
+type WelcomeBannerRoleConfig = {
+  nowi: WelcomeBannerVariant;
+  wszyscy: WelcomeBannerVariant;
+  parafia: WelcomeBannerVariant & { parafiaId: string };
+};
+type WelcomeBannerConfig = {
+  ksiadz: WelcomeBannerRoleConfig;
+  ministrant: WelcomeBannerRoleConfig;
+};
+const DEFAULT_WELCOME_BANNER_ROLE_CONFIG: WelcomeBannerRoleConfig = {
+  nowi: { aktywny: false, tytul: '', opis: '', bezterminowo: false, dniWyswietlania: 30, startAt: '' },
+  wszyscy: { aktywny: true, tytul: '', opis: '', bezterminowo: false, dniWyswietlania: 30, startAt: '' },
+  parafia: { aktywny: false, parafiaId: '', tytul: '', opis: '', bezterminowo: false, dniWyswietlania: 30, startAt: '' },
+};
+const DEFAULT_WELCOME_BANNER_CONFIG: WelcomeBannerConfig = {
+  ksiadz: {
+    nowi: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.nowi },
+    wszyscy: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.wszyscy },
+    parafia: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.parafia },
+  },
+  ministrant: {
+    nowi: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.nowi },
+    wszyscy: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.wszyscy },
+    parafia: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.parafia },
+  },
+};
 const DEFAULT_PREVIEW_PARAFIA_CODE = 'J9YZPR0V';
 type AdminAction =
   | 'loadStats'
@@ -331,8 +366,11 @@ export default function AdminPanel() {
   const [loadingRabaty, setLoadingRabaty] = useState(true);
 
   // Banery powitalne
-  const [banerMinistrant, setBanerMinistrant] = useState({ tytul: '', opis: '' });
-  const [banerKsiadz, setBanerKsiadz] = useState({ tytul: '', opis: '' });
+  const [welcomeBanerConfig, setWelcomeBanerConfig] = useState<WelcomeBannerConfig>(DEFAULT_WELCOME_BANNER_CONFIG);
+  const [welcomeBanerParafiaCode, setWelcomeBanerParafiaCode] = useState<Record<WelcomeBannerRole, string>>({
+    ksiadz: '',
+    ministrant: '',
+  });
   const [banerLoading, setBanerLoading] = useState(false);
   const [banerExpanded, setBanerExpanded] = useState(false);
 
@@ -843,26 +881,180 @@ export default function AdminPanel() {
     const data = await adminRequest<AppConfigRow[]>('loadBanery');
     const configRows = data || [];
     const get = (k: string) => configRows.find((d) => d.klucz === k)?.wartosc || '';
-    setBanerMinistrant({ tytul: get('baner_ministrant_tytul'), opis: get('baner_ministrant_opis') });
-    setBanerKsiadz({ tytul: get('baner_ksiadz_tytul'), opis: get('baner_ksiadz_opis') });
+    const asBool = (k: string, fallback = true) => {
+      const v = get(k).trim().toLowerCase();
+      if (!v) return fallback;
+      return ['1', 'true', 'yes', 'on'].includes(v);
+    };
+    const cloneRoleConfig = (role: WelcomeBannerRoleConfig): WelcomeBannerRoleConfig => ({
+      nowi: { ...role.nowi },
+      wszyscy: { ...role.wszyscy },
+      parafia: { ...role.parafia },
+    });
+    const parseConfig = (raw: string): WelcomeBannerConfig | null => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(raw) as Partial<WelcomeBannerConfig> & Partial<WelcomeBannerRoleConfig>;
+        const sanitizeVariant = (value: unknown): WelcomeBannerVariant => {
+          const source = (value || {}) as Partial<WelcomeBannerVariant>;
+          const dniRaw = Number(source.dniWyswietlania);
+          const legacyDniRaw = Number((source as { dniOdRejestracji?: number }).dniOdRejestracji);
+          const normalizedDaysRaw = Number.isFinite(dniRaw) ? dniRaw : legacyDniRaw;
+          const dniWyswietlania = Number.isFinite(normalizedDaysRaw) ? Math.max(1, Math.min(3650, Math.round(normalizedDaysRaw))) : 30;
+          return {
+            aktywny: Boolean(source.aktywny),
+            tytul: typeof source.tytul === 'string' ? source.tytul : '',
+            opis: typeof source.opis === 'string' ? source.opis : '',
+            bezterminowo: source.bezterminowo !== undefined ? Boolean(source.bezterminowo) : false,
+            dniWyswietlania,
+            startAt: typeof source.startAt === 'string' ? source.startAt : '',
+          };
+        };
+        const sanitizeRoleConfig = (value: unknown): WelcomeBannerRoleConfig => {
+          const source = (value || {}) as Partial<WelcomeBannerRoleConfig>;
+          return {
+            nowi: sanitizeVariant(source.nowi),
+            wszyscy: sanitizeVariant(source.wszyscy),
+            parafia: {
+              ...sanitizeVariant(source.parafia),
+              parafiaId: typeof source.parafia?.parafiaId === 'string' ? source.parafia.parafiaId : '',
+            },
+          };
+        };
+
+        if (parsed.ksiadz || parsed.ministrant) {
+          return {
+            ksiadz: sanitizeRoleConfig(parsed.ksiadz),
+            ministrant: sanitizeRoleConfig(parsed.ministrant),
+          };
+        }
+
+        // Backward compatibility: old v2 shape without split -> apply to both roles.
+        const shared = sanitizeRoleConfig(parsed);
+        return {
+          ksiadz: cloneRoleConfig(shared),
+          ministrant: cloneRoleConfig(shared),
+        };
+      } catch {
+        return null;
+      }
+    };
+
+    const parsed = parseConfig(get('baner_powitalny_v2'));
+    if (parsed) {
+      setWelcomeBanerConfig(parsed);
+      return;
+    }
+
+    // Legacy fallback (stare klucze).
+    setWelcomeBanerConfig({
+      ksiadz: {
+        nowi: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.nowi },
+        wszyscy: {
+          ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.wszyscy,
+          aktywny: asBool('baner_ksiadz_aktywny', true),
+          tytul: get('baner_ksiadz_tytul'),
+          opis: get('baner_ksiadz_opis'),
+        },
+        parafia: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.parafia },
+      },
+      ministrant: {
+        nowi: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.nowi },
+        wszyscy: {
+          ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.wszyscy,
+          aktywny: asBool('baner_ministrant_aktywny', true),
+          tytul: get('baner_ministrant_tytul'),
+          opis: get('baner_ministrant_opis'),
+        },
+        parafia: { ...DEFAULT_WELCOME_BANNER_ROLE_CONFIG.parafia },
+      },
+    });
   }, [adminRequest]);
 
   const saveBanery = async () => {
+    const nowIso = new Date().toISOString();
+    const normalizeVariant = (variant: WelcomeBannerVariant): WelcomeBannerVariant => {
+      const dniRaw = Number(variant.dniWyswietlania);
+      const dniWyswietlania = Number.isFinite(dniRaw) ? Math.max(1, Math.min(3650, Math.round(dniRaw))) : 30;
+      const normalized: WelcomeBannerVariant = {
+        aktywny: Boolean(variant.aktywny),
+        tytul: variant.tytul,
+        opis: variant.opis,
+        bezterminowo: Boolean(variant.bezterminowo),
+        dniWyswietlania,
+        startAt: typeof variant.startAt === 'string' ? variant.startAt : '',
+      };
+      if (normalized.aktywny && !normalized.startAt) {
+        normalized.startAt = nowIso;
+      }
+      return normalized;
+    };
+    const normalizeRoleConfig = (roleConfig: WelcomeBannerRoleConfig): WelcomeBannerRoleConfig => ({
+      nowi: normalizeVariant(roleConfig.nowi),
+      wszyscy: normalizeVariant(roleConfig.wszyscy),
+      parafia: { ...normalizeVariant(roleConfig.parafia), parafiaId: roleConfig.parafia.parafiaId },
+    });
+    const normalized: WelcomeBannerConfig = {
+      ksiadz: normalizeRoleConfig(welcomeBanerConfig.ksiadz),
+      ministrant: normalizeRoleConfig(welcomeBanerConfig.ministrant),
+    };
+    for (const role of ['ksiadz', 'ministrant'] as const) {
+      if (normalized[role].parafia.aktywny && !normalized[role].parafia.parafiaId) {
+        setScopeError(`Dla baneru "konkretna parafia" w panelu ${role === 'ksiadz' ? 'księdza' : 'ministranta'} wybierz parafię.`);
+        return;
+      }
+    }
+
     setBanerLoading(true);
     try {
       const rows = [
-        { klucz: 'baner_ministrant_tytul', wartosc: banerMinistrant.tytul },
-        { klucz: 'baner_ministrant_opis', wartosc: banerMinistrant.opis },
-        { klucz: 'baner_ksiadz_tytul', wartosc: banerKsiadz.tytul },
-        { klucz: 'baner_ksiadz_opis', wartosc: banerKsiadz.opis },
+        { klucz: 'baner_powitalny_v2', wartosc: JSON.stringify(normalized) },
+        // Legacy fallback dla starszych wersji klienta.
+        { klucz: 'baner_ministrant_aktywny', wartosc: normalized.ministrant.wszyscy.aktywny ? '1' : '0' },
+        { klucz: 'baner_ministrant_tytul', wartosc: normalized.ministrant.wszyscy.tytul },
+        { klucz: 'baner_ministrant_opis', wartosc: normalized.ministrant.wszyscy.opis },
+        { klucz: 'baner_ksiadz_aktywny', wartosc: normalized.ksiadz.wszyscy.aktywny ? '1' : '0' },
+        { klucz: 'baner_ksiadz_tytul', wartosc: normalized.ksiadz.wszyscy.tytul },
+        { klucz: 'baner_ksiadz_opis', wartosc: normalized.ksiadz.wszyscy.opis },
       ];
       await adminRequest('saveBanery', { rows });
+      setWelcomeBanerConfig(normalized);
       setSuccessMsg('Banery powitalne zapisane');
     } catch (err) {
       setScopeError(err instanceof Error ? err.message : 'Nie udalo sie zapisac banerow');
     } finally {
       setBanerLoading(false);
     }
+  };
+  const updateWelcomeBannerRole = (
+    role: WelcomeBannerRole,
+    updater: (currentRoleConfig: WelcomeBannerRoleConfig) => WelcomeBannerRoleConfig,
+  ) => {
+    setWelcomeBanerConfig((prev) => ({
+      ...prev,
+      [role]: updater(prev[role]),
+    }));
+  };
+  const setWelcomeBannerParafiaByCode = (role: WelcomeBannerRole) => {
+    const code = welcomeBanerParafiaCode[role].trim().toUpperCase();
+    if (!code) {
+      setScopeError('Wpisz kod parafii docelowej.');
+      return;
+    }
+    const matchedParafia = parafie.find((p) => (p.kod_zaproszenia || '').trim().toUpperCase() === code);
+    if (!matchedParafia) {
+      setScopeError(`Nie znaleziono parafii z kodem "${code}".`);
+      return;
+    }
+    setScopeError('');
+    updateWelcomeBannerRole(role, (prev) => ({
+      ...prev,
+      parafia: { ...prev.parafia, parafiaId: matchedParafia.id },
+    }));
+    setWelcomeBanerParafiaCode((prev) => ({
+      ...prev,
+      [role]: matchedParafia.kod_zaproszenia || code,
+    }));
   };
 
   const togglePublishTargetParafia = (parafiaId: string) => {
@@ -2100,13 +2292,11 @@ export default function AdminPanel() {
                   <span className="flex items-center gap-2 text-sm font-medium">
                     <Megaphone className="w-4 h-4 text-indigo-500" />
                     Baner powitalny
-                    {(banerMinistrant.tytul || banerKsiadz.tytul) && (
-                      <span className="text-[10px] text-gray-400 font-normal ml-1">
-                        M: {banerMinistrant.tytul ? `"${banerMinistrant.tytul.substring(0, 25)}${banerMinistrant.tytul.length > 25 ? '...' : ''}"` : '—'}
-                        {' · '}
-                        K: {banerKsiadz.tytul ? `"${banerKsiadz.tytul.substring(0, 25)}${banerKsiadz.tytul.length > 25 ? '...' : ''}"` : '—'}
-                      </span>
-                    )}
+                    <span className="text-[10px] text-gray-400 font-normal ml-1">
+                      K: 1 {welcomeBanerConfig.ksiadz.nowi.aktywny ? 'ON' : 'OFF'} · 2 {welcomeBanerConfig.ksiadz.wszyscy.aktywny ? 'ON' : 'OFF'} · 3 {welcomeBanerConfig.ksiadz.parafia.aktywny ? 'ON' : 'OFF'}
+                      {' | '}
+                      M: 1 {welcomeBanerConfig.ministrant.nowi.aktywny ? 'ON' : 'OFF'} · 2 {welcomeBanerConfig.ministrant.wszyscy.aktywny ? 'ON' : 'OFF'} · 3 {welcomeBanerConfig.ministrant.parafia.aktywny ? 'ON' : 'OFF'}
+                    </span>
                   </span>
                   {banerExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                 </button>
@@ -2114,84 +2304,395 @@ export default function AdminPanel() {
                 {banerExpanded && (
                   <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 -mt-1 rounded-t-none border-t-0">
                     <CardContent className="px-4 pb-4 pt-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Ministrant */}
-                        <div className="space-y-2 p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10">
-                          <div className="flex items-center gap-1.5 text-sm font-medium text-green-700 dark:text-green-400">
-                            <Users className="w-3.5 h-3.5" />
-                            Ministrant
-                          </div>
-                          <div>
-                            <Label className="text-xs text-gray-500">Tytul (pogrubiony)</Label>
-                            <Input
-                              value={banerMinistrant.tytul}
-                              onChange={(e) => setBanerMinistrant(prev => ({ ...prev, tytul: e.target.value }))}
-                              placeholder="np. Witaj w aplikacji dla ministrantow!"
-                              className="h-8 text-sm bg-white dark:bg-gray-700"
-                            />
-                          </div>
-                          <div>
-                            <Label className="text-xs text-gray-500">Opis (tekst pod tytulem)</Label>
-                            <textarea
-                              value={banerMinistrant.opis}
-                              onChange={(e) => setBanerMinistrant(prev => ({ ...prev, opis: e.target.value }))}
-                              placeholder="np. Ogloszenia i ankiety · Ranking i punkty · Obecnosci"
-                              rows={3}
-                              className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                          </div>
-                          {(banerMinistrant.tytul || banerMinistrant.opis) && (
-                            <div className="p-2 rounded-md bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700">
-                              <p className="text-[10px] text-gray-400 mb-1">Podglad:</p>
-                              <div className="flex items-start gap-2">
-                                <Church className="w-3.5 h-3.5 text-indigo-500 mt-0.5 shrink-0" />
-                                <div>
-                                  {banerMinistrant.tytul && <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">{banerMinistrant.tytul}</p>}
-                                  {banerMinistrant.opis && <p className="text-[10px] text-indigo-700 dark:text-indigo-300 whitespace-pre-wrap">{banerMinistrant.opis}</p>}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
+                      <p className="text-xs text-gray-500 mb-3">
+                        Priorytet wyswietlania: <strong>1. nowi użytkownicy</strong> → <strong>3. konkretna parafia</strong> → <strong>2. wszyscy</strong>.
+                      </p>
+                      <div className="space-y-4">
+                        {(['ksiadz', 'ministrant'] as const).map((role) => {
+                          const roleLabel = role === 'ksiadz' ? 'Panel księdza' : 'Panel ministranta';
+                          const roleIcon = role === 'ksiadz'
+                            ? <Church className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                            : <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
+                          const roleConfig = welcomeBanerConfig[role];
+                          const targetParafiaName = roleConfig.parafia.parafiaId
+                            ? (parafie.find((p) => p.id === roleConfig.parafia.parafiaId)?.nazwa || 'Wybrana parafia')
+                            : 'Brak parafii';
+                          const variantDurationLabel = (variant: WelcomeBannerVariant) => (
+                            variant.bezterminowo ? 'Bezterminowo' : `${Math.max(1, variant.dniWyswietlania)} dni`
+                          );
+                          const previewItems: Array<{
+                            key: 'nowi' | 'wszyscy' | 'parafia';
+                            label: string;
+                            note: string;
+                            variant: WelcomeBannerVariant;
+                          }> = [
+                            {
+                              key: 'nowi',
+                              label: '1. Nowi użytkownicy',
+                              note: `Od rejestracji · ${variantDurationLabel(roleConfig.nowi)}`,
+                              variant: roleConfig.nowi,
+                            },
+                            {
+                              key: 'wszyscy',
+                              label: '2. Wszyscy',
+                              note: `Wyświetlany globalnie · ${variantDurationLabel(roleConfig.wszyscy)}`,
+                              variant: roleConfig.wszyscy,
+                            },
+                            {
+                              key: 'parafia',
+                              label: '3. Konkretna parafia',
+                              note: `${targetParafiaName} · ${variantDurationLabel(roleConfig.parafia)}`,
+                              variant: roleConfig.parafia,
+                            },
+                          ];
 
-                        {/* Ksiadz */}
-                        <div className="space-y-2 p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-900/10">
-                          <div className="flex items-center gap-1.5 text-sm font-medium text-purple-700 dark:text-purple-400">
-                            <Shield className="w-3.5 h-3.5" />
-                            Ksiadz
-                          </div>
-                          <div>
-                            <Label className="text-xs text-gray-500">Tytul (pogrubiony)</Label>
-                            <Input
-                              value={banerKsiadz.tytul}
-                              onChange={(e) => setBanerKsiadz(prev => ({ ...prev, tytul: e.target.value }))}
-                              placeholder="np. Panel zarzadzania parafia"
-                              className="h-8 text-sm bg-white dark:bg-gray-700"
-                            />
-                          </div>
-                          <div>
-                            <Label className="text-xs text-gray-500">Opis (tekst pod tytulem)</Label>
-                            <textarea
-                              value={banerKsiadz.opis}
-                              onChange={(e) => setBanerKsiadz(prev => ({ ...prev, opis: e.target.value }))}
-                              placeholder="np. Zarzadzaj obecnosciami · Sluzby · Ogloszenia"
-                              rows={3}
-                              className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
-                          </div>
-                          {(banerKsiadz.tytul || banerKsiadz.opis) && (
-                            <div className="p-2 rounded-md bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700">
-                              <p className="text-[10px] text-gray-400 mb-1">Podglad:</p>
-                              <div className="flex items-start gap-2">
-                                <Church className="w-3.5 h-3.5 text-indigo-500 mt-0.5 shrink-0" />
-                                <div>
-                                  {banerKsiadz.tytul && <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">{banerKsiadz.tytul}</p>}
-                                  {banerKsiadz.opis && <p className="text-[10px] text-indigo-700 dark:text-indigo-300 whitespace-pre-wrap">{banerKsiadz.opis}</p>}
+                          return (
+                            <div key={role} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                              <div className="flex items-center justify-between gap-2 mb-3">
+                                <div className="flex items-center gap-2 text-sm font-semibold">
+                                  {roleIcon}
+                                  {roleLabel}
+                                </div>
+                                <span className="text-[11px] text-gray-500">
+                                  1 {roleConfig.nowi.aktywny ? 'ON' : 'OFF'} · 2 {roleConfig.wszyscy.aktywny ? 'ON' : 'OFF'} · 3 {roleConfig.parafia.aktywny ? 'ON' : 'OFF'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                                <div className="space-y-2 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                                      <Users className="w-3.5 h-3.5" />
+                                      1. Nowi użytkownicy
+                                    </div>
+                                    <label className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300">
+                                      <input
+                                        type="checkbox"
+                                        checked={roleConfig.nowi.aktywny}
+                                        onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                          ...prev,
+                                          nowi: {
+                                            ...prev.nowi,
+                                            aktywny: e.target.checked,
+                                            startAt: e.target.checked && !prev.nowi.aktywny ? '' : prev.nowi.startAt,
+                                          },
+                                        }))}
+                                        className="rounded border-gray-300 dark:border-gray-600"
+                                      />
+                                      Włączony
+                                    </label>
+                                  </div>
+                                  <div className="space-y-1 rounded-md border border-emerald-200 dark:border-emerald-800/70 bg-white/70 dark:bg-gray-800/50 p-2">
+                                    <label className="flex items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                      <span>Czas wyświetlania od rejestracji</span>
+                                      <span className="flex items-center gap-1.5">
+                                        <input
+                                          type="checkbox"
+                                          checked={roleConfig.nowi.bezterminowo}
+                                          onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                            ...prev,
+                                            nowi: { ...prev.nowi, bezterminowo: e.target.checked, startAt: '' },
+                                          }))}
+                                          className="rounded border-gray-300 dark:border-gray-600"
+                                        />
+                                        Bezterminowo
+                                      </span>
+                                    </label>
+                                    {!roleConfig.nowi.bezterminowo && (
+                                      <div>
+                                        <Label className="text-xs text-gray-500">Ilość dni</Label>
+                                        <Input
+                                          type="number"
+                                          min={1}
+                                          max={3650}
+                                          value={roleConfig.nowi.dniWyswietlania}
+                                          onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                            ...prev,
+                                            nowi: { ...prev.nowi, dniWyswietlania: Number(e.target.value) || 1, startAt: '' },
+                                          }))}
+                                          className="h-8 text-sm bg-white dark:bg-gray-700"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Tytul</Label>
+                                    <Input
+                                      value={roleConfig.nowi.tytul}
+                                      onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({ ...prev, nowi: { ...prev.nowi, tytul: e.target.value } }))}
+                                      placeholder="np. Witamy na starcie!"
+                                      className="h-8 text-sm bg-white dark:bg-gray-700"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Opis</Label>
+                                    <textarea
+                                      value={roleConfig.nowi.opis}
+                                      onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({ ...prev, nowi: { ...prev.nowi, opis: e.target.value } }))}
+                                      rows={3}
+                                      className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2 p-3 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 text-sm font-medium text-blue-700 dark:text-blue-400">
+                                      <Globe className="w-3.5 h-3.5" />
+                                      2. Wszyscy
+                                    </div>
+                                    <label className="flex items-center gap-1.5 text-xs text-blue-700 dark:text-blue-300">
+                                      <input
+                                        type="checkbox"
+                                        checked={roleConfig.wszyscy.aktywny}
+                                        onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                          ...prev,
+                                          wszyscy: {
+                                            ...prev.wszyscy,
+                                            aktywny: e.target.checked,
+                                            startAt: e.target.checked && !prev.wszyscy.aktywny ? '' : prev.wszyscy.startAt,
+                                          },
+                                        }))}
+                                        className="rounded border-gray-300 dark:border-gray-600"
+                                      />
+                                      Włączony
+                                    </label>
+                                  </div>
+                                  <div className="space-y-1 rounded-md border border-blue-200 dark:border-blue-800/70 bg-white/70 dark:bg-gray-800/50 p-2">
+                                    <label className="flex items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                      <span>Czas wyświetlania</span>
+                                      <span className="flex items-center gap-1.5">
+                                        <input
+                                          type="checkbox"
+                                          checked={roleConfig.wszyscy.bezterminowo}
+                                          onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                            ...prev,
+                                            wszyscy: { ...prev.wszyscy, bezterminowo: e.target.checked, startAt: '' },
+                                          }))}
+                                          className="rounded border-gray-300 dark:border-gray-600"
+                                        />
+                                        Bezterminowo
+                                      </span>
+                                    </label>
+                                    {!roleConfig.wszyscy.bezterminowo && (
+                                      <div>
+                                        <Label className="text-xs text-gray-500">Ilość dni</Label>
+                                        <Input
+                                          type="number"
+                                          min={1}
+                                          max={3650}
+                                          value={roleConfig.wszyscy.dniWyswietlania}
+                                          onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                            ...prev,
+                                            wszyscy: { ...prev.wszyscy, dniWyswietlania: Number(e.target.value) || 1, startAt: '' },
+                                          }))}
+                                          className="h-8 text-sm bg-white dark:bg-gray-700"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Tytul</Label>
+                                    <Input
+                                      value={roleConfig.wszyscy.tytul}
+                                      onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({ ...prev, wszyscy: { ...prev.wszyscy, tytul: e.target.value } }))}
+                                      placeholder="np. Witaj w aplikacji!"
+                                      className="h-8 text-sm bg-white dark:bg-gray-700"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Opis</Label>
+                                    <textarea
+                                      value={roleConfig.wszyscy.opis}
+                                      onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({ ...prev, wszyscy: { ...prev.wszyscy, opis: e.target.value } }))}
+                                      rows={3}
+                                      className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2 p-3 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 text-sm font-medium text-violet-700 dark:text-violet-400">
+                                      <MapPin className="w-3.5 h-3.5" />
+                                      3. Konkretna parafia
+                                    </div>
+                                    <label className="flex items-center gap-1.5 text-xs text-violet-700 dark:text-violet-300">
+                                      <input
+                                        type="checkbox"
+                                        checked={roleConfig.parafia.aktywny}
+                                        onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                          ...prev,
+                                          parafia: {
+                                            ...prev.parafia,
+                                            aktywny: e.target.checked,
+                                            startAt: e.target.checked && !prev.parafia.aktywny ? '' : prev.parafia.startAt,
+                                          },
+                                        }))}
+                                        className="rounded border-gray-300 dark:border-gray-600"
+                                      />
+                                      Włączony
+                                    </label>
+                                  </div>
+                                  <div className="space-y-1 rounded-md border border-violet-200 dark:border-violet-800/70 bg-white/70 dark:bg-gray-800/50 p-2">
+                                    <label className="flex items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
+                                      <span>Czas wyświetlania</span>
+                                      <span className="flex items-center gap-1.5">
+                                        <input
+                                          type="checkbox"
+                                          checked={roleConfig.parafia.bezterminowo}
+                                          onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                            ...prev,
+                                            parafia: { ...prev.parafia, bezterminowo: e.target.checked, startAt: '' },
+                                          }))}
+                                          className="rounded border-gray-300 dark:border-gray-600"
+                                        />
+                                        Bezterminowo
+                                      </span>
+                                    </label>
+                                    {!roleConfig.parafia.bezterminowo && (
+                                      <div>
+                                        <Label className="text-xs text-gray-500">Ilość dni</Label>
+                                        <Input
+                                          type="number"
+                                          min={1}
+                                          max={3650}
+                                          value={roleConfig.parafia.dniWyswietlania}
+                                          onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({
+                                            ...prev,
+                                            parafia: { ...prev.parafia, dniWyswietlania: Number(e.target.value) || 1, startAt: '' },
+                                          }))}
+                                          className="h-8 text-sm bg-white dark:bg-gray-700"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Parafia docelowa</Label>
+                                    <Select
+                                      value={roleConfig.parafia.parafiaId || '__none__'}
+                                      onValueChange={(value) => {
+                                        const nextParafiaId = value === '__none__' ? '' : value;
+                                        const selectedParafia = parafie.find((p) => p.id === nextParafiaId);
+                                        updateWelcomeBannerRole(role, (prev) => ({
+                                          ...prev,
+                                          parafia: { ...prev.parafia, parafiaId: nextParafiaId },
+                                        }));
+                                        setWelcomeBanerParafiaCode((prev) => ({
+                                          ...prev,
+                                          [role]: selectedParafia?.kod_zaproszenia || '',
+                                        }));
+                                      }}
+                                    >
+                                      <SelectTrigger className="bg-white dark:bg-gray-700">
+                                        <SelectValue placeholder="Wybierz parafię" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__">— Brak —</SelectItem>
+                                        {parafie.map((p) => (
+                                          <SelectItem key={p.id} value={p.id}>
+                                            {p.nazwa} — {p.miasto}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Lub wpisz kod parafii</Label>
+                                    <div className="mt-1 flex items-center gap-2">
+                                      <Input
+                                        value={welcomeBanerParafiaCode[role]}
+                                        onChange={(e) => setWelcomeBanerParafiaCode((prev) => ({
+                                          ...prev,
+                                          [role]: e.target.value.toUpperCase(),
+                                        }))}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            setWelcomeBannerParafiaByCode(role);
+                                          }
+                                        }}
+                                        placeholder="np. J9YZPR0V"
+                                        className="h-8 text-sm font-mono bg-white dark:bg-gray-700"
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setWelcomeBannerParafiaByCode(role)}
+                                        className="h-8"
+                                      >
+                                        Ustaw po kodzie
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Tytul</Label>
+                                    <Input
+                                      value={roleConfig.parafia.tytul}
+                                      onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({ ...prev, parafia: { ...prev.parafia, tytul: e.target.value } }))}
+                                      placeholder="np. Informacja dla parafii"
+                                      className="h-8 text-sm bg-white dark:bg-gray-700"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-gray-500">Opis</Label>
+                                    <textarea
+                                      value={roleConfig.parafia.opis}
+                                      onChange={(e) => updateWelcomeBannerRole(role, (prev) => ({ ...prev, parafia: { ...prev.parafia, opis: e.target.value } }))}
+                                      rows={3}
+                                      className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3 bg-gray-50/70 dark:bg-gray-900/30">
+                                <p className="text-xs font-medium text-gray-600 dark:text-gray-300 mb-2">
+                                  Podgląd w panelu użytkownika
+                                </p>
+                                <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                                  {previewItems.map((item) => {
+                                    const isActive = item.variant.aktywny;
+                                    const previewTitle = item.variant.tytul.trim() || 'Witaj w aplikacji dla ministrantów!';
+                                    const previewOpis = item.variant.opis.trim() || 'Ogłoszenia i ankiety od księdza · Wydarzenia · Ranking i punkty · Obecności · Kalendarz liturgiczny';
+                                    return (
+                                      <div key={item.key} className="space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <p className="text-xs font-medium text-gray-700 dark:text-gray-200">{item.label}</p>
+                                          <span className={`text-[10px] font-semibold ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500'}`}>
+                                            {isActive ? 'ON' : 'OFF'}
+                                          </span>
+                                        </div>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{item.note}</p>
+                                        <div className={`rounded-lg border border-indigo-200 dark:border-indigo-700 bg-indigo-50 dark:bg-indigo-900/20 p-3 ${isActive ? '' : 'opacity-55'}`}>
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-start gap-3 min-w-0">
+                                              <Church className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
+                                              <div className="text-sm text-indigo-900 dark:text-indigo-200 space-y-1 min-w-0">
+                                                <p className="font-semibold leading-snug break-words">{previewTitle}</p>
+                                                <p className="text-xs text-indigo-700 dark:text-indigo-300 whitespace-pre-wrap break-words">{previewOpis}</p>
+                                              </div>
+                                            </div>
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              disabled
+                                              className="h-6 w-6 p-0 text-indigo-400 opacity-60 pointer-events-none"
+                                            >
+                                              <X className="w-4 h-4" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
                             </div>
-                          )}
-                        </div>
+                          );
+                        })}
                       </div>
 
                       <Button onClick={saveBanery} disabled={banerLoading} className="mt-4 bg-indigo-500 hover:bg-indigo-600 text-white" size="sm">

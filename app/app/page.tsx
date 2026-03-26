@@ -78,6 +78,10 @@ const ADMIN_PREVIEW_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
 const BLOCKED_PRIEST_EMAIL_DOMAINS = ['niepodam.pl'];
 const AKTYWNOSC_ZGLOSZENIA_KEY = 'zgloszenia_aktywnosci_wlaczone';
 const AUTO_DYZUR_MINUS_LOOKBACK_DAYS = 35;
+const ANDROID_APP_PACKAGE_ID = 'net.ministranci.twa';
+const ANDROID_PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${ANDROID_APP_PACKAGE_ID}`;
+// Podnoś ten numer tylko wtedy, gdy chcesz WYMUSIĆ aktualizację starszych wersji mobilnych.
+const MIN_REQUIRED_ANDROID_APP_VERSION_CODE = 4;
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -131,6 +135,13 @@ const getLocalISODate = (date: Date = new Date()) => {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+};
+
+const parsePositiveInt = (value: string | null): number | null => {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
 };
 
 const buildInitialAktywnoscForm = () => ({
@@ -1933,6 +1944,8 @@ export default function MinistranciApp() {
   const [hidePriestWydarzeniaInfoPermanently, setHidePriestWydarzeniaInfoPermanently] = useState(false);
   const [showPriestPoslugiInfo, setShowPriestPoslugiInfo] = useState(false);
   const [hidePriestPoslugiInfoPermanently, setHidePriestPoslugiInfoPermanently] = useState(false);
+  const [isAndroidAppContext, setIsAndroidAppContext] = useState(false);
+  const [androidAppVersionCode, setAndroidAppVersionCode] = useState<number | null>(null);
 
   // ==================== STAN — TABLICA OGŁOSZEŃ ====================
   const [tablicaWatki, setTablicaWatki] = useState<TablicaWatek[]>([]);
@@ -1986,6 +1999,16 @@ export default function MinistranciApp() {
     setEditingAnkietaId(null);
     setShowArchiwum(false);
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const versionFromQuery = parsePositiveInt(url.searchParams.get('app_vc') ?? url.searchParams.get('mobile_vc'));
+    const referrer = typeof document !== 'undefined' ? (document.referrer || '') : '';
+    const isAndroidReferrer = referrer.startsWith(`android-app://${ANDROID_APP_PACKAGE_ID}`);
+    setIsAndroidAppContext(isAndroidReferrer || versionFromQuery !== null);
+    setAndroidAppVersionCode(versionFromQuery);
+  }, []);
   const qrPosterRef = useRef<HTMLDivElement | null>(null);
   const wiadomoscInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -7552,6 +7575,10 @@ export default function MinistranciApp() {
     return toneMap[dzisLiturgiczny?.kolor || 'zielony'] || toneMap.zielony;
   })();
 
+  const shouldForceMobileUpdate = isAndroidAppContext && (
+    androidAppVersionCode === null || androidAppVersionCode < MIN_REQUIRED_ANDROID_APP_VERSION_CODE
+  );
+
   // ==================== EKRAN ŁADOWANIA ====================
 
   if (loading) {
@@ -7560,6 +7587,42 @@ export default function MinistranciApp() {
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-indigo-600 dark:text-indigo-400 animate-spin mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-300">Ładowanie...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (shouldForceMobileUpdate) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
+        <div className="w-full max-w-md">
+          <Card className="shadow-xl border-amber-200 dark:border-amber-800">
+            <CardContent className="pt-8 pb-8 text-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center mx-auto">
+                <Download className="w-8 h-8 text-amber-700 dark:text-amber-300" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Wymagana aktualizacja aplikacji</h2>
+              <p className="text-gray-600 dark:text-gray-300 text-sm">
+                Ta wersja aplikacji mobilnej jest już nieaktualna. Aby kontynuować, zaktualizuj aplikację w Google Play.
+              </p>
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                {androidAppVersionCode !== null
+                  ? `Wykryta wersja: ${androidAppVersionCode} • wymagane minimum: ${MIN_REQUIRED_ANDROID_APP_VERSION_CODE}`
+                  : `Nie udało się odczytać wersji aplikacji • wymagane minimum: ${MIN_REQUIRED_ANDROID_APP_VERSION_CODE}`}
+              </div>
+              <div className="pt-2 grid gap-2">
+                <Button
+                  onClick={() => { window.location.href = ANDROID_PLAY_STORE_URL; }}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+                >
+                  Zaktualizuj w Google Play
+                </Button>
+                <Button variant="outline" onClick={() => window.location.reload()} className="w-full">
+                  Sprawdź ponownie po aktualizacji
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );

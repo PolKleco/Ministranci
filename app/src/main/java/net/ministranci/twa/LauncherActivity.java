@@ -16,6 +16,7 @@
 package net.ministranci.twa;
 
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -46,9 +47,23 @@ public class LauncherActivity
     protected Uri getLaunchingUrl() {
         // Get the original launch Url.
         Uri uri = super.getLaunchingUrl();
+        Uri.Builder builder = uri.buildUpon();
+        try {
+            PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+            long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? packageInfo.getLongVersionCode()
+                    : packageInfo.versionCode;
+            String versionName = packageInfo.versionName != null ? packageInfo.versionName : "";
 
-        
-
-        return uri;
+            if (uri.getQueryParameter("app_vc") == null) {
+                builder.appendQueryParameter("app_vc", String.valueOf(versionCode));
+            }
+            if (uri.getQueryParameter("app_vn") == null) {
+                builder.appendQueryParameter("app_vn", versionName);
+            }
+        } catch (Exception ignored) {
+            // Jeśli nie uda się odczytać wersji, uruchamiamy bez parametrów.
+        }
+        return builder.build();
     }
 }

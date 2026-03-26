@@ -12254,32 +12254,46 @@ export default function MinistranciApp() {
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {targetMinistranci.map((ministrant) => (
-                      <div key={ministrant.profile_id} className="flex items-center justify-between gap-2 rounded-md border border-amber-100 dark:border-amber-900/30 px-2.5 py-2 bg-white/90 dark:bg-gray-900/70">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{ministrant.imie} {ministrant.nazwisko || ''}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{ministrant.grupa || 'Bez grupy'}</p>
+                    {targetMinistranci.map((ministrant) => {
+                      const selectedStatus = zbiorkaAttendance[ministrant.profile_id];
+                      const rowTone = selectedStatus === 'obecny'
+                        ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/80 dark:bg-emerald-950/25'
+                        : selectedStatus === 'nieobecny'
+                          ? 'border-red-300 dark:border-red-700 bg-red-50/80 dark:bg-red-950/25'
+                          : 'border-amber-100 dark:border-amber-900/30 bg-white/90 dark:bg-gray-900/70';
+                      const triggerTone = selectedStatus === 'obecny'
+                        ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300'
+                        : selectedStatus === 'nieobecny'
+                          ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300'
+                          : 'border-input';
+
+                      return (
+                        <div key={ministrant.profile_id} className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 transition-colors ${rowTone}`}>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{ministrant.imie} {ministrant.nazwisko || ''}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{ministrant.grupa || 'Bez grupy'}</p>
+                          </div>
+                          <div className="w-[170px]">
+                            <Select
+                              value={zbiorkaAttendance[ministrant.profile_id]}
+                              onValueChange={(value) => setZbiorkaAttendance((prev) => ({
+                                ...prev,
+                                [ministrant.profile_id]: value as ZbiorkaObecnoscStatus,
+                              }))}
+                            >
+                              <SelectTrigger className={`h-8 ${triggerTone}`}>
+                                <SelectValue placeholder="Wybierz status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="obecny">Obecny</SelectItem>
+                                <SelectItem value="nieobecny">Nieobecny</SelectItem>
+                                <SelectItem value="usprawiedliwiony">Usprawiedliwiony</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
-                        <div className="w-[170px]">
-                          <Select
-                            value={zbiorkaAttendance[ministrant.profile_id]}
-                            onValueChange={(value) => setZbiorkaAttendance((prev) => ({
-                              ...prev,
-                              [ministrant.profile_id]: value as ZbiorkaObecnoscStatus,
-                            }))}
-                          >
-                            <SelectTrigger className="h-8">
-                              <SelectValue placeholder="Wybierz status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="obecny">Obecny</SelectItem>
-                              <SelectItem value="nieobecny">Nieobecny</SelectItem>
-                              <SelectItem value="usprawiedliwiony">Usprawiedliwiony</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

@@ -8684,7 +8684,7 @@ export default function MinistranciApp() {
                     <div className="mx-auto w-full max-w-[240px]">
                       <div className="rounded-2xl border-4 border-emerald-100 bg-white p-4 shadow-md w-full">
                         <QRCodeSVG
-                          value={`https://ministranci.net/app?auth=register&kod=${encodeURIComponent(currentParafia?.kod_zaproszenia || '')}`}
+                          value={`https://ministranci.net/join?kod=${encodeURIComponent(currentParafia?.kod_zaproszenia || '')}`}
                           size={240}
                           level="H"
                           className="w-full h-auto"

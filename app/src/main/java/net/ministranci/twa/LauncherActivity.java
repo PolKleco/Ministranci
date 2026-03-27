@@ -15,19 +15,29 @@
  */
 package net.ministranci.twa;
 
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.TextUtils;
 
+import com.android.installreferrer.api.InstallReferrerClient;
+import com.android.installreferrer.api.InstallReferrerStateListener;
+import com.android.installreferrer.api.ReferrerDetails;
 
+import java.util.Locale;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class LauncherActivity
         extends com.google.androidbrowserhelper.trusted.LauncherActivity {
-    
-
-    
+    private static final String REFERRER_PREFS_NAME = "join_referrer_prefs";
+    private static final String REFERRER_CONSUMED_KEY = "install_referrer_consumed";
+    private static final long REFERRER_WAIT_TIMEOUT_MS = 1200L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,9 +55,14 @@ public class LauncherActivity
 
     @Override
     protected Uri getLaunchingUrl() {
-        // Get the original launch Url.
         Uri uri = super.getLaunchingUrl();
         Uri.Builder builder = uri.buildUpon();
+        appendAppVersionParams(builder, uri);
+        appendDeferredJoinParams(builder, uri);
+        return builder.build();
+    }
+
+    private void appendAppVersionParams(Uri.Builder builder, Uri uri) {
         try {
             PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
             long versionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
@@ -62,8 +77,135 @@ public class LauncherActivity
                 builder.appendQueryParameter("app_vn", versionName);
             }
         } catch (Exception ignored) {
-            // Jeśli nie uda się odczytać wersji, uruchamiamy bez parametrów.
+            // If version metadata is unavailable we can still launch without it.
         }
-        return builder.build();
+    }
+
+    private void appendDeferredJoinParams(Uri.Builder builder, Uri uri) {
+        if (uri.getQueryParameter("kod") != null) {
+            return;
+        }
+
+        DeferredJoinPayload payload = consumeDeferredJoinPayload();
+        if (payload == null || TextUtils.isEmpty(payload.joinCode)) {
+            return;
+        }
+
+        builder.appendQueryParameter("kod", payload.joinCode);
+        if (uri.getQueryParameter("auth") == null && payload.openRegisterView) {
+            builder.appendQueryParameter("auth", "register");
+        }
+    }
+
+    private DeferredJoinPayload consumeDeferredJoinPayload() {
+        SharedPreferences preferences = getSharedPreferences(REFERRER_PREFS_NAME, MODE_PRIVATE);
+        if (preferences.getBoolean(REFERRER_CONSUMED_KEY, false)) {
+            return null;
+        }
+
+        InstallReferrerFetchResult result = fetchInstallReferrer();
+        if (result.markAsConsumed) {
+            preferences.edit().putBoolean(REFERRER_CONSUMED_KEY, true).apply();
+        }
+        return result.payload;
+    }
+
+    private InstallReferrerFetchResult fetchInstallReferrer() {
+        InstallReferrerClient referrerClient = InstallReferrerClient.newBuilder(this).build();
+        AtomicReference<String> installReferrerValue = new AtomicReference<>(null);
+        AtomicInteger responseCode = new AtomicInteger(InstallReferrerClient.InstallReferrerResponse.SERVICE_DISCONNECTED);
+        CountDownLatch latch = new CountDownLatch(1);
+
+        try {
+            referrerClient.startConnection(new InstallReferrerStateListener() {
+                @Override
+                public void onInstallReferrerSetupFinished(int code) {
+                    responseCode.set(code);
+                    if (code == InstallReferrerClient.InstallReferrerResponse.OK) {
+                        try {
+                            ReferrerDetails details = referrerClient.getInstallReferrer();
+                            if (details != null) {
+                                installReferrerValue.set(details.getInstallReferrer());
+                            }
+                        } catch (Exception ignored) {
+                            // Keep null referrer when the service returns malformed payload.
+                        }
+                    }
+                    try {
+                        referrerClient.endConnection();
+                    } catch (Exception ignored) {
+                        // Ignore close failures; we already have the callback result.
+                    }
+                    latch.countDown();
+                }
+
+                @Override
+                public void onInstallReferrerServiceDisconnected() {
+                    latch.countDown();
+                }
+            });
+
+            latch.await(REFERRER_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (Exception ignored) {
+            try {
+                referrerClient.endConnection();
+            } catch (Exception ignoredClose) {
+                // Ignored.
+            }
+            return new InstallReferrerFetchResult(null, false);
+        }
+
+        int code = responseCode.get();
+        boolean shouldMarkConsumed = code == InstallReferrerClient.InstallReferrerResponse.OK
+                || code == InstallReferrerClient.InstallReferrerResponse.FEATURE_NOT_SUPPORTED;
+
+        if (code != InstallReferrerClient.InstallReferrerResponse.OK) {
+            return new InstallReferrerFetchResult(null, shouldMarkConsumed);
+        }
+
+        String rawReferrer = installReferrerValue.get();
+        if (TextUtils.isEmpty(rawReferrer)) {
+            return new InstallReferrerFetchResult(null, true);
+        }
+
+        Uri referrerUri = Uri.parse("https://localhost/?" + rawReferrer);
+        String joinCode = sanitizeJoinCode(referrerUri.getQueryParameter("kod"));
+        if (TextUtils.isEmpty(joinCode)) {
+            return new InstallReferrerFetchResult(null, true);
+        }
+
+        boolean openRegisterView = "register".equalsIgnoreCase(referrerUri.getQueryParameter("auth"));
+        return new InstallReferrerFetchResult(new DeferredJoinPayload(joinCode, openRegisterView), true);
+    }
+
+    private static String sanitizeJoinCode(String rawCode) {
+        if (rawCode == null) {
+            return null;
+        }
+        String normalized = rawCode.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        return normalized.length() > 32 ? normalized.substring(0, 32) : normalized;
+    }
+
+    private static class DeferredJoinPayload {
+        final String joinCode;
+        final boolean openRegisterView;
+
+        DeferredJoinPayload(String joinCode, boolean openRegisterView) {
+            this.joinCode = joinCode;
+            this.openRegisterView = openRegisterView;
+        }
+    }
+
+    private static class InstallReferrerFetchResult {
+        final DeferredJoinPayload payload;
+        final boolean markAsConsumed;
+
+        InstallReferrerFetchResult(DeferredJoinPayload payload, boolean markAsConsumed) {
+            this.payload = payload;
+            this.markAsConsumed = markAsConsumed;
+        }
     }
 }

@@ -76,6 +76,9 @@ public class LauncherActivity
             if (uri.getQueryParameter("app_vn") == null) {
                 builder.appendQueryParameter("app_vn", versionName);
             }
+            if (uri.getQueryParameter("app_platform") == null) {
+                builder.appendQueryParameter("app_platform", "android-app");
+            }
         } catch (Exception ignored) {
             // If version metadata is unavailable we can still launch without it.
         }

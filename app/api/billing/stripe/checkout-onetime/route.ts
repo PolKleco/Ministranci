@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildStripeFormPayload, stripeRequest } from '@/lib/stripe';
+import { rejectExternalBillingOnMobile } from '../../_platform';
 import {
   findParafiaForAdmin,
   getAuthUser,
@@ -74,6 +75,11 @@ const buildCustomerPayload = (
 
 export async function POST(request: NextRequest) {
   try {
+    const billingBlockedResponse = rejectExternalBillingOnMobile(request);
+    if (billingBlockedResponse) {
+      return billingBlockedResponse;
+    }
+
     const authUser = await getAuthUser(request);
     if (!authUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

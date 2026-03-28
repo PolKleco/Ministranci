@@ -8,7 +8,7 @@ import {
   Church, Users, Calendar, Book, LogOut, Mail,
   Copy, X, Plus, Check, CheckCircle, Hourglass,
   UserPlus, UserCheck, Send, Loader2, Bell, Pencil, Trash2,
-  Trophy, Flame, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
+  Trophy, Star, Clock, Shield, Settings, ChevronDown, ChevronUp, Award, Target, Lock, Unlock,
   MessageSquare, Pin, LockKeyhole, BarChart3, Vote, ArrowLeft, Eye, EyeOff, Smile, BookOpen, Lightbulb, HandHelping, Reply,
   Moon, Sun, QrCode, ChevronRight, ImageIcon, Video, Paperclip, Search, RotateCcw, PartyPopper, Sparkles, GripVertical,
   Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, List, ListOrdered, Heading1, Heading2, Heading3, Youtube, Ticket, Download, CreditCard
@@ -80,8 +80,13 @@ const AKTYWNOSC_ZGLOSZENIA_KEY = 'zgloszenia_aktywnosci_wlaczone';
 const AUTO_DYZUR_MINUS_LOOKBACK_DAYS = 35;
 const ANDROID_APP_PACKAGE_ID = 'net.ministranci.twa';
 const ANDROID_PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${ANDROID_APP_PACKAGE_ID}`;
+const ANDROID_APP_CONTEXT_SESSION_KEY = 'ministranci_android_app_context';
+const ANDROID_APP_VERSION_SESSION_KEY = 'ministranci_android_app_vc';
+const ANDROID_APP_PLATFORM_QUERY_PARAM = 'app_platform';
+const ANDROID_APP_PLATFORM_QUERY_VALUE = 'android-app';
 // Podnoś ten numer tylko wtedy, gdy chcesz WYMUSIĆ aktualizację starszych wersji mobilnych.
 const MIN_REQUIRED_ANDROID_APP_VERSION_CODE = 4;
+const PREMIUM_MOBILE_BILLING_INFO = 'W aplikacji Android płatności Premium będą obsługiwane przez Google Play Billing. Do czasu pełnej migracji zakup wykonaj w wersji web.';
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -156,6 +161,24 @@ const readLocalStorage = (key: string): string | null => {
     return window.localStorage.getItem(key);
   } catch {
     return null;
+  }
+};
+
+const readSessionStorage = (key: string): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeSessionStorage = (key: string, value: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.sessionStorage.setItem(key, value);
+  } catch {
+    // Ignore storage write failures in private/locked environments.
   }
 };
 
@@ -2004,10 +2027,24 @@ export default function MinistranciApp() {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
     const versionFromQuery = parsePositiveInt(url.searchParams.get('app_vc') ?? url.searchParams.get('mobile_vc'));
+    const platformFromQuery = (url.searchParams.get(ANDROID_APP_PLATFORM_QUERY_PARAM) ?? '').trim().toLowerCase();
     const referrer = typeof document !== 'undefined' ? (document.referrer || '') : '';
     const isAndroidReferrer = referrer.startsWith(`android-app://${ANDROID_APP_PACKAGE_ID}`);
-    setIsAndroidAppContext(isAndroidReferrer || versionFromQuery !== null);
-    setAndroidAppVersionCode(versionFromQuery);
+    const isAndroidPlatformQuery = platformFromQuery === ANDROID_APP_PLATFORM_QUERY_VALUE;
+    const storedContextFlag = readSessionStorage(ANDROID_APP_CONTEXT_SESSION_KEY) === '1';
+    const storedVersionCode = parsePositiveInt(readSessionStorage(ANDROID_APP_VERSION_SESSION_KEY));
+    const isAndroidUserAgent = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '');
+    const isAndroidAppSignal = isAndroidReferrer || isAndroidPlatformQuery || versionFromQuery !== null;
+
+    if (isAndroidAppSignal) {
+      writeSessionStorage(ANDROID_APP_CONTEXT_SESSION_KEY, '1');
+      if (versionFromQuery !== null) {
+        writeSessionStorage(ANDROID_APP_VERSION_SESSION_KEY, String(versionFromQuery));
+      }
+    }
+
+    setIsAndroidAppContext(isAndroidAppSignal || (storedContextFlag && isAndroidUserAgent));
+    setAndroidAppVersionCode(versionFromQuery ?? storedVersionCode);
   }, []);
   const qrPosterRef = useRef<HTMLDivElement | null>(null);
   const wiadomoscInputRef = useRef<HTMLInputElement | null>(null);
@@ -2055,6 +2092,7 @@ export default function MinistranciApp() {
   const canEditPrayers = hasPriestPermission('edit_prayers');
   const canManageInvites = hasPriestPermission('manage_invites');
   const canManagePremium = hasPriestPermission('manage_premium');
+  const canUseStripeBilling = !isAndroidAppContext;
   const premiumDaysLeft = useMemo(() => {
     const rawDate = subscription?.premium_expires_at;
     if (!rawDate) return null;
@@ -2126,7 +2164,17 @@ export default function MinistranciApp() {
       return refreshed.data.session?.access_token || null;
     };
 
+    const applyClientPlatformHeaders = (headers: Headers) => {
+      if (!headers.has('x-client-platform')) {
+        headers.set('x-client-platform', isAndroidAppContext ? 'android-app' : 'web');
+      }
+      if (isAndroidAppContext && androidAppVersionCode !== null && !headers.has('x-mobile-app-vc')) {
+        headers.set('x-mobile-app-vc', String(androidAppVersionCode));
+      }
+    };
+
     const baseHeaders = new Headers(init.headers || {});
+    applyClientPlatformHeaders(baseHeaders);
     let accessToken = await getAccessToken();
     if (accessToken) {
       baseHeaders.set('Authorization', `Bearer ${accessToken}`);
@@ -2139,10 +2187,11 @@ export default function MinistranciApp() {
     if (!accessToken) return response;
 
     const retryHeaders = new Headers(init.headers || {});
+    applyClientPlatformHeaders(retryHeaders);
     retryHeaders.set('Authorization', `Bearer ${accessToken}`);
     response = await fetch(input, { ...init, headers: retryHeaders });
     return response;
-  }, []);
+  }, [androidAppVersionCode, isAndroidAppContext]);
 
   const canUseAdminImpersonation = !!currentUser?.email && ADMIN_PREVIEW_EMAILS.includes(currentUser.email.toLowerCase());
 
@@ -4447,6 +4496,10 @@ export default function MinistranciApp() {
 
   const handleStartStripeCheckout = async () => {
     if (!currentParafia) return;
+    if (!canUseStripeBilling) {
+      alert(PREMIUM_MOBILE_BILLING_INFO);
+      return;
+    }
     const { data: invoiceData, errors } = validatePremiumInvoiceForm();
     const firstError = Object.values(errors)[0];
     if (firstError) {
@@ -4486,6 +4539,10 @@ export default function MinistranciApp() {
 
   const handleStartStripeOneTimeCheckout = async () => {
     if (!currentParafia) return;
+    if (!canUseStripeBilling) {
+      alert(PREMIUM_MOBILE_BILLING_INFO);
+      return;
+    }
     const { data: invoiceData, errors } = validatePremiumInvoiceForm();
     const firstError = Object.values(errors)[0];
     if (firstError) {
@@ -4523,6 +4580,10 @@ export default function MinistranciApp() {
 
   const handleOpenStripePortal = async () => {
     if (!currentParafia) return;
+    if (!canUseStripeBilling) {
+      alert(PREMIUM_MOBILE_BILLING_INFO);
+      return;
+    }
     setPremiumPortalLoading(true);
     try {
       const res = await authFetch('/api/billing/stripe/portal', {
@@ -4614,7 +4675,9 @@ export default function MinistranciApp() {
     const kod = params.get('kod');
     if (kod) {
       sessionStorage.setItem('join_kod', kod.toUpperCase());
-      window.history.replaceState({}, '', window.location.pathname);
+      params.delete('kod');
+      const restQuery = params.toString();
+      window.history.replaceState({}, '', restQuery ? `${window.location.pathname}?${restQuery}` : window.location.pathname);
     }
   }, []);
 
@@ -15503,13 +15566,18 @@ export default function MinistranciApp() {
                   )}
                 </div>
 
-                {subscription.premium_source === 'stripe' && (
+                {subscription.premium_source === 'stripe' && canUseStripeBilling && (
                   <Button onClick={handleOpenStripePortal} disabled={premiumPortalLoading} className="w-full">
                     <CreditCard className="w-4 h-4 mr-2" />
                     {premiumPortalLoading ? 'Otwieranie...' : 'Zarządzaj płatnością (abonament)'}
                   </Button>
                 )}
-                {subscription.premium_source !== 'stripe' && (
+                {subscription.premium_source === 'stripe' && !canUseStripeBilling && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                    {PREMIUM_MOBILE_BILLING_INFO}
+                  </div>
+                )}
+                {subscription.premium_source !== 'stripe' && canUseStripeBilling && (
                   <div className="space-y-3">
                     <div className="p-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-900/20">
                       <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">
@@ -15661,6 +15729,11 @@ export default function MinistranciApp() {
                     </Button>
                   </div>
                 )}
+                {subscription.premium_source !== 'stripe' && !canUseStripeBilling && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                    {PREMIUM_MOBILE_BILLING_INFO}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -15694,6 +15767,14 @@ export default function MinistranciApp() {
                   </p>
                 </div>
 
+                {!canUseStripeBilling && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                    {PREMIUM_MOBILE_BILLING_INFO}
+                  </div>
+                )}
+
+                {canUseStripeBilling && (
+                  <>
                 <div className="p-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 dark:from-emerald-900/20 dark:via-teal-900/20 dark:to-cyan-900/20">
                   <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                     <CreditCard className="w-4 h-4" />
@@ -15869,6 +15950,8 @@ export default function MinistranciApp() {
                     Wersja jednorazowa: brak auto-odnowienia, odnowisz ręcznie przed końcem okresu.
                   </p>
                 </div>
+                  </>
+                )}
 
                 {/* Input kodu */}
                 <div className="space-y-2">

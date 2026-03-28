@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -24,6 +26,7 @@ import java.util.List;
 
 public class GoogleBillingActivity extends Activity implements PurchasesUpdatedListener {
     private static final String TAG = "GoogleBillingActivity";
+    private static final long CANCELED_FALLBACK_DELAY_MS = 1200L;
 
     private static final String PRODUCT_ID = "premium_yearly";
     private static final String BASE_PLAN_ID = "yearly-prepaid";
@@ -40,7 +43,18 @@ public class GoogleBillingActivity extends Activity implements PurchasesUpdatedL
 
     private BillingClient billingClient;
     private boolean resultSent = false;
+    private boolean billingFlowLaunched = false;
+    private boolean waitingForPurchaseCallback = false;
     private String parafiaId = null;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable canceledFallbackRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (resultSent || !billingFlowLaunched || !waitingForPurchaseCallback) return;
+            Log.w(TAG, "Billing callback timeout after resume. Returning as canceled.");
+            returnWithStatus("canceled", null, null, null);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,13 +72,24 @@ public class GoogleBillingActivity extends Activity implements PurchasesUpdatedL
 
     @Override
     protected void onDestroy() {
+        mainHandler.removeCallbacks(canceledFallbackRunnable);
         disconnectBilling();
         super.onDestroy();
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (resultSent || !billingFlowLaunched || !waitingForPurchaseCallback) return;
+        mainHandler.removeCallbacks(canceledFallbackRunnable);
+        mainHandler.postDelayed(canceledFallbackRunnable, CANCELED_FALLBACK_DELAY_MS);
+    }
+
+    @Override
     public void onPurchasesUpdated(BillingResult billingResult, List<Purchase> purchases) {
         if (resultSent) return;
+        waitingForPurchaseCallback = false;
+        mainHandler.removeCallbacks(canceledFallbackRunnable);
 
         int code = billingResult.getResponseCode();
         if (code == BillingClient.BillingResponseCode.OK) {
@@ -168,7 +193,10 @@ public class GoogleBillingActivity extends Activity implements PurchasesUpdatedL
             BillingResult launchResult = billingClient.launchBillingFlow(this, flowParams);
             if (launchResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                 returnWithError("launch_failed_" + launchResult.getResponseCode());
+                return;
             }
+            billingFlowLaunched = true;
+            waitingForPurchaseCallback = true;
         });
     }
 

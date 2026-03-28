@@ -3,12 +3,76 @@ import { getClientPlatform } from '../../_platform';
 import {
   findParafiaForAdmin,
   getAuthUser,
+  isMissingColumnError,
   supabaseAdmin,
 } from '../../stripe/_shared';
 import { hashPurchaseToken, parseGoogleVerifyPayload } from '../_shared';
 
 type StoredEntitlement = {
   id: string;
+  status: string | null;
+  current_period_end: string | null;
+};
+
+const getExtendedPremiumExpiry = async (parafiaId: string) => {
+  const now = new Date();
+  const fallback = new Date(now);
+  fallback.setFullYear(fallback.getFullYear() + 1);
+
+  const { data, error } = await supabaseAdmin
+    .from('parafie')
+    .select('premium_expires_at')
+    .eq('id', parafiaId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (!isMissingColumnError(error)) {
+      console.error('Google verify: nie udało się pobrać premium_expires_at:', error);
+    }
+    return fallback.toISOString();
+  }
+
+  const currentRaw = typeof data?.premium_expires_at === 'string' ? data.premium_expires_at : null;
+  if (!currentRaw) return fallback.toISOString();
+
+  const currentDate = new Date(currentRaw);
+  if (Number.isNaN(currentDate.getTime()) || currentDate.getTime() <= now.getTime()) {
+    return fallback.toISOString();
+  }
+
+  const extended = new Date(currentDate);
+  extended.setFullYear(extended.getFullYear() + 1);
+  return extended.toISOString();
+};
+
+const applyGooglePlayPremium = async (parafiaId: string) => {
+  const premiumExpiresAt = await getExtendedPremiumExpiry(parafiaId);
+
+  let { error: updateError } = await supabaseAdmin
+    .from('parafie')
+    .update({
+      tier: 'premium',
+      is_active: true,
+      premium_status: 'active',
+      premium_source: 'google_play',
+      premium_expires_at: premiumExpiresAt,
+    })
+    .eq('id', parafiaId);
+
+  if (updateError && isMissingColumnError(updateError)) {
+    const fallback = await supabaseAdmin
+      .from('parafie')
+      .update({ tier: 'premium' })
+      .eq('id', parafiaId);
+    updateError = fallback.error;
+  }
+
+  if (updateError) {
+    throw new Error(`Nie udało się aktywować Premium dla Google Play: ${updateError.message}`);
+  }
+
+  return premiumExpiresAt;
 };
 
 export async function POST(request: NextRequest) {
@@ -67,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     const { data: existingEntitlement, error: existingEntitlementError } = await supabaseAdmin
       .from('billing_entitlements')
-      .select('id')
+      .select('id,status,current_period_end')
       .eq('provider', 'google_play')
       .eq('external_purchase_token_hash', purchaseTokenHash)
       .maybeSingle<StoredEntitlement>();
@@ -82,6 +146,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const alreadyActive = existingEntitlement?.status === 'active';
+    const entitlementShouldBeActive = payload.acknowledged === true || alreadyActive;
+
+    let premiumExpiresAt = existingEntitlement?.current_period_end || null;
+    if (payload.acknowledged === true && !alreadyActive) {
+      premiumExpiresAt = await applyGooglePlayPremium(payload.parafiaId);
+    }
+
     const entitlementPayload = {
       parafia_id: payload.parafiaId,
       provider: 'google_play',
@@ -93,10 +165,10 @@ export async function POST(request: NextRequest) {
       external_subscription_id: payload.purchaseKind === 'subscription' ? payload.orderId : null,
       external_order_id: payload.orderId,
       external_purchase_token_hash: purchaseTokenHash,
-      status: 'pending_verification',
+      status: entitlementShouldBeActive ? 'active' : 'pending_verification',
       starts_at: nowIso,
-      current_period_end: null,
-      auto_renew: null,
+      current_period_end: premiumExpiresAt,
+      auto_renew: false,
       raw_payload: {
         source: 'google_verify_endpoint',
         purchaseKind: payload.purchaseKind,
@@ -129,14 +201,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(
-      {
-        ok: false,
-        status: 'pending_verification',
-        message: 'Zakup zapisany jako oczekujący. Dokończ integrację Google Play Developer API i RTDN.',
-      },
-      { status: 202 }
-    );
+    if (entitlementShouldBeActive) {
+      return NextResponse.json({
+        ok: true,
+        status: 'active',
+        premium_expires_at: premiumExpiresAt,
+        message: 'Premium zostało aktywowane.',
+      });
+    }
+
+    return NextResponse.json({
+      ok: false,
+      status: 'pending_verification',
+      message: 'Zakup zapisany, ale Google Play nie potwierdził jeszcze zakupu (acknowledged=false).',
+    }, { status: 202 });
   } catch (err) {
     console.error('Google verify error:', err);
     return NextResponse.json(

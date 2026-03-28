@@ -13,6 +13,7 @@ import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingClientStateListener;
 import com.android.billingclient.api.BillingFlowParams;
 import com.android.billingclient.api.BillingResult;
+import com.android.billingclient.api.AcknowledgePurchaseParams;
 import com.android.billingclient.api.PendingPurchasesParams;
 import com.android.billingclient.api.ProductDetails;
 import com.android.billingclient.api.Purchase;
@@ -248,18 +249,48 @@ public class GoogleBillingActivity extends Activity implements PurchasesUpdatedL
     }
 
     private void returnWithPurchase(Purchase purchase) {
-        String status;
         if (purchase.getPurchaseState() == Purchase.PurchaseState.PENDING) {
-            status = "pending";
-        } else if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
-            status = "success";
-        } else {
+            returnWithStatus("pending", purchase.getPurchaseToken(), purchase.getOrderId(), purchase.isAcknowledged() ? "1" : "0");
+            return;
+        }
+        if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) {
             returnWithError("invalid_purchase_state");
             return;
         }
 
-        String acknowledged = purchase.isAcknowledged() ? "1" : "0";
-        returnWithStatus(status, purchase.getPurchaseToken(), purchase.getOrderId(), acknowledged);
+        if (purchase.isAcknowledged()) {
+            returnWithStatus("success", purchase.getPurchaseToken(), purchase.getOrderId(), "1");
+            return;
+        }
+
+        acknowledgePurchaseAndReturn(purchase);
+    }
+
+    private void acknowledgePurchaseAndReturn(Purchase purchase) {
+        if (billingClient == null || !billingClient.isReady()) {
+            returnWithError("ack_billing_not_ready");
+            return;
+        }
+
+        String purchaseToken = purchase.getPurchaseToken();
+        if (TextUtils.isEmpty(purchaseToken)) {
+            returnWithError("ack_missing_purchase_token");
+            return;
+        }
+
+        AcknowledgePurchaseParams acknowledgeParams = AcknowledgePurchaseParams.newBuilder()
+                .setPurchaseToken(purchaseToken)
+                .build();
+
+        billingClient.acknowledgePurchase(acknowledgeParams, billingResult -> {
+            if (resultSent) return;
+            int responseCode = billingResult.getResponseCode();
+            if (responseCode == BillingClient.BillingResponseCode.OK) {
+                returnWithStatus("success", purchaseToken, purchase.getOrderId(), "1");
+                return;
+            }
+            returnWithError("ack_failed_" + responseCode);
+        });
     }
 
     private void returnWithError(String errorCode) {

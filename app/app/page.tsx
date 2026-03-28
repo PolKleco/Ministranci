@@ -86,7 +86,6 @@ const ANDROID_APP_PLATFORM_QUERY_PARAM = 'app_platform';
 const ANDROID_APP_PLATFORM_QUERY_VALUE = 'android-app';
 const GOOGLE_PLAY_BILLING_METHOD_ID = 'https://play.google.com/billing';
 const GOOGLE_PLAY_PREMIUM_PRODUCT_ID = 'premium_yearly';
-const GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID = 'yearly-prepaid';
 // Podnoś ten numer tylko wtedy, gdy chcesz WYMUSIĆ aktualizację starszych wersji mobilnych.
 const MIN_REQUIRED_ANDROID_APP_VERSION_CODE = 4;
 const PREMIUM_MOBILE_BILLING_INFO = 'W aplikacji Android płatności Premium są obsługiwane przez Google Play Billing.';
@@ -4661,7 +4660,7 @@ export default function MinistranciApp() {
         body: JSON.stringify({
           parafiaId: currentParafia.id,
           productId: GOOGLE_PLAY_PREMIUM_PRODUCT_ID,
-          basePlanId: GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID,
+          basePlanId: null,
           purchaseToken,
           packageName: ANDROID_APP_PACKAGE_ID,
           purchaseKind: 'subscription',

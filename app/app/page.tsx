@@ -84,9 +84,12 @@ const ANDROID_APP_CONTEXT_SESSION_KEY = 'ministranci_android_app_context';
 const ANDROID_APP_VERSION_SESSION_KEY = 'ministranci_android_app_vc';
 const ANDROID_APP_PLATFORM_QUERY_PARAM = 'app_platform';
 const ANDROID_APP_PLATFORM_QUERY_VALUE = 'android-app';
+const GOOGLE_PLAY_BILLING_METHOD_ID = 'https://play.google.com/billing';
+const GOOGLE_PLAY_PREMIUM_PRODUCT_ID = 'premium_yearly';
+const GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID = 'yearly-prepaid';
 // Podnoś ten numer tylko wtedy, gdy chcesz WYMUSIĆ aktualizację starszych wersji mobilnych.
 const MIN_REQUIRED_ANDROID_APP_VERSION_CODE = 4;
-const PREMIUM_MOBILE_BILLING_INFO = 'W aplikacji Android płatności Premium będą obsługiwane przez Google Play Billing. Do czasu pełnej migracji zakup wykonaj w wersji web.';
+const PREMIUM_MOBILE_BILLING_INFO = 'W aplikacji Android płatności Premium są obsługiwane przez Google Play Billing.';
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -2056,6 +2059,7 @@ export default function MinistranciApp() {
   const [premiumCheckoutLoading, setPremiumCheckoutLoading] = useState(false);
   const [premiumOneTimeCheckoutLoading, setPremiumOneTimeCheckoutLoading] = useState(false);
   const [premiumPortalLoading, setPremiumPortalLoading] = useState(false);
+  const [googlePlayCheckoutLoading, setGooglePlayCheckoutLoading] = useState(false);
   const [premiumInvoiceForm, setPremiumInvoiceForm] = useState<PremiumInvoiceForm>(() => buildInitialPremiumInvoiceForm(''));
   const [premiumInvoiceErrors, setPremiumInvoiceErrors] = useState<PremiumInvoiceErrors>({});
   const [premiumInvoiceRequested, setPremiumInvoiceRequested] = useState(false);
@@ -4575,6 +4579,99 @@ export default function MinistranciApp() {
       alert('Wystąpił błąd: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setPremiumOneTimeCheckoutLoading(false);
+    }
+  };
+
+  const handleStartGooglePlayCheckout = async () => {
+    if (!currentParafia?.id) return;
+    if (!isAndroidAppContext) {
+      alert('Zakup Google Play jest dostępny tylko w aplikacji Android.');
+      return;
+    }
+
+    const browserWindow = window as Window & {
+      getDigitalGoodsService?: (serviceProvider: string) => Promise<unknown>;
+    };
+
+    if (typeof browserWindow.getDigitalGoodsService !== 'function' || typeof PaymentRequest === 'undefined') {
+      alert('Ta wersja aplikacji nie obsługuje jeszcze płatności Google Play. Zaktualizuj aplikację z Google Play.');
+      return;
+    }
+
+    setGooglePlayCheckoutLoading(true);
+    let paymentResponse: PaymentResponse | null = null;
+
+    try {
+      await browserWindow.getDigitalGoodsService(GOOGLE_PLAY_BILLING_METHOD_ID);
+
+      const paymentRequest = new PaymentRequest(
+        [
+          {
+            supportedMethods: GOOGLE_PLAY_BILLING_METHOD_ID,
+            data: {
+              sku: GOOGLE_PLAY_PREMIUM_PRODUCT_ID,
+            },
+          },
+        ],
+        {
+          total: {
+            label: 'Premium roczny',
+            amount: { currency: 'PLN', value: '0' },
+          },
+        }
+      );
+
+      paymentResponse = await paymentRequest.show();
+      const details = (paymentResponse as unknown as { details?: Record<string, unknown> }).details || {};
+
+      const purchaseToken = String(details.purchaseToken ?? '').trim();
+      if (!purchaseToken) {
+        throw new Error('Brak purchaseToken z Google Play.');
+      }
+
+      const orderIdRaw = String(details.orderId ?? '').trim();
+      const verifyRes = await authFetch('/api/billing/google/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parafiaId: currentParafia.id,
+          productId: GOOGLE_PLAY_PREMIUM_PRODUCT_ID,
+          basePlanId: GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID,
+          purchaseToken,
+          packageName: ANDROID_APP_PACKAGE_ID,
+          purchaseKind: 'subscription',
+          orderId: orderIdRaw || null,
+          acknowledged: typeof details.acknowledged === 'boolean' ? details.acknowledged : null,
+        }),
+      });
+
+      const verifyPayload = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok && verifyRes.status !== 202) {
+        const apiError = typeof verifyPayload?.error === 'string'
+          ? verifyPayload.error
+          : 'Nie udało się zapisać zakupu Google Play.';
+        throw new Error(apiError);
+      }
+
+      await paymentResponse.complete('success');
+      alert('Płatność Google Play została przyjęta. Aktywacja Premium może potrwać chwilę.');
+      await loadSubscription();
+    } catch (err) {
+      if (paymentResponse) {
+        try {
+          await paymentResponse.complete('fail');
+        } catch {
+          // Ignore completion errors after failed purchase flow.
+        }
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      if ((err as { name?: string })?.name === 'AbortError') {
+        alert('Zakup został anulowany.');
+      } else {
+        alert(`Nie udało się uruchomić płatności Google Play. ${message}`);
+      }
+    } finally {
+      setGooglePlayCheckoutLoading(false);
     }
   };
 
@@ -15768,8 +15865,30 @@ export default function MinistranciApp() {
                 </div>
 
                 {!canUseStripeBilling && (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
-                    {PREMIUM_MOBILE_BILLING_INFO}
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                      {PREMIUM_MOBILE_BILLING_INFO}
+                    </div>
+                    <div className="p-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 dark:from-emerald-900/20 dark:via-teal-900/20 dark:to-cyan-900/20">
+                      <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                        <CreditCard className="w-4 h-4" />
+                        Google Play Billing
+                      </p>
+                      <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mt-1">
+                        Cena - 299zł/rok
+                      </p>
+                      <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
+                        Przedpłata roczna (bez auto-odnowienia). Odnowisz ręcznie.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleStartGooglePlayCheckout}
+                      disabled={googlePlayCheckoutLoading}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      <CreditCard className="w-4 h-4 mr-2" />
+                      {googlePlayCheckoutLoading ? 'Otwieranie Google Play...' : 'Kup Premium w Google Play'}
+                    </Button>
                   </div>
                 )}
 

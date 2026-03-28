@@ -5,6 +5,8 @@ export type GooglePurchaseKind = 'subscription' | 'one_time';
 export type GoogleVerifyPayload = {
   parafiaId: string;
   productId: string;
+  basePlanId: string | null;
+  offerId: string | null;
   purchaseToken: string;
   packageName: string;
   purchaseKind: GooglePurchaseKind;
@@ -28,6 +30,8 @@ export const parseGoogleVerifyPayload = (
   const packageName = normalizeText(raw.packageName);
   const purchaseKindRaw = normalizeText(raw.purchaseKind).toLowerCase();
   const orderIdRaw = normalizeText(raw.orderId);
+  const basePlanIdRaw = normalizeText(raw.basePlanId);
+  const offerIdRaw = normalizeText(raw.offerId);
 
   if (!parafiaId) return { ok: false, error: 'Brak parafiaId.' };
   if (!productId) return { ok: false, error: 'Brak productId Google Play.' };
@@ -44,6 +48,8 @@ export const parseGoogleVerifyPayload = (
     data: {
       parafiaId,
       productId,
+      basePlanId: basePlanIdRaw || null,
+      offerId: offerIdRaw || null,
       purchaseToken,
       packageName,
       purchaseKind,

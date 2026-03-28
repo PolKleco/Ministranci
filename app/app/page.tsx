@@ -510,6 +510,16 @@ interface MinusowePunkty {
   data: string;
   powod: string;
   punkty: number;
+  created_at?: string;
+}
+
+interface AutoDyzurMinusIgnored {
+  id: string;
+  parafia_id: string;
+  ministrant_id: string;
+  data: string;
+  created_by?: string | null;
+  created_at?: string;
 }
 
 interface PunktyReczne {
@@ -521,6 +531,26 @@ interface PunktyReczne {
   punkty: number;
   created_at: string;
 }
+
+type SelectedMemberPunktyHistoriaEntry =
+  | {
+    kind: 'obecnosc';
+    id: string;
+    createdAt: string;
+    obec: Obecnosc;
+  }
+  | {
+    kind: 'korekta';
+    id: string;
+    createdAt: string;
+    korekta: PunktyReczne;
+  }
+  | {
+    kind: 'minusowe';
+    id: string;
+    createdAt: string;
+    minusowe: MinusowePunkty;
+  };
 
 interface OdznakaZdobyta {
   id: string;
@@ -1934,6 +1964,7 @@ export default function MinistranciApp() {
   const [showDodajPunktyModal, setShowDodajPunktyModal] = useState(false);
   const [showPunktyHistoriaModal, setShowPunktyHistoriaModal] = useState(false);
   const [selectedPunktyHistoriaMember, setSelectedPunktyHistoriaMember] = useState<Member | null>(null);
+  const [deletingPunktyHistoriaEntryKey, setDeletingPunktyHistoriaEntryKey] = useState<string | null>(null);
   const [dodajPunktyForm, setDodajPunktyForm] = useState({ punkty: '', powod: '' });
   const [showRankingSettings, setShowRankingSettings] = useState(false);
   const [showResetPunktacjaModal, setShowResetPunktacjaModal] = useState(false);
@@ -2136,12 +2167,12 @@ export default function MinistranciApp() {
     alert('Nie masz uprawnień do konfiguracji rankingu.');
     return false;
   };
-  const selectedMemberPunktyHistoria = useMemo(() => {
+  const selectedMemberPunktyHistoria = useMemo<SelectedMemberPunktyHistoriaEntry[]>(() => {
     if (!selectedPunktyHistoriaMember) return [];
     const memberId = selectedPunktyHistoriaMember.profile_id;
     return [
       ...obecnosci
-        .filter((o) => o.ministrant_id === memberId)
+        .filter((o) => o.ministrant_id === memberId && o.status === 'zatwierdzona')
         .map((o) => ({
           kind: 'obecnosc' as const,
           id: o.id,
@@ -2156,8 +2187,16 @@ export default function MinistranciApp() {
           createdAt: p.created_at || `${p.data}T00:00:00`,
           korekta: p,
         })),
+      ...minusowePunkty
+        .filter((m) => m.ministrant_id === memberId)
+        .map((m) => ({
+          kind: 'minusowe' as const,
+          id: m.id,
+          createdAt: m.created_at || `${m.data}T00:00:00`,
+          minusowe: m,
+        })),
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [selectedPunktyHistoriaMember, obecnosci, punktyReczne]);
+  }, [selectedPunktyHistoriaMember, obecnosci, punktyReczne, minusowePunkty]);
 
   const authFetch = useCallback(async (input: string, init: RequestInit = {}) => {
     const getAccessToken = async () => {
@@ -2840,6 +2879,7 @@ export default function MinistranciApp() {
       { data: dyzuryData },
       { data: obecnosciData },
       { data: minusoweData },
+      { data: ignoredAutoMinusData },
       { data: punktyReczneData },
       { data: odznakiZdobyteData },
       { data: rankingRows },
@@ -2850,6 +2890,7 @@ export default function MinistranciApp() {
       supabase.from('dyzury').select('*').eq('parafia_id', pid),
       supabase.from('obecnosci').select('*').eq('parafia_id', pid).order('data', { ascending: false }),
       supabase.from('minusowe_punkty').select('*').eq('parafia_id', pid),
+      supabase.from('auto_dyzur_minus_ignored').select('*').eq('parafia_id', pid),
       supabase.from('punkty_reczne').select('*').eq('parafia_id', pid).order('created_at', { ascending: false }),
       supabase.from('odznaki_zdobyte').select('*'),
       supabase.from('ranking').select('*').eq('parafia_id', pid).order('total_pkt', { ascending: false }),
@@ -2866,6 +2907,8 @@ export default function MinistranciApp() {
       const dyzuryRows = (dyzuryData || []) as Dyzur[];
       const obecnosciRows = (obecnosciData || []) as Obecnosc[];
       const minusoweRows = (minusoweData || []) as MinusowePunkty[];
+      const ignoredAutoRows = (ignoredAutoMinusData || []) as AutoDyzurMinusIgnored[];
+      const ignoredAutoKeySet = new Set(ignoredAutoRows.map((row) => `${row.ministrant_id}:${row.data}`));
 
       const minusDyzurConfig = pConfigRows.find((cfg) => cfg.klucz === 'minus_nieobecnosc_dyzur');
       const penaltyValue = -Math.abs(Math.round(Number(minusDyzurConfig?.wartosc ?? -5)));
@@ -2953,6 +2996,7 @@ export default function MinistranciApp() {
             if (attendanceKeySet.has(`${dyzur.ministrant_id}|${dataISO}`)) continue;
 
             const autoKey = `${dyzur.ministrant_id}:${dataISO}`;
+            if (ignoredAutoKeySet.has(autoKey)) continue;
             const dayName = DNI_TYGODNIA_FULL[dyzur.dzien_tygodnia === 0 ? 6 : dyzur.dzien_tygodnia - 1];
             const powod = `Brak na dyżurze (${dayName}, ${dataISO}) [auto_dyzur:${autoKey}]`;
             expectedAutoPenalties.set(autoKey, {
@@ -3174,6 +3218,135 @@ export default function MinistranciApp() {
   }, [rangiConfig]);
 
   // ==================== AKCJE — RANKING SŁUŻBY ====================
+
+  const applyRankingHistoryDeleteDelta = async (
+    ministrantId: string,
+    parafiaId: string,
+    deltaPoints: number,
+    deltaObecnosci: number = 0
+  ) => {
+    if (!deltaPoints && !deltaObecnosci) return;
+    const { data: existingRanking, error: rankingFetchError } = await supabase
+      .from('ranking')
+      .select('*')
+      .eq('ministrant_id', ministrantId)
+      .eq('parafia_id', parafiaId)
+      .maybeSingle();
+    if (rankingFetchError) throw new Error(rankingFetchError.message);
+
+    if (existingRanking) {
+      const nextTotalPkt = Number(existingRanking.total_pkt || 0) + deltaPoints;
+      const nextTotalObecnosci = Math.max(0, Number(existingRanking.total_obecnosci || 0) + deltaObecnosci);
+      const ranga = getRanga(nextTotalPkt);
+      const { error: rankingUpdateError } = await supabase
+        .from('ranking')
+        .update({
+          total_pkt: nextTotalPkt,
+          total_obecnosci: nextTotalObecnosci,
+          ranga: ranga?.nazwa || existingRanking.ranga || 'Ready',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingRanking.id);
+      if (rankingUpdateError) throw new Error(rankingUpdateError.message);
+      return;
+    }
+
+    if (deltaPoints === 0 && deltaObecnosci <= 0) return;
+
+    const ranga = getRanga(deltaPoints);
+    const { error: rankingInsertError } = await supabase
+      .from('ranking')
+      .insert({
+        ministrant_id: ministrantId,
+        parafia_id: parafiaId,
+        total_pkt: deltaPoints,
+        total_obecnosci: Math.max(0, deltaObecnosci),
+        ranga: ranga?.nazwa || 'Ready',
+      });
+    if (rankingInsertError) throw new Error(rankingInsertError.message);
+  };
+
+  const usunWpisPunktowy = async (entry: SelectedMemberPunktyHistoriaEntry) => {
+    if (!ensureRankingSettingsPermission()) return;
+    if (!selectedPunktyHistoriaMember) return;
+    const isAutoDyzurMinus = entry.kind === 'minusowe' && /\[auto_dyzur:[^\]]+\]/i.test(entry.minusowe.powod || '');
+    const confirmMsg = isAutoDyzurMinus
+      ? 'Usunąć ten wpis? Uwaga: jeśli nadal nie ma zgłoszonej obecności za ten dyżur, system może ponownie dodać minus automatycznie.'
+      : 'Czy na pewno chcesz usunąć ten wpis punktów?';
+    if (!window.confirm(confirmMsg)) return;
+
+    const entryKey = `${entry.kind}:${entry.id}`;
+    setDeletingPunktyHistoriaEntryKey(entryKey);
+    try {
+      let ministrantId = '';
+      let parafiaId = '';
+      let deltaPoints = 0;
+      let deltaObecnosci = 0;
+      let deleteError: { message?: string } | null = null;
+
+      if (entry.kind === 'obecnosc') {
+        const points = Math.round(Number(entry.obec.punkty_finalne || 0));
+        ministrantId = entry.obec.ministrant_id;
+        parafiaId = entry.obec.parafia_id;
+        deltaPoints = -points;
+        deltaObecnosci = -1;
+        await applyRankingHistoryDeleteDelta(ministrantId, parafiaId, deltaPoints, deltaObecnosci);
+        const { error } = await supabase.from('obecnosci').delete().eq('id', entry.obec.id);
+        deleteError = error;
+      } else if (entry.kind === 'korekta') {
+        const points = Math.round(Number(entry.korekta.punkty || 0));
+        ministrantId = entry.korekta.ministrant_id;
+        parafiaId = entry.korekta.parafia_id;
+        deltaPoints = -points;
+        await applyRankingHistoryDeleteDelta(ministrantId, parafiaId, deltaPoints, 0);
+        const { error } = await supabase.from('punkty_reczne').delete().eq('id', entry.korekta.id);
+        deleteError = error;
+      } else {
+        const points = Math.round(Number(entry.minusowe.punkty || 0));
+        ministrantId = entry.minusowe.ministrant_id;
+        parafiaId = entry.minusowe.parafia_id;
+        deltaPoints = -points;
+        const autoMatch = (entry.minusowe.powod || '').match(/\[auto_dyzur:([^\]]+)\]/i);
+        if (autoMatch) {
+          const { error: ignoreInsertError } = await supabase
+            .from('auto_dyzur_minus_ignored')
+            .upsert(
+              {
+                parafia_id: parafiaId,
+                ministrant_id: ministrantId,
+                data: entry.minusowe.data,
+                created_by: currentUser?.id || null,
+              },
+              { onConflict: 'parafia_id,ministrant_id,data' }
+            );
+          if (ignoreInsertError) {
+            throw new Error(`Nie udało się zapisać wyjątku auto-kary: ${ignoreInsertError.message}`);
+          }
+        }
+        await applyRankingHistoryDeleteDelta(ministrantId, parafiaId, deltaPoints, 0);
+        const { error } = await supabase.from('minusowe_punkty').delete().eq('id', entry.minusowe.id);
+        deleteError = error;
+      }
+
+      if (deleteError) {
+        if (ministrantId && parafiaId && (deltaPoints || deltaObecnosci)) {
+          try {
+            await applyRankingHistoryDeleteDelta(ministrantId, parafiaId, -deltaPoints, -deltaObecnosci);
+          } catch (rollbackError) {
+            console.warn('Nie udało się cofnąć zmiany rankingu po błędzie usuwania wpisu punktów:', rollbackError);
+          }
+        }
+        throw new Error(deleteError.message || 'Nieznany błąd usuwania');
+      }
+
+      // Nie blokuj UI na pełnym reloadzie (może być ciężki przez auto-sync dyżurów).
+      void loadRankingData();
+    } catch (error) {
+      alert(`Nie udało się usunąć wpisu punktów: ${error instanceof Error ? error.message : 'Nieznany błąd'}`);
+    } finally {
+      setDeletingPunktyHistoriaEntryKey(null);
+    }
+  };
 
   const zglosObecnosc = async () => {
     if (!currentUser?.parafia_id || !zglosForm.data || zglosSubmitting) return;
@@ -15287,63 +15460,119 @@ export default function MinistranciApp() {
           <div className="max-h-[65vh] overflow-y-auto pr-1 space-y-2">
             {selectedMemberPunktyHistoria.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-6">Brak historii punktów.</p>
-            ) : (
-              selectedMemberPunktyHistoria.map((item) => {
-                if (item.kind === 'obecnosc') {
-                  const o = item.obec;
-                  const d = new Date(`${o.data}T00:00:00`);
-                  const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-                  const statusLabel = o.status === 'zatwierdzona' ? 'Zatwierdzona' : o.status === 'oczekuje' ? 'Oczekuje' : 'Odrzucona';
-                  const statusClass = o.status === 'zatwierdzona'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                    : o.status === 'oczekuje'
-                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
-                  const eventLabel = o.typ === 'msza'
-                    ? 'Msza'
-                    : o.typ === 'nabożeństwo'
-                      ? (o.nazwa_nabożeństwa || 'Nabożeństwo')
-                      : o.typ === 'wydarzenie'
-                        ? `Wydarzenie: ${o.nazwa_nabożeństwa || '—'}`
-                        : `Aktywność: ${o.nazwa_nabożeństwa || '—'}`;
-                  return (
-                    <div key={o.id} className="rounded-xl border border-gray-200 dark:border-gray-700 p-2.5 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold truncate">{dayName} {d.toLocaleDateString('pl-PL')}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{eventLabel}</div>
-                        <div className={`mt-1 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${statusClass}`}>
-                          {statusLabel}
-                        </div>
-                      </div>
-                      <div className={`text-sm font-extrabold tabular-nums shrink-0 ${o.status === 'zatwierdzona' ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
-                        {o.status === 'zatwierdzona' ? `+${o.punkty_finalne}` : o.status === 'oczekuje' ? '...' : '0'}
-                      </div>
-                    </div>
-                  );
-                }
+	            ) : (
+	              selectedMemberPunktyHistoria.map((item) => {
+	                const entryKey = `${item.kind}:${item.id}`;
+	                const isDeleting = deletingPunktyHistoriaEntryKey === entryKey;
+	                if (item.kind === 'obecnosc') {
+	                  const o = item.obec;
+	                  const d = new Date(`${o.data}T00:00:00`);
+	                  const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+	                  const eventLabel = o.typ === 'msza'
+	                    ? 'Msza'
+	                    : o.typ === 'nabożeństwo'
+	                      ? (o.nazwa_nabożeństwa || 'Nabożeństwo')
+	                      : o.typ === 'wydarzenie'
+	                        ? `Wydarzenie: ${o.nazwa_nabożeństwa || '—'}`
+	                        : `Aktywność: ${o.nazwa_nabożeństwa || '—'}`;
+	                  return (
+	                    <div key={o.id} className="rounded-xl border border-gray-200 dark:border-gray-700 p-2.5 flex items-center justify-between gap-3">
+	                      <div className="min-w-0">
+	                        <div className="text-sm font-semibold truncate">{dayName} {d.toLocaleDateString('pl-PL')}</div>
+	                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{eventLabel}</div>
+	                        <div className="mt-1 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+	                          Zatwierdzona
+	                        </div>
+	                      </div>
+	                      <div className="flex items-center gap-2 shrink-0">
+	                        <div className="text-sm font-extrabold tabular-nums text-emerald-600 dark:text-emerald-400">
+	                          +{o.punkty_finalne}
+	                        </div>
+	                        {canManageRankingSettings && (
+	                          <button
+	                            type="button"
+	                            disabled={isDeleting}
+	                            onClick={() => void usunWpisPunktowy(item)}
+	                            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed dark:border-red-800 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/35"
+	                            title="Usuń wpis"
+	                          >
+	                            {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+	                          </button>
+	                        )}
+	                      </div>
+	                    </div>
+	                  );
+	                }
 
-                const p = item.korekta;
-                const d = new Date(`${p.data}T00:00:00`);
-                const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-                const isPlus = Number(p.punkty) > 0;
-                const powodLabel = p.powod?.trim() && p.powod.trim() !== 'Ręczna korekta punktów'
+	                if (item.kind === 'minusowe') {
+	                  const m = item.minusowe;
+	                  const d = new Date(`${m.data}T00:00:00`);
+	                  const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+	                  const cleanedPowod = (m.powod || '').replace(/\s*\[auto_dyzur:[^\]]+\]\s*/gi, '').trim();
+	                  const powodLabel = cleanedPowod || 'Minusowe punkty';
+	                  return (
+	                    <div key={m.id} className="rounded-xl border p-2.5 flex items-center justify-between gap-3 border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10">
+	                      <div className="min-w-0">
+	                        <div className="text-sm font-semibold truncate">{dayName} {d.toLocaleDateString('pl-PL')}</div>
+	                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+	                          {powodLabel}
+	                        </div>
+	                      </div>
+	                      <div className="flex items-center gap-2 shrink-0">
+	                        <div className="text-sm font-extrabold tabular-nums text-red-600 dark:text-red-400">
+	                          {m.punkty}
+	                        </div>
+	                        {canManageRankingSettings && (
+	                          <button
+	                            type="button"
+	                            disabled={isDeleting}
+	                            onClick={() => void usunWpisPunktowy(item)}
+	                            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed dark:border-red-800 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/35"
+	                            title="Usuń wpis"
+	                          >
+	                            {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+	                          </button>
+	                        )}
+	                      </div>
+	                    </div>
+	                  );
+	                }
+
+	                const p = item.korekta;
+	                const d = new Date(`${p.data}T00:00:00`);
+	                const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
+	                const isPlus = Number(p.punkty) > 0;
+	                const powodLabel = p.powod?.trim() && p.powod.trim() !== 'Ręczna korekta punktów'
                   ? p.powod.trim()
                   : '';
-                return (
-                  <div key={p.id} className={`rounded-xl border p-2.5 flex items-center justify-between gap-3 ${isPlus ? 'border-teal-200 dark:border-teal-800 bg-teal-50/40 dark:bg-teal-900/10' : 'border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10'}`}>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">{dayName} {d.toLocaleDateString('pl-PL')}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        Ksiądz{powodLabel ? ` • ${powodLabel}` : ''}
-                      </div>
-                    </div>
-                    <div className={`text-sm font-extrabold tabular-nums shrink-0 ${isPlus ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {isPlus ? `+${p.punkty}` : p.punkty}
-                    </div>
-                  </div>
-                );
-              })
-            )}
+	                return (
+	                  <div key={p.id} className={`rounded-xl border p-2.5 flex items-center justify-between gap-3 ${isPlus ? 'border-teal-200 dark:border-teal-800 bg-teal-50/40 dark:bg-teal-900/10' : 'border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10'}`}>
+	                    <div className="min-w-0">
+	                      <div className="text-sm font-semibold truncate">{dayName} {d.toLocaleDateString('pl-PL')}</div>
+	                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
+	                        Ksiądz{powodLabel ? ` • ${powodLabel}` : ''}
+	                      </div>
+	                    </div>
+	                    <div className="flex items-center gap-2 shrink-0">
+	                      <div className={`text-sm font-extrabold tabular-nums ${isPlus ? 'text-teal-600 dark:text-teal-400' : 'text-red-600 dark:text-red-400'}`}>
+	                        {isPlus ? `+${p.punkty}` : p.punkty}
+	                      </div>
+	                      {canManageRankingSettings && (
+	                        <button
+	                          type="button"
+	                          disabled={isDeleting}
+	                          onClick={() => void usunWpisPunktowy(item)}
+	                          className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed dark:border-red-800 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/35"
+	                          title="Usuń wpis"
+	                        >
+	                          {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+	                        </button>
+	                      )}
+	                    </div>
+	                  </div>
+	                );
+	              })
+	            )}
           </div>
         </DialogContent>
       </Dialog>

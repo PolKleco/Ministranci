@@ -4602,7 +4602,23 @@ export default function MinistranciApp() {
     let paymentResponse: PaymentResponse | null = null;
 
     try {
-      await browserWindow.getDigitalGoodsService(GOOGLE_PLAY_BILLING_METHOD_ID);
+      const digitalGoodsService = await browserWindow.getDigitalGoodsService(
+        GOOGLE_PLAY_BILLING_METHOD_ID
+      ) as {
+        getDetails?: (itemIds: string[]) => Promise<Array<{ itemId?: string }>>;
+      };
+
+      // Early, user-friendly diagnostic: if SKU is not available, PaymentRequest may bounce to Play listing.
+      if (typeof digitalGoodsService?.getDetails === 'function') {
+        const skuDetails = await digitalGoodsService.getDetails([GOOGLE_PLAY_PREMIUM_PRODUCT_ID]);
+        if (!Array.isArray(skuDetails) || skuDetails.length === 0) {
+          throw new Error(
+            `Produkt ${GOOGLE_PLAY_PREMIUM_PRODUCT_ID} nie jest dostępny dla tego konta/testu. ` +
+            'Najczęściej przyczyna: plan prepaid (przedpłata) nie jest kompatybilny z tym flow TWA. ' +
+            'Ustaw plan auto-odnawialny (backward-compatible) i aktywuj go.'
+          );
+        }
+      }
 
       const paymentRequest = new PaymentRequest(
         [
@@ -4620,6 +4636,15 @@ export default function MinistranciApp() {
           },
         }
       );
+
+      if (typeof paymentRequest.canMakePayment === 'function') {
+        const canMakePayment = await paymentRequest.canMakePayment().catch(() => false);
+        if (!canMakePayment) {
+          throw new Error(
+            'Google Play Billing nie jest dostępny dla bieżącego konta/aplikacji testowej.'
+          );
+        }
+      }
 
       paymentResponse = await paymentRequest.show();
       const details = (paymentResponse as unknown as { details?: Record<string, unknown> }).details || {};

@@ -3077,6 +3077,118 @@ export default function MinistranciApp() {
           return;
         }
       }
+
+      const rankingRowsData = (rankingRows || []) as RankingEntry[];
+      const reczneRows = (punktyReczneData || []) as PunktyReczne[];
+      const odznakiRows = (odznakiZdobyteData || []) as OdznakaZdobyta[];
+      const rangiRows = (rConfig || []) as RangaConfig[];
+      const getRangaNameForTotal = (totalPkt: number) => {
+        if (!rangiRows.length) return 'Ready';
+        const sorted = [...rangiRows].sort((a, b) => a.min_pkt - b.min_pkt);
+        let current = sorted[0];
+        for (const row of sorted) {
+          if (Number(row.min_pkt || 0) <= totalPkt) current = row;
+        }
+        return current?.nazwa || 'Ready';
+      };
+
+      const expectedTotalByMinistrant = new Map<string, number>();
+      const expectedObecnosciByMinistrant = new Map<string, number>();
+      for (const row of obecnosciRows) {
+        if (row.status !== 'zatwierdzona') continue;
+        expectedTotalByMinistrant.set(
+          row.ministrant_id,
+          Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.punkty_finalne || 0)
+        );
+        expectedObecnosciByMinistrant.set(
+          row.ministrant_id,
+          Number(expectedObecnosciByMinistrant.get(row.ministrant_id) || 0) + 1
+        );
+      }
+      for (const row of reczneRows) {
+        expectedTotalByMinistrant.set(
+          row.ministrant_id,
+          Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.punkty || 0)
+        );
+      }
+      for (const row of minusoweRows) {
+        expectedTotalByMinistrant.set(
+          row.ministrant_id,
+          Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.punkty || 0)
+        );
+      }
+      for (const row of odznakiRows) {
+        expectedTotalByMinistrant.set(
+          row.ministrant_id,
+          Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.bonus_pkt || 0)
+        );
+      }
+
+      const rankingByMinistrant = new Map(rankingRowsData.map((row) => [row.ministrant_id, row]));
+      const allMinistrantIds = new Set<string>([
+        ...rankingByMinistrant.keys(),
+        ...expectedTotalByMinistrant.keys(),
+        ...expectedObecnosciByMinistrant.keys(),
+      ]);
+
+      let rankingConsistencyChanged = false;
+      for (const ministrantId of allMinistrantIds) {
+        const expectedTotal = Number(expectedTotalByMinistrant.get(ministrantId) || 0);
+        const expectedObecnosci = Number(expectedObecnosciByMinistrant.get(ministrantId) || 0);
+        const expectedRanga = getRangaNameForTotal(expectedTotal);
+        const existingRanking = rankingByMinistrant.get(ministrantId);
+
+        if (existingRanking) {
+          const currentTotal = Number(existingRanking.total_pkt || 0);
+          const currentObecnosci = Number(existingRanking.total_obecnosci || 0);
+          const currentRanga = existingRanking.ranga || 'Ready';
+          if (
+            currentTotal === expectedTotal
+            && currentObecnosci === expectedObecnosci
+            && currentRanga === expectedRanga
+          ) {
+            continue;
+          }
+
+          const { error: rankingFixError } = await supabase
+            .from('ranking')
+            .update({
+              total_pkt: expectedTotal,
+              total_obecnosci: expectedObecnosci,
+              ranga: expectedRanga,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingRanking.id);
+          if (rankingFixError) {
+            console.warn('Nie udało się skorygować niespójnego rankingu:', rankingFixError.message);
+            continue;
+          }
+          rankingConsistencyChanged = true;
+          continue;
+        }
+
+        if (expectedTotal === 0 && expectedObecnosci === 0) continue;
+
+        const { error: rankingInsertError } = await supabase
+          .from('ranking')
+          .insert({
+            ministrant_id: ministrantId,
+            parafia_id: pid,
+            total_pkt: expectedTotal,
+            total_obecnosci: expectedObecnosci,
+            ranga: expectedRanga,
+          });
+        if (rankingInsertError) {
+          console.warn('Nie udało się utworzyć brakującego wpisu rankingu:', rankingInsertError.message);
+          continue;
+        }
+        rankingConsistencyChanged = true;
+      }
+
+      if (rankingConsistencyChanged) {
+        await loadRankingData();
+        return;
+      }
     }
 
     if (pConfig) setPunktacjaConfig(pConfig as PunktacjaConfig[]);
@@ -3745,13 +3857,20 @@ export default function MinistranciApp() {
     const powod = dodajPunktyForm.powod.trim();
     const today = getLocalISODate();
 
-    const { data: existing } = await supabase.from('ranking')
+    const { data: existing, error: existingRankingError } = await supabase.from('ranking')
       .select('*')
       .eq('ministrant_id', selectedMember.profile_id)
       .eq('parafia_id', currentUser.parafia_id)
-      .single();
+      .maybeSingle();
+    if (existingRankingError) {
+      alert('Nie udało się pobrać rankingu: ' + existingRankingError.message);
+      return;
+    }
 
+    let rollbackRankingUpdate: (() => Promise<void>) | null = null;
     if (existing) {
+      const prevTotal = Number(existing.total_pkt || 0);
+      const prevRanga = existing.ranga || 'Ready';
       const newTotal = Number(existing.total_pkt) + pkt;
       const ranga = getRanga(newTotal);
       const { error: rankingUpdateError } = await supabase.from('ranking').update({
@@ -3763,19 +3882,37 @@ export default function MinistranciApp() {
         alert('Nie udało się zapisać punktów: ' + rankingUpdateError.message);
         return;
       }
+      rollbackRankingUpdate = async () => {
+        const { error: rollbackError } = await supabase
+          .from('ranking')
+          .update({
+            total_pkt: prevTotal,
+            ranga: prevRanga,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+        if (rollbackError) throw rollbackError;
+      };
     } else {
       const ranga = getRanga(pkt);
-      const { error: rankingInsertError } = await supabase.from('ranking').insert({
+      const { data: insertedRankingRow, error: rankingInsertError } = await supabase.from('ranking').insert({
         ministrant_id: selectedMember.profile_id,
         parafia_id: currentUser.parafia_id,
         total_pkt: pkt,
         total_obecnosci: 0,
         ranga: ranga?.nazwa || 'Ready',
-      });
+      }).select('id').single();
       if (rankingInsertError) {
         alert('Nie udało się zapisać punktów: ' + rankingInsertError.message);
         return;
       }
+      rollbackRankingUpdate = async () => {
+        const { error: rollbackError } = await supabase
+          .from('ranking')
+          .delete()
+          .eq('id', insertedRankingRow.id);
+        if (rollbackError) throw rollbackError;
+      };
     }
 
     const { error: punktyReczneError } = await supabase.from('punkty_reczne').insert({
@@ -3786,7 +3923,15 @@ export default function MinistranciApp() {
       punkty: pkt,
     });
     if (punktyReczneError) {
-      alert('Punkty dodano, ale nie udało się zapisać wpisu do historii misji: ' + punktyReczneError.message);
+      if (rollbackRankingUpdate) {
+        try {
+          await rollbackRankingUpdate();
+        } catch (rollbackError) {
+          console.warn('Nie udało się cofnąć zmiany rankingu po błędzie zapisu ręcznych punktów:', rollbackError);
+        }
+      }
+      alert('Nie udało się zapisać wpisu do historii misji, więc zmiana punktów została cofnięta: ' + punktyReczneError.message);
+      return;
     }
 
     setShowDodajPunktyModal(false);
@@ -6332,7 +6477,10 @@ export default function MinistranciApp() {
       .maybeSingle();
     if (rankingFetchError) throw rankingFetchError;
 
+    let rollbackRankingUpdate: (() => Promise<void>) | null = null;
     if (existingRanking) {
+      const prevTotal = Number(existingRanking.total_pkt || 0);
+      const prevRanga = existingRanking.ranga || 'Ready';
       const newTotal = Number(existingRanking.total_pkt || 0) + delta;
       const ranga = getRanga(newTotal);
       const { error: rankingUpdateError } = await supabase
@@ -6344,9 +6492,20 @@ export default function MinistranciApp() {
         })
         .eq('id', existingRanking.id);
       if (rankingUpdateError) throw rankingUpdateError;
+      rollbackRankingUpdate = async () => {
+        const { error: rollbackError } = await supabase
+          .from('ranking')
+          .update({
+            total_pkt: prevTotal,
+            ranga: prevRanga,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingRanking.id);
+        if (rollbackError) throw rollbackError;
+      };
     } else {
       const ranga = getRanga(delta);
-      const { error: rankingInsertError } = await supabase
+      const { data: insertedRankingRow, error: rankingInsertError } = await supabase
         .from('ranking')
         .insert({
           ministrant_id: ministrantId,
@@ -6354,8 +6513,17 @@ export default function MinistranciApp() {
           total_pkt: delta,
           total_obecnosci: 0,
           ranga: ranga?.nazwa || 'Ready',
-        });
+        })
+        .select('id')
+        .single();
       if (rankingInsertError) throw rankingInsertError;
+      rollbackRankingUpdate = async () => {
+        const { error: rollbackError } = await supabase
+          .from('ranking')
+          .delete()
+          .eq('id', insertedRankingRow.id);
+        if (rollbackError) throw rollbackError;
+      };
     }
 
     const { error: historiaError } = await supabase.from('punkty_reczne').insert({
@@ -6365,7 +6533,16 @@ export default function MinistranciApp() {
       powod,
       punkty: delta,
     });
-    if (historiaError) throw historiaError;
+    if (historiaError) {
+      if (rollbackRankingUpdate) {
+        try {
+          await rollbackRankingUpdate();
+        } catch (rollbackError) {
+          console.warn('Nie udało się cofnąć zmiany rankingu po błędzie zapisu historii zbiórki:', rollbackError);
+        }
+      }
+      throw historiaError;
+    }
   };
 
   const openCreateZbiorkaModal = () => {

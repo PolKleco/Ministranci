@@ -41,6 +41,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const expectedProductId = process.env.GOOGLE_PLAY_PREMIUM_PRODUCT_ID?.trim() || 'premium_yearly';
+    if (payload.productId !== expectedProductId) {
+      return NextResponse.json(
+        { error: `Nieprawidłowy productId. Oczekiwano: ${expectedProductId}.` },
+        { status: 400 }
+      );
+    }
+
+    const expectedPrepaidBasePlanId = process.env.GOOGLE_PLAY_PREPAID_BASE_PLAN_ID?.trim() || 'yearly-prepaid';
+    if (payload.basePlanId !== expectedPrepaidBasePlanId) {
+      return NextResponse.json(
+        { error: `Dozwolona jest tylko przedpłata (basePlanId: ${expectedPrepaidBasePlanId}).` },
+        { status: 400 }
+      );
+    }
+
     const parafia = await findParafiaForAdmin(payload.parafiaId, authUser.id);
     if (!parafia) {
       return NextResponse.json({ error: 'Parafia nie znaleziona lub brak dostępu.' }, { status: 403 });

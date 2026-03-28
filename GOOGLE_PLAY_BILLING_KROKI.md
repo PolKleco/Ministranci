@@ -24,12 +24,18 @@
 6. Utwórz konto service account w Google Cloud i nadaj mu dostęp do Play Developer API.
 7. W backendzie ustaw zmienne środowiskowe:
    - `GOOGLE_PLAY_PACKAGE_NAME=net.ministranci.twa`
+   - `GOOGLE_PLAY_PREMIUM_PRODUCT_ID=premium_yearly` (opcjonalnie, domyślnie to samo)
+   - `GOOGLE_PLAY_PREPAID_BASE_PLAN_ID=yearly-prepaid` (opcjonalnie, domyślnie to samo)
 
-## Co będzie dalej
+## Co już działa dla Android
 
-- Następny krok to podpięcie natywnego flow zakupu w Android app
-  i wywołanie `POST /api/billing/google/verify` po udanym zakupie.
-- Na końcu podpinamy automatyczne odnawianie/anulowanie przez RTDN.
+- Przycisk "Kup Premium w Google Play" otwiera natywny checkout Android.
+- Checkout wymusza base plan `yearly-prepaid` (przedpłata).
+- Po powrocie do aplikacji zakup jest wysyłany do `POST /api/billing/google/verify`.
+
+## Co jeszcze warto dopiąć
+
+- Przetwarzanie RTDN (`/api/billing/google/rtdn`) tak, by finalnie aktywować/odnawiać/kończyć Premium automatycznie.
 
 ## Ustalona mapa identyfikatorów (nie zmieniać)
 

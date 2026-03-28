@@ -84,8 +84,10 @@ const ANDROID_APP_CONTEXT_SESSION_KEY = 'ministranci_android_app_context';
 const ANDROID_APP_VERSION_SESSION_KEY = 'ministranci_android_app_vc';
 const ANDROID_APP_PLATFORM_QUERY_PARAM = 'app_platform';
 const ANDROID_APP_PLATFORM_QUERY_VALUE = 'android-app';
-const GOOGLE_PLAY_BILLING_METHOD_ID = 'https://play.google.com/billing';
 const GOOGLE_PLAY_PREMIUM_PRODUCT_ID = 'premium_yearly';
+const GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID = 'yearly-prepaid';
+const GOOGLE_PLAY_NATIVE_CHECKOUT_URL = 'ministranci-billing://checkout';
+const GOOGLE_PLAY_PROCESSED_TOKEN_SESSION_PREFIX = 'ministranci_google_play_processed_';
 // Podnoś ten numer tylko wtedy, gdy chcesz WYMUSIĆ aktualizację starszych wersji mobilnych.
 const MIN_REQUIRED_ANDROID_APP_VERSION_CODE = 4;
 const PREMIUM_MOBILE_BILLING_INFO = 'W aplikacji Android płatności Premium są obsługiwane przez Google Play Billing.';
@@ -149,6 +151,33 @@ const parsePositiveInt = (value: string | null): number | null => {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return parsed;
+};
+
+const getGooglePlayNativeErrorMessage = (errorCode: string) => {
+  if (!errorCode) return 'Nie udało się uruchomić płatności Google Play.';
+  if (errorCode === 'missing_parafia_id') return 'Brak identyfikatora parafii do zakupu.';
+  if (errorCode === 'prepaid_offer_not_found') {
+    return 'W Google Play nie znaleziono aktywnej przedpłaty (base plan: yearly-prepaid).';
+  }
+  if (errorCode === 'product_not_found') {
+    return 'Produkt premium_yearly nie jest aktywny dla tego testu w Google Play.';
+  }
+  if (errorCode === 'already_owned') {
+    return 'To konto ma już aktywny zakup tego produktu.';
+  }
+  if (errorCode.startsWith('purchase_failed_')) {
+    return `Google Play zwrócił błąd zakupu (${errorCode.replace('purchase_failed_', '')}).`;
+  }
+  if (errorCode.startsWith('billing_setup_')) {
+    return `Nie udało się połączyć z Google Play Billing (${errorCode.replace('billing_setup_', '')}).`;
+  }
+  if (errorCode.startsWith('query_products_')) {
+    return `Nie udało się pobrać produktu z Google Play (${errorCode.replace('query_products_', '')}).`;
+  }
+  if (errorCode.startsWith('launch_failed_')) {
+    return `Nie udało się otworzyć okna płatności Google Play (${errorCode.replace('launch_failed_', '')}).`;
+  }
+  return `Błąd Google Play: ${errorCode}`;
 };
 
 const buildInitialAktywnoscForm = () => ({
@@ -4658,6 +4687,108 @@ export default function MinistranciApp() {
   }, [currentParafia, loadSubscription]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !currentParafia?.id || !isAndroidAppContext) return;
+
+    const url = new URL(window.location.href);
+    const rawHash = url.hash.startsWith('#') ? url.hash.slice(1) : '';
+    if (!rawHash) return;
+
+    const params = new URLSearchParams(rawHash);
+    const status = (params.get('gp_purchase_status') || '').trim().toLowerCase();
+    if (!status) return;
+
+    const parafiaIdFromHash = (params.get('gp_parafia_id') || '').trim();
+    const purchaseToken = (params.get('gp_purchase_token') || '').trim();
+    const orderId = (params.get('gp_order_id') || '').trim() || null;
+    const productId = (params.get('gp_product_id') || GOOGLE_PLAY_PREMIUM_PRODUCT_ID).trim();
+    const basePlanId = (params.get('gp_base_plan_id') || GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID).trim() || null;
+    const offerId = (params.get('gp_offer_id') || '').trim() || null;
+    const acknowledgedRaw = (params.get('gp_ack') || '').trim();
+    const acknowledged = acknowledgedRaw === '1' ? true : acknowledgedRaw === '0' ? false : null;
+    const errorCode = (params.get('gp_error') || '').trim();
+
+    // Czyścimy hash od razu, żeby token nie zostawał w URL.
+    url.hash = '';
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+
+    if (parafiaIdFromHash && parafiaIdFromHash !== currentParafia.id) {
+      alert('Zakup został zwrócony dla innej parafii. Otwórz właściwą parafię i spróbuj ponownie.');
+      return;
+    }
+
+    if (status === 'canceled') {
+      alert('Zakup został anulowany.');
+      return;
+    }
+
+    if (status === 'error') {
+      alert(getGooglePlayNativeErrorMessage(errorCode));
+      return;
+    }
+
+    if (status !== 'success' && status !== 'pending') return;
+
+    if (!purchaseToken) {
+      alert('Google Play nie zwrócił purchaseToken. Spróbuj ponownie.');
+      return;
+    }
+
+    const processedTokenKey = `${GOOGLE_PLAY_PROCESSED_TOKEN_SESSION_PREFIX}${purchaseToken}`;
+    if (readSessionStorage(processedTokenKey) === '1') return;
+
+    let cancelled = false;
+    const finalizePurchase = async () => {
+      setGooglePlayCheckoutLoading(true);
+      try {
+        const verifyRes = await authFetch('/api/billing/google/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parafiaId: currentParafia.id,
+            productId,
+            basePlanId,
+            offerId,
+            purchaseToken,
+            packageName: ANDROID_APP_PACKAGE_ID,
+            purchaseKind: 'subscription',
+            orderId,
+            acknowledged,
+          }),
+        });
+
+        const verifyPayload = await verifyRes.json().catch(() => ({}));
+        if (!verifyRes.ok && verifyRes.status !== 202) {
+          const apiError = typeof verifyPayload?.error === 'string'
+            ? verifyPayload.error
+            : 'Nie udało się zapisać zakupu Google Play.';
+          alert(apiError);
+          return;
+        }
+
+        writeSessionStorage(processedTokenKey, '1');
+        if (status === 'pending') {
+          alert('Zakup Google Play jest oczekujący. Aktywacja Premium nastąpi po potwierdzeniu płatności.');
+        } else {
+          alert('Płatność Google Play została przyjęta. Aktywacja Premium może potrwać chwilę.');
+        }
+        await loadSubscription();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        alert(`Nie udało się zapisać zakupu Google Play. ${message}`);
+      } finally {
+        if (!cancelled) {
+          setGooglePlayCheckoutLoading(false);
+        }
+      }
+    };
+
+    void finalizePurchase();
+    return () => {
+      cancelled = true;
+    };
+  }, [authFetch, currentParafia?.id, isAndroidAppContext, loadSubscription]);
+
+  useEffect(() => {
     if (!currentUser) return;
     setPremiumInvoiceForm((prev) => {
       const next = { ...prev };
@@ -4905,115 +5036,22 @@ export default function MinistranciApp() {
       alert('Zakup Google Play jest dostępny tylko w aplikacji Android.');
       return;
     }
-
-    const browserWindow = window as Window & {
-      getDigitalGoodsService?: (serviceProvider: string) => Promise<unknown>;
-    };
-
-    if (typeof browserWindow.getDigitalGoodsService !== 'function' || typeof PaymentRequest === 'undefined') {
-      alert('Ta wersja aplikacji nie obsługuje jeszcze płatności Google Play. Zaktualizuj aplikację z Google Play.');
-      return;
-    }
-
     setGooglePlayCheckoutLoading(true);
-    let paymentResponse: PaymentResponse | null = null;
-
     try {
-      const digitalGoodsService = await browserWindow.getDigitalGoodsService(
-        GOOGLE_PLAY_BILLING_METHOD_ID
-      ) as {
-        getDetails?: (itemIds: string[]) => Promise<Array<{ itemId?: string }>>;
-      };
+      const checkoutUrl = new URL(GOOGLE_PLAY_NATIVE_CHECKOUT_URL);
+      checkoutUrl.searchParams.set('parafiaId', currentParafia.id);
+      checkoutUrl.searchParams.set('productId', GOOGLE_PLAY_PREMIUM_PRODUCT_ID);
+      checkoutUrl.searchParams.set('basePlanId', GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID);
+      window.location.assign(checkoutUrl.toString());
 
-      // Early, user-friendly diagnostic: if SKU is not available, PaymentRequest may bounce to Play listing.
-      if (typeof digitalGoodsService?.getDetails === 'function') {
-        const skuDetails = await digitalGoodsService.getDetails([GOOGLE_PLAY_PREMIUM_PRODUCT_ID]);
-        if (!Array.isArray(skuDetails) || skuDetails.length === 0) {
-          throw new Error(
-            `Produkt ${GOOGLE_PLAY_PREMIUM_PRODUCT_ID} nie jest dostępny dla tego konta/testu. ` +
-            'Najczęściej przyczyna: plan prepaid (przedpłata) nie jest kompatybilny z tym flow TWA. ' +
-            'Ustaw plan auto-odnawialny (backward-compatible) i aktywuj go.'
-          );
-        }
-      }
-
-      const paymentRequest = new PaymentRequest(
-        [
-          {
-            supportedMethods: GOOGLE_PLAY_BILLING_METHOD_ID,
-            data: {
-              sku: GOOGLE_PLAY_PREMIUM_PRODUCT_ID,
-            },
-          },
-        ],
-        {
-          total: {
-            label: 'Premium roczny',
-            amount: { currency: 'PLN', value: '0' },
-          },
-        }
-      );
-
-      if (typeof paymentRequest.canMakePayment === 'function') {
-        const canMakePayment = await paymentRequest.canMakePayment().catch(() => false);
-        if (!canMakePayment) {
-          throw new Error(
-            'Google Play Billing nie jest dostępny dla bieżącego konta/aplikacji testowej.'
-          );
-        }
-      }
-
-      paymentResponse = await paymentRequest.show();
-      const details = (paymentResponse as unknown as { details?: Record<string, unknown> }).details || {};
-
-      const purchaseToken = String(details.purchaseToken ?? '').trim();
-      if (!purchaseToken) {
-        throw new Error('Brak purchaseToken z Google Play.');
-      }
-
-      const orderIdRaw = String(details.orderId ?? '').trim();
-      const verifyRes = await authFetch('/api/billing/google/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parafiaId: currentParafia.id,
-          productId: GOOGLE_PLAY_PREMIUM_PRODUCT_ID,
-          basePlanId: null,
-          purchaseToken,
-          packageName: ANDROID_APP_PACKAGE_ID,
-          purchaseKind: 'subscription',
-          orderId: orderIdRaw || null,
-          acknowledged: typeof details.acknowledged === 'boolean' ? details.acknowledged : null,
-        }),
-      });
-
-      const verifyPayload = await verifyRes.json().catch(() => ({}));
-      if (!verifyRes.ok && verifyRes.status !== 202) {
-        const apiError = typeof verifyPayload?.error === 'string'
-          ? verifyPayload.error
-          : 'Nie udało się zapisać zakupu Google Play.';
-        throw new Error(apiError);
-      }
-
-      await paymentResponse.complete('success');
-      alert('Płatność Google Play została przyjęta. Aktywacja Premium może potrwać chwilę.');
-      await loadSubscription();
+      // Jeśli urządzenie nie obsłuży deeplinku, nie blokuj przycisku na stałe.
+      window.setTimeout(() => {
+        setGooglePlayCheckoutLoading(false);
+      }, 3000);
     } catch (err) {
-      if (paymentResponse) {
-        try {
-          await paymentResponse.complete('fail');
-        } catch {
-          // Ignore completion errors after failed purchase flow.
-        }
-      }
       const message = err instanceof Error ? err.message : String(err);
-      if ((err as { name?: string })?.name === 'AbortError') {
-        alert('Zakup został anulowany.');
-      } else {
-        alert(`Nie udało się uruchomić płatności Google Play. ${message}`);
-      }
-    } finally {
       setGooglePlayCheckoutLoading(false);
+      alert(`Nie udało się uruchomić płatności Google Play. ${message}`);
     }
   };
 

@@ -152,6 +152,10 @@
                     android:host="@string/hostName"
                 
                 />
+                <data android:scheme="https"
+                    android:host="ministranci.net"
+                
+                />
             </intent-filter>
 
             

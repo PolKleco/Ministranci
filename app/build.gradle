@@ -24,7 +24,7 @@ plugins {
 
 def twaManifest = [
     applicationId: 'net.ministranci.twa',
-    hostName: 'ministranci.net', // The domain being opened in the TWA.
+    hostName: 'www.ministranci.net', // The canonical domain opened in the TWA.
     launchUrl: '/app', // The start path for the TWA. Must be relative to the domain.
     name: 'Ministranci', // The application name.
     launcherName: 'Ministranci', // The name shown on the Android Launcher.
@@ -65,8 +65,8 @@ android {
         applicationId "net.ministranci.twa"
         minSdkVersion 21
         targetSdkVersion 35
-versionCode 12
-versionName "1.0.11"
+versionCode 13
+versionName "1.0.12"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name
@@ -84,12 +84,12 @@ versionName "1.0.11"
             // The URL the Web Manifest for the Progressive Web App that the TWA points to. This
             // is used by Chrome OS and Meta Quest to open the Web version of the PWA instead of
             // the TWA, as it will probably give a better user experience for non-mobile devices.
-            resValue "string", "webManifestUrl", 'https://ministranci.net/manifest.json'
+            resValue "string", "webManifestUrl", 'https://www.ministranci.net/manifest.json'
         
 
         
             // This is used by Meta Quest.
-            resValue "string", "fullScopeUrl", 'https://ministranci.net/'
+            resValue "string", "fullScopeUrl", 'https://www.ministranci.net/'
         
 
         

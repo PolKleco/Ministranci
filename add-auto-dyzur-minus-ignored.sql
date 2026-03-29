@@ -30,18 +30,10 @@ create policy "Auto dyzur ignored viewable by parish members" on public.auto_dyz
 drop policy if exists "Admin can manage auto dyzur ignored" on public.auto_dyzur_minus_ignored;
 create policy "Admin can manage auto dyzur ignored" on public.auto_dyzur_minus_ignored
   for all using (
-    exists (
-      select 1
-      from public.parafie p
-      where p.id = auto_dyzur_minus_ignored.parafia_id
-        and p.admin_id = auth.uid()
-    )
+    public.has_parafia_permission(auto_dyzur_minus_ignored.parafia_id, 'manage_ranking_settings')
+    or public.has_parafia_permission(auto_dyzur_minus_ignored.parafia_id, 'manage_ranking')
   )
   with check (
-    exists (
-      select 1
-      from public.parafie p
-      where p.id = auto_dyzur_minus_ignored.parafia_id
-        and p.admin_id = auth.uid()
-    )
+    public.has_parafia_permission(auto_dyzur_minus_ignored.parafia_id, 'manage_ranking_settings')
+    or public.has_parafia_permission(auto_dyzur_minus_ignored.parafia_id, 'manage_ranking')
   );

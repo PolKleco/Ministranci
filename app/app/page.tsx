@@ -1975,7 +1975,13 @@ export default function MinistranciApp() {
   const [customPointsValue, setCustomPointsValue] = useState('');
   const [customPointsSaving, setCustomPointsSaving] = useState(false);
   const [showDyzuryModal, setShowDyzuryModal] = useState(false);
-  const [dyzurConfirm, setDyzurConfirm] = useState<{ dzien: number; type: 'first' | 'change'; godzina: string; replaceFromDzien: number | null } | null>(null);
+  const [dyzurConfirm, setDyzurConfirm] = useState<{
+    dzien: number;
+    type: 'first' | 'add' | 'change';
+    godzina: string;
+    replaceFromDzien: number | null;
+    allowModeChoice: boolean;
+  } | null>(null);
   const [showEditProfilModal, setShowEditProfilModal] = useState(false);
   const [editProfilForm, setEditProfilForm] = useState({ imie: '', nazwisko: '', email: '' });
   const [editDyzury, setEditDyzury] = useState(false);
@@ -2166,7 +2172,7 @@ export default function MinistranciApp() {
   }, [subscription?.premium_expires_at]);
   const isRegularMinistrant = currentUser?.typ === 'ministrant';
   const canUseMinistrantTablica = currentUser?.typ === 'ministrant' && !canManageNews;
-  const canUseMinistrantRanking = currentUser?.typ === 'ministrant' && !canManageRanking;
+  const canUseMinistrantRanking = currentUser?.typ === 'ministrant';
   const canUseMinistrantEvents = currentUser?.typ === 'ministrant' && !canManageEvents && !canManageFunctionTemplates;
   const canUseMinistrantPoslugi = currentUser?.typ === 'ministrant' && !canManagePoslugiCatalog;
   const canUseMinistrantModlitwy = currentUser?.typ === 'ministrant' && !canEditPrayers;
@@ -2199,7 +2205,7 @@ export default function MinistranciApp() {
   const selectedMemberPunktyHistoria = useMemo<SelectedMemberPunktyHistoriaEntry[]>(() => {
     if (!selectedPunktyHistoriaMember) return [];
     const memberId = selectedPunktyHistoriaMember.profile_id;
-    return [
+    const historyEntries: SelectedMemberPunktyHistoriaEntry[] = [
       ...obecnosci
         .filter((o) => o.ministrant_id === memberId && o.status === 'zatwierdzona')
         .map((o) => ({
@@ -2224,7 +2230,19 @@ export default function MinistranciApp() {
           createdAt: m.created_at || `${m.data}T00:00:00`,
           minusowe: m,
         })),
-    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    ];
+
+    const getHistoryDate = (entry: SelectedMemberPunktyHistoriaEntry) => {
+      if (entry.kind === 'obecnosc') return entry.obec.data;
+      if (entry.kind === 'korekta') return entry.korekta.data;
+      return entry.minusowe.data;
+    };
+
+    return historyEntries.sort((a, b) => {
+      const dateDiff = getHistoryDate(b).localeCompare(getHistoryDate(a));
+      if (dateDiff !== 0) return dateDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   }, [selectedPunktyHistoriaMember, obecnosci, punktyReczne, minusowePunkty]);
 
   const authFetch = useCallback(async (input: string, init: RequestInit = {}) => {
@@ -2921,7 +2939,7 @@ export default function MinistranciApp() {
       supabase.from('minusowe_punkty').select('*').eq('parafia_id', pid),
       supabase.from('auto_dyzur_minus_ignored').select('*').eq('parafia_id', pid),
       supabase.from('punkty_reczne').select('*').eq('parafia_id', pid).order('created_at', { ascending: false }),
-      supabase.from('odznaki_zdobyte').select('*'),
+      supabase.from('odznaki_zdobyte').select('*').eq('parafia_id', pid),
       supabase.from('ranking').select('*').eq('parafia_id', pid).order('total_pkt', { ascending: false }),
     ]);
 
@@ -3110,6 +3128,29 @@ export default function MinistranciApp() {
       const rankingRowsData = (rankingRows || []) as RankingEntry[];
       const reczneRows = (punktyReczneData || []) as PunktyReczne[];
       const odznakiRows = (odznakiZdobyteData || []) as OdznakaZdobyta[];
+      let rankingConsistencyChanged = false;
+      const memberIdSet = new Set((members || []).map((m) => m.profile_id));
+      const canFilterByCurrentMembers = memberIdSet.size > 0;
+
+      if (canFilterByCurrentMembers) {
+        const orphanRankingRows = rankingRowsData.filter((row) => !memberIdSet.has(row.ministrant_id));
+        for (const orphanRow of orphanRankingRows) {
+          const { error: deleteOrphanRankingError } = await supabase
+            .from('ranking')
+            .delete()
+            .eq('id', orphanRow.id);
+          if (deleteOrphanRankingError) {
+            console.warn('Nie udało się usunąć osieroconego wpisu rankingu:', deleteOrphanRankingError.message);
+            continue;
+          }
+          rankingConsistencyChanged = true;
+        }
+        if (rankingConsistencyChanged) {
+          await loadRankingData();
+          return;
+        }
+      }
+
       const rangiRows = (rConfig || []) as RangaConfig[];
       const getRangaNameForTotal = (totalPkt: number) => {
         if (!rangiRows.length) return 'Ready';
@@ -3125,6 +3166,7 @@ export default function MinistranciApp() {
       const expectedObecnosciByMinistrant = new Map<string, number>();
       for (const row of obecnosciRows) {
         if (row.status !== 'zatwierdzona') continue;
+        if (canFilterByCurrentMembers && !memberIdSet.has(row.ministrant_id)) continue;
         expectedTotalByMinistrant.set(
           row.ministrant_id,
           Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.punkty_finalne || 0)
@@ -3135,18 +3177,21 @@ export default function MinistranciApp() {
         );
       }
       for (const row of reczneRows) {
+        if (canFilterByCurrentMembers && !memberIdSet.has(row.ministrant_id)) continue;
         expectedTotalByMinistrant.set(
           row.ministrant_id,
           Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.punkty || 0)
         );
       }
       for (const row of minusoweRows) {
+        if (canFilterByCurrentMembers && !memberIdSet.has(row.ministrant_id)) continue;
         expectedTotalByMinistrant.set(
           row.ministrant_id,
           Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.punkty || 0)
         );
       }
       for (const row of odznakiRows) {
+        if (canFilterByCurrentMembers && !memberIdSet.has(row.ministrant_id)) continue;
         expectedTotalByMinistrant.set(
           row.ministrant_id,
           Number(expectedTotalByMinistrant.get(row.ministrant_id) || 0) + Number(row.bonus_pkt || 0)
@@ -3160,7 +3205,6 @@ export default function MinistranciApp() {
         ...expectedObecnosciByMinistrant.keys(),
       ]);
 
-      let rankingConsistencyChanged = false;
       for (const ministrantId of allMinistrantIds) {
         const expectedTotal = Number(expectedTotalByMinistrant.get(ministrantId) || 0);
         const expectedObecnosci = Number(expectedObecnosciByMinistrant.get(ministrantId) || 0);
@@ -3229,7 +3273,7 @@ export default function MinistranciApp() {
     if (punktyReczneData) setPunktyReczne(punktyReczneData as PunktyReczne[]);
     if (odznakiZdobyteData) setOdznakiZdobyte(odznakiZdobyteData as OdznakaZdobyta[]);
     if (rankingRows) setRankingData(rankingRows as RankingEntry[]);
-  }, [currentUser?.parafia_id, currentUser?.id, currentUser?.typ, currentParafia?.admin_id]);
+  }, [currentUser?.parafia_id, currentUser?.id, currentUser?.typ, currentParafia?.admin_id, members]);
 
   // ==================== ŁADOWANIE — TABLICA OGŁOSZEŃ ====================
 
@@ -3412,7 +3456,7 @@ export default function MinistranciApp() {
     if (!selectedPunktyHistoriaMember) return;
     const isAutoDyzurMinus = entry.kind === 'minusowe' && /\[auto_dyzur:[^\]]+\]/i.test(entry.minusowe.powod || '');
     const confirmMsg = isAutoDyzurMinus
-      ? 'Usunąć ten wpis? Uwaga: jeśli nadal nie ma zgłoszonej obecności za ten dyżur, system może ponownie dodać minus automatycznie.'
+      ? 'Usunąć ten wpis? Ten automatyczny minus nie zostanie już dodany ponownie.'
       : 'Czy na pewno chcesz usunąć ten wpis punktów?';
     if (!window.confirm(confirmMsg)) return;
 
@@ -4089,8 +4133,27 @@ export default function MinistranciApp() {
     if (!currentUser?.parafia_id) return;
     const existing = dyzury.find(d => d.ministrant_id === currentUser.id && d.dzien_tygodnia === dzienTygodnia);
 
-    // Zatwierdzony dyżur — nie można odkliknąć
-    if (existing?.status === 'zatwierdzona') return;
+    // Zatwierdzony dyżur — ministrant może go usunąć po potwierdzeniu.
+    if (existing?.status === 'zatwierdzona') {
+      const dayName = DNI_TYGODNIA_FULL[dzienTygodnia === 0 ? 6 : dzienTygodnia - 1];
+      const godzina = existing.godzina?.trim();
+      const suffix = godzina ? ` • ${godzina}` : '';
+      const shouldDelete = window.confirm(`Czy na pewno chcesz usunąć swój dyżur: ${dayName}${suffix}?`);
+      if (!shouldDelete) return;
+      supabase
+        .from('dyzury')
+        .delete()
+        .eq('id', existing.id)
+        .eq('ministrant_id', currentUser.id)
+        .then(({ error }) => {
+          if (error) {
+            alert('Nie udało się usunąć dyżuru: ' + error.message);
+            return;
+          }
+          loadRankingData();
+        });
+      return;
+    }
 
     // Oczekujący — ministrant może cofnąć wniosek
     if (existing?.status === 'oczekuje') {
@@ -4101,12 +4164,12 @@ export default function MinistranciApp() {
     // Nowy dzień — pokaż dialog potwierdzenia
     const approvedMyDyzury = dyzury.filter(d => d.ministrant_id === currentUser.id && d.status === 'zatwierdzona');
     const hasAnyApproved = approvedMyDyzury.length > 0;
-    const defaultReplaceFrom = approvedMyDyzury.length === 1 ? approvedMyDyzury[0].dzien_tygodnia : null;
     setDyzurConfirm({
       dzien: dzienTygodnia,
-      type: hasAnyApproved ? 'change' : 'first',
+      type: hasAnyApproved ? 'add' : 'first',
       godzina: '',
-      replaceFromDzien: hasAnyApproved ? defaultReplaceFrom : null,
+      replaceFromDzien: null,
+      allowModeChoice: hasAnyApproved,
     });
   };
 
@@ -4133,7 +4196,7 @@ export default function MinistranciApp() {
       dzien_tygodnia: dyzurConfirm.dzien,
       godzina: dyzurConfirm.godzina.trim() || null,
       zastepuje_dzien_tygodnia: dyzurConfirm.type === 'change' ? dyzurConfirm.replaceFromDzien : null,
-      status: dyzurConfirm.type === 'first' ? 'zatwierdzona' : 'oczekuje',
+      status: dyzurConfirm.type === 'change' ? 'oczekuje' : 'zatwierdzona',
     });
     setDyzurConfirm(null);
     loadRankingData();
@@ -10284,6 +10347,21 @@ export default function MinistranciApp() {
           {/* Panel Ranking Służby */}
           <TabsContent value="ranking">
             <div className="space-y-6">
+              {currentUser?.typ === 'ministrant' && canApproveRankingSubmissions && pendingObecnosci.length > 0 && (
+                <PendingObecnosciCard
+                  pendingObecnosci={pendingObecnosci}
+                  memberByProfileId={memberByProfileId}
+                  approvedDyzuryKeySet={approvedDyzuryKeySet}
+                  approvingObecnosciIds={approvingObecnosciIds}
+                  rejectingObecnosciIds={rejectingObecnosciIds}
+                  bulkApprovingObecnosci={bulkApprovingObecnosci}
+                  onApprove={(id) => { void handleApproveObecnosc(id); }}
+                  onApproveWithCustomPoints={handleApproveObecnoscWithCustomPoints}
+                  onReject={(id) => { void handleRejectObecnosc(id); }}
+                  onApproveAll={() => { void zatwierdzWszystkie(); }}
+                />
+              )}
+
               {showPriestRankingInfo && (
                 <Card className="border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
                   <CardContent className="py-3 px-4">
@@ -10754,7 +10832,7 @@ export default function MinistranciApp() {
                     />
                   )}
 
-                  {canApproveRankingSubmissions && (
+                  {canApproveRankingSubmissions && !(currentUser?.typ === 'ministrant' && pendingObecnosci.length > 0) && (
                     <PendingObecnosciCard
                       pendingObecnosci={pendingObecnosci}
                       memberByProfileId={memberByProfileId}
@@ -15928,7 +16006,7 @@ export default function MinistranciApp() {
             <div className="mx-4 mt-3 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
               <p className="text-xs text-amber-700 dark:text-amber-300 font-medium flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 shrink-0" />
-                Zmiana dyżurów wymaga akceptacji księdza
+                Dodanie kolejnego dnia zapisuje się od razu. Zmiana istniejącego dnia wymaga akceptacji księdza.
               </p>
             </div>
           )}
@@ -15943,7 +16021,7 @@ export default function MinistranciApp() {
               return (
                 <button
                   key={i}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${isApproved ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 opacity-80 cursor-default' : isPending ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}`}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${isApproved ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 hover:border-red-300 dark:hover:border-red-700 hover:bg-red-50/60 dark:hover:bg-red-900/10' : isPending ? 'border-amber-400 bg-amber-50 dark:bg-amber-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'}`}
                   onClick={() => handleDyzurClick(dzienIdx)}
                 >
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isPending ? 'bg-amber-400 text-white' : isApproved ? 'bg-indigo-500 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
@@ -15952,7 +16030,7 @@ export default function MinistranciApp() {
                   <span className={`font-bold text-sm ${isPending ? 'text-amber-700 dark:text-amber-300' : isApproved ? 'text-indigo-700 dark:text-indigo-300' : ''}`}>{dzien}</span>
                   {dyzurGodzina && <span className="ml-auto text-xs font-semibold text-gray-600 dark:text-gray-300">{dyzurGodzina}</span>}
                   {isPending && <span className={`${dyzurGodzina ? 'ml-2' : 'ml-auto'} text-[10px] font-bold text-amber-500 uppercase`}>Cofnij wniosek</span>}
-                  {isApproved && <span className={`${dyzurGodzina ? 'ml-2' : 'ml-auto'} text-[10px] font-bold text-indigo-500 uppercase`}>Aktywny</span>}
+                  {isApproved && <span className={`${dyzurGodzina ? 'ml-2' : 'ml-auto'} text-[10px] font-bold text-red-500 uppercase`}>Usuń dyżur</span>}
                   {!isActive && <span className="ml-auto text-[10px] text-gray-400">Wybierz</span>}
                 </button>
               );
@@ -15965,14 +16043,50 @@ export default function MinistranciApp() {
       <Dialog open={!!dyzurConfirm} onOpenChange={(open) => { if (!open) setDyzurConfirm(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{dyzurConfirm?.type === 'first' ? 'Potwierdź dyżur' : 'Zmiana dyżuru'}</DialogTitle>
+            <DialogTitle>
+              {dyzurConfirm?.type === 'first'
+                ? 'Potwierdź dyżur'
+                : dyzurConfirm?.type === 'add'
+                  ? 'Dodaj dzień dyżuru'
+                  : 'Zmiana dyżuru'}
+            </DialogTitle>
             <DialogDescription>
               {dyzurConfirm?.type === 'first'
-                ? `Czy chcesz wybrać ${DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1]} jako dzień dyżuru? Po zatwierdzeniu nie będzie można go samodzielnie usunąć.`
-                : `Zmiana na dzień (${dyzurConfirm ? DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1] : ''}) wymaga akceptacji księdza. Po akceptacji poprzedni dyżur zostanie zastąpiony. Czy chcesz wysłać prośbę?`
+                ? `Czy chcesz wybrać ${DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1]} jako dzień dyżuru?`
+                : dyzurConfirm?.type === 'add'
+                  ? `Czy chcesz dodać kolejny dzień dyżuru: ${dyzurConfirm ? DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1] : ''}? Ten dzień zostanie zapisany od razu.`
+                  : `Zmiana na dzień (${dyzurConfirm ? DNI_TYGODNIA_FULL[dyzurConfirm.dzien === 0 ? 6 : dyzurConfirm.dzien - 1] : ''}) wymaga akceptacji księdza. Po akceptacji poprzedni dyżur zostanie zastąpiony. Czy chcesz wysłać prośbę?`
               }
             </DialogDescription>
           </DialogHeader>
+          {dyzurConfirm?.allowModeChoice && (
+            <div className="space-y-1">
+              <Label>Co chcesz zrobić?</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={dyzurConfirm.type === 'add' ? 'default' : 'outline'}
+                  onClick={() => setDyzurConfirm((prev) => (prev ? { ...prev, type: 'add', replaceFromDzien: null } : prev))}
+                >
+                  Dodaj kolejny
+                </Button>
+                <Button
+                  type="button"
+                  variant={dyzurConfirm.type === 'change' ? 'default' : 'outline'}
+                  onClick={() => setDyzurConfirm((prev) => {
+                    if (!prev) return prev;
+                    const approvedDays = dyzury
+                      .filter((d) => d.ministrant_id === currentUser?.id && d.status === 'zatwierdzona')
+                      .sort((a, b) => a.dzien_tygodnia - b.dzien_tygodnia);
+                    const defaultReplaceFrom = approvedDays.length === 1 ? approvedDays[0].dzien_tygodnia : null;
+                    return { ...prev, type: 'change', replaceFromDzien: defaultReplaceFrom };
+                  })}
+                >
+                  Zmień istniejący
+                </Button>
+              </div>
+            </div>
+          )}
           {dyzurConfirm?.type === 'change' && (
             <div className="space-y-1">
               <Label>Który dzień chcesz zmienić?</Label>
@@ -16022,7 +16136,11 @@ export default function MinistranciApp() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDyzurConfirm(null)}>Anuluj</Button>
             <Button onClick={confirmDyzur}>
-              {dyzurConfirm?.type === 'first' ? 'Tak, wybieram' : 'Wyślij prośbę'}
+              {dyzurConfirm?.type === 'change'
+                ? 'Wyślij prośbę'
+                : dyzurConfirm?.type === 'add'
+                  ? 'Dodaj dzień'
+                  : 'Tak, wybieram'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -16352,10 +16470,10 @@ export default function MinistranciApp() {
                     <Button
                       onClick={handleStartGooglePlayCheckout}
                       disabled={googlePlayCheckoutLoading}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                     >
                       <CreditCard className="w-4 h-4 mr-2" />
-                      {googlePlayCheckoutLoading ? 'Otwieranie Google Play...' : 'Kup Premium w Google Play'}
+                      {googlePlayCheckoutLoading ? 'Otwieranie Google Play...' : 'Zapłać jednorazowo za 1 rok'}
                     </Button>
                   </div>
                 )}

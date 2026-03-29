@@ -38,12 +38,8 @@ begin
       on public.punkty_reczne
       for insert
       with check (
-        exists (
-          select 1
-          from public.parafie
-          where public.parafie.id = public.punkty_reczne.parafia_id
-            and public.parafie.admin_id = auth.uid()
-        )
+        public.has_parafia_permission(public.punkty_reczne.parafia_id, 'manage_ranking_settings')
+        or public.has_parafia_permission(public.punkty_reczne.parafia_id, 'manage_ranking')
       );
   end if;
 end $$;
@@ -60,12 +56,8 @@ begin
       on public.punkty_reczne
       for delete
       using (
-        exists (
-          select 1
-          from public.parafie
-          where public.parafie.id = public.punkty_reczne.parafia_id
-            and public.parafie.admin_id = auth.uid()
-        )
+        public.has_parafia_permission(public.punkty_reczne.parafia_id, 'manage_ranking_settings')
+        or public.has_parafia_permission(public.punkty_reczne.parafia_id, 'manage_ranking')
       );
   end if;
 end $$;

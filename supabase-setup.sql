@@ -556,11 +556,13 @@ create policy "Ministrant can insert own obecnosci" on obecnosci
   for insert with check (auth.uid() = ministrant_id);
 create policy "Admin can update obecnosci" on obecnosci
   for update using (
-    exists (select 1 from parafie where parafie.id = obecnosci.parafia_id and parafie.admin_id = auth.uid())
+    public.has_parafia_permission(obecnosci.parafia_id, 'approve_ranking_submissions')
+    or public.has_parafia_permission(obecnosci.parafia_id, 'manage_ranking')
   );
 create policy "Admin can delete obecnosci" on obecnosci
   for delete using (
-    exists (select 1 from parafie where parafie.id = obecnosci.parafia_id and parafie.admin_id = auth.uid())
+    public.has_parafia_permission(obecnosci.parafia_id, 'manage_ranking_settings')
+    or public.has_parafia_permission(obecnosci.parafia_id, 'manage_ranking')
   );
 
 -- minusowe_punkty: wszyscy w parafii widzą, system/admin dodaje
@@ -568,11 +570,13 @@ create policy "Minusowe viewable by parish members" on minusowe_punkty
   for select using (true);
 create policy "Admin can insert minusowe" on minusowe_punkty
   for insert with check (
-    exists (select 1 from parafie where parafie.id = minusowe_punkty.parafia_id and parafie.admin_id = auth.uid())
+    public.has_parafia_permission(minusowe_punkty.parafia_id, 'manage_ranking_settings')
+    or public.has_parafia_permission(minusowe_punkty.parafia_id, 'manage_ranking')
   );
 create policy "Admin can delete minusowe" on minusowe_punkty
   for delete using (
-    exists (select 1 from parafie where parafie.id = minusowe_punkty.parafia_id and parafie.admin_id = auth.uid())
+    public.has_parafia_permission(minusowe_punkty.parafia_id, 'manage_ranking_settings')
+    or public.has_parafia_permission(minusowe_punkty.parafia_id, 'manage_ranking')
   );
 
 -- punkty_reczne: wszyscy w parafii widzą, admin dodaje/usuwa
@@ -580,11 +584,13 @@ create policy "Punkty reczne viewable by parish members" on punkty_reczne
   for select using (true);
 create policy "Admin can insert punkty reczne" on punkty_reczne
   for insert with check (
-    exists (select 1 from parafie where parafie.id = punkty_reczne.parafia_id and parafie.admin_id = auth.uid())
+    public.has_parafia_permission(punkty_reczne.parafia_id, 'manage_ranking_settings')
+    or public.has_parafia_permission(punkty_reczne.parafia_id, 'manage_ranking')
   );
 create policy "Admin can delete punkty reczne" on punkty_reczne
   for delete using (
-    exists (select 1 from parafie where parafie.id = punkty_reczne.parafia_id and parafie.admin_id = auth.uid())
+    public.has_parafia_permission(punkty_reczne.parafia_id, 'manage_ranking_settings')
+    or public.has_parafia_permission(punkty_reczne.parafia_id, 'manage_ranking')
   );
 
 -- odznaki_zdobyte: wszyscy widzą

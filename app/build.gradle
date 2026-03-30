@@ -65,8 +65,8 @@ android {
         applicationId "net.ministranci.twa"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 17
-        versionName "1.0.16"
+versionCode 19
+versionName "1.0.18"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name

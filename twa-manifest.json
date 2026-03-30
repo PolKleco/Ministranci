@@ -1,6 +1,6 @@
 {
   "packageId": "net.ministranci.twa",
-  "host": "ministranci.net",
+  "host": "www.ministranci.net",
   "name": "Ministranci",
   "launcherName": "Ministranci",
   "display": "standalone",
@@ -13,7 +13,7 @@
   "backgroundColor": "#FFFFFF",
   "enableNotifications": true,
   "startUrl": "/app",
-  "iconUrl": "https://ministranci.net/icon-512.png",
+  "iconUrl": "https://www.ministranci.net/icon-512.png",
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "/Users/pawelimac/ministranci/android.keystore",
@@ -23,7 +23,7 @@
   "appVersionCode": 1,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
-  "webManifestUrl": "https://ministranci.net/manifest.json",
+  "webManifestUrl": "https://www.ministranci.net/manifest.json",
   "fallbackType": "customtabs",
   "features": {},
   "alphaDependencies": {
@@ -32,7 +32,7 @@
   "enableSiteSettingsShortcut": true,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "fullScopeUrl": "https://ministranci.net/",
+  "fullScopeUrl": "https://www.ministranci.net/",
   "minSdkVersion": 21,
   "orientation": "default",
   "fingerprints": [],

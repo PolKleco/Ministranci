@@ -250,6 +250,16 @@ const buildWiadomoscReplyPayload = (body: string, replyToId: string | null) => (
 const truncateReplyPreview = (text: string, max = 140) => (
   text.length > max ? `${text.slice(0, max)}...` : text
 );
+const AUTO_DYZUR_HISTORY_MARKER_RE = /\s*\[auto_dyzur:[^\]]+\]\s*/gi;
+const ZBIORKA_HISTORY_MARKER_RE = /\s*\[zbiorka:[^\]]+\]\s*/gi;
+const cleanHistoriaPowod = (powod: string | null | undefined) => (
+  (powod || '')
+    .replace(AUTO_DYZUR_HISTORY_MARKER_RE, ' ')
+    .replace(ZBIORKA_HISTORY_MARKER_RE, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+);
+const buildZbiorkaHistoryMarker = (sluzbaId: string, ministrantId: string) => `[zbiorka:${sluzbaId}:${ministrantId}]`;
 const PARISH_ADMIN_ROLE = '__parafia_admin__';
 const PARISH_PERMISSION_PREFIX = '__perm__:';
 const LEGACY_RANKING_PERMISSION_TOKEN = `${PARISH_PERMISSION_PREFIX}manage_ranking`;
@@ -3321,15 +3331,40 @@ export default function MinistranciApp() {
     if (data) setTablicaWiadomosci(data as TablicaWiadomosc[]);
   }, []);
 
-  // Helper: zamień adresy email w tekście na klikalne linki mailto:
+  // Helper: zamień adresy email i URL-e w tekście na klikalne linki.
   const linkifyEmails = (text: string) => {
-    const parts = text.split(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g);
+    const tokenRegex = /((?:https?:\/\/|www\.)[^\s]+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    const urlRegex = /^(?:https?:\/\/|www\.)[^\s]+$/i;
+    const parts = text.split(tokenRegex);
     if (parts.length === 1) return text;
-    return parts.map((part, i) =>
-      /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(part)
-        ? <a key={i} href={`mailto:${part}`} className="underline hover:opacity-70 transition-opacity">{part}</a>
-        : part
-    );
+
+    return parts.map((part, i) => {
+      if (emailRegex.test(part)) {
+        return (
+          <a key={i} href={`mailto:${part}`} className="underline hover:opacity-70 transition-opacity">
+            {part}
+          </a>
+        );
+      }
+
+      if (urlRegex.test(part)) {
+        const href = part.startsWith('http://') || part.startsWith('https://') ? part : `https://${part}`;
+        return (
+          <a
+            key={i}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:opacity-70 transition-opacity break-all"
+          >
+            {part}
+          </a>
+        );
+      }
+
+      return part;
+    });
   };
 
   // Helper: pobierz wartość z punktacja_config
@@ -6563,12 +6598,21 @@ export default function MinistranciApp() {
     return allMinistranci.filter((m) => selectedGroups.has((m.grupa || 'Bez grupy').trim()));
   };
 
-  const applyZbiorkaRankingDelta = async (
-    ministrantId: string,
-    delta: number,
-    powod: string,
-    data: string,
-  ) => {
+  const applyZbiorkaRankingDelta = async ({
+    ministrantId,
+    delta,
+    statusLabel,
+    data,
+    sluzbaId,
+    nextPoints,
+  }: {
+    ministrantId: string;
+    delta: number;
+    statusLabel: string;
+    data: string;
+    sluzbaId: string;
+    nextPoints: number;
+  }) => {
     if (!currentUser?.parafia_id || delta === 0) return;
     const { data: existingRanking, error: rankingFetchError } = await supabase
       .from('ranking')
@@ -6627,22 +6671,92 @@ export default function MinistranciApp() {
       };
     }
 
-    const { error: historiaError } = await supabase.from('punkty_reczne').insert({
-      ministrant_id: ministrantId,
-      parafia_id: currentUser.parafia_id,
-      data,
-      powod,
-      punkty: delta,
-    });
-    if (historiaError) {
+    const historyMarker = buildZbiorkaHistoryMarker(sluzbaId, ministrantId);
+    const historyPowod = `Zbiórka (${data}) — ${statusLabel} ${historyMarker}`.trim();
+
+    const [markerHistoryResult, legacyHistoryResult] = await Promise.all([
+      supabase
+        .from('punkty_reczne')
+        .select('id, ministrant_id, parafia_id, data, powod, punkty, created_at')
+        .eq('ministrant_id', ministrantId)
+        .eq('parafia_id', currentUser.parafia_id)
+        .like('powod', `%${historyMarker}%`),
+      supabase
+        .from('punkty_reczne')
+        .select('id, ministrant_id, parafia_id, data, powod, punkty, created_at')
+        .eq('ministrant_id', ministrantId)
+        .eq('parafia_id', currentUser.parafia_id)
+        .eq('data', data)
+        .ilike('powod', `Zbiórka (${data})%`)
+        .not('powod', 'ilike', '%[zbiorka:%'),
+    ]);
+
+    if (markerHistoryResult.error || legacyHistoryResult.error) {
       if (rollbackRankingUpdate) {
         try {
           await rollbackRankingUpdate();
         } catch (rollbackError) {
-          console.warn('Nie udało się cofnąć zmiany rankingu po błędzie zapisu historii zbiórki:', rollbackError);
+          console.warn('Nie udało się cofnąć rankingu po błędzie odczytu historii zbiórki:', rollbackError);
         }
       }
-      throw historiaError;
+      throw markerHistoryResult.error || legacyHistoryResult.error;
+    }
+
+    const historyRowsToReplace = [...(markerHistoryResult.data || []), ...(legacyHistoryResult.data || [])]
+      .filter((row, index, arr) => arr.findIndex((candidate) => candidate.id === row.id) === index);
+    const historyIdsToReplace = historyRowsToReplace.map((row) => row.id);
+
+    if (historyIdsToReplace.length > 0) {
+      const { error: deleteHistoryError } = await supabase
+        .from('punkty_reczne')
+        .delete()
+        .in('id', historyIdsToReplace);
+      if (deleteHistoryError) {
+        if (rollbackRankingUpdate) {
+          try {
+            await rollbackRankingUpdate();
+          } catch (rollbackError) {
+            console.warn('Nie udało się cofnąć rankingu po błędzie czyszczenia historii zbiórki:', rollbackError);
+          }
+        }
+        throw deleteHistoryError;
+      }
+    }
+
+    if (nextPoints !== 0) {
+      const { error: historiaError } = await supabase.from('punkty_reczne').insert({
+        ministrant_id: ministrantId,
+        parafia_id: currentUser.parafia_id,
+        data,
+        powod: historyPowod,
+        punkty: nextPoints,
+      });
+      if (historiaError) {
+        if (historyRowsToReplace.length > 0) {
+          const { error: restoreHistoryError } = await supabase.from('punkty_reczne').insert(
+            historyRowsToReplace.map((row) => ({
+              id: row.id,
+              ministrant_id: row.ministrant_id,
+              parafia_id: row.parafia_id,
+              data: row.data,
+              powod: row.powod,
+              punkty: row.punkty,
+              created_at: row.created_at,
+            }))
+          );
+          if (restoreHistoryError) {
+            console.warn('Nie udało się przywrócić historii zbiórki po błędzie zapisu:', restoreHistoryError.message);
+          }
+        }
+        if (rollbackRankingUpdate) {
+          try {
+            await rollbackRankingUpdate();
+          } catch (rollbackError) {
+            console.warn('Nie udało się cofnąć zmiany rankingu po błędzie zapisu historii zbiórki:', rollbackError);
+          }
+        }
+        throw historiaError;
+      }
     }
   };
 
@@ -6713,10 +6827,8 @@ export default function MinistranciApp() {
     }
 
     const existingAttendance = (attendanceRows as ZbiorkaObecnosc[] || []);
-    const hasOnlyLegacyDefaultAttendance = existingAttendance.length > 0
-      && existingAttendance.every((row) => row.status === 'usprawiedliwiony' && Number(row.punkty_przyznane || 0) === 0);
     const existingStatusByMinistrant = new Map(
-      (hasOnlyLegacyDefaultAttendance ? [] : existingAttendance).map((row) => [row.ministrant_id, row.status])
+      existingAttendance.map((row) => [row.ministrant_id, row.status])
     );
     const initialAttendance: Record<string, ZbiorkaObecnoscStatus> = {};
     targetMinistranci.forEach((ministrant) => {
@@ -6761,10 +6873,8 @@ export default function MinistranciApp() {
       }
 
       const existingAttendance = (existingAttendanceData || []) as ZbiorkaObecnosc[];
-      const hasOnlyLegacyDefaultAttendance = existingAttendance.length > 0
-        && existingAttendance.every((row) => row.status === 'usprawiedliwiony' && Number(row.punkty_przyznane || 0) === 0);
       const existingStatusByMinistrant = new Map(
-        (hasOnlyLegacyDefaultAttendance ? [] : existingAttendance).map((row) => [row.ministrant_id, row.status])
+        existingAttendance.map((row) => [row.ministrant_id, row.status])
       );
 
       const nextAttendanceRows = targetMinistranci
@@ -6820,12 +6930,20 @@ export default function MinistranciApp() {
 
         const status = nextStatusByMinistrant.get(ministrantId);
         const statusLabel = status ? `status: ${status}` : 'korekta listy';
-        const powod = `Zbiórka (${selectedZbiorkaAttendance.data}) — ${statusLabel}`;
-        await applyZbiorkaRankingDelta(ministrantId, delta, powod, selectedZbiorkaAttendance.data);
+        await applyZbiorkaRankingDelta({
+          ministrantId,
+          delta,
+          statusLabel,
+          data: selectedZbiorkaAttendance.data,
+          sluzbaId: selectedZbiorkaAttendance.id,
+          nextPoints,
+        });
       }
 
-      await loadSluzby();
-      loadRankingData();
+      await Promise.all([
+        loadSluzby(),
+        loadRankingData(),
+      ]);
       setShowZbiorkaAttendanceModal(false);
       setSelectedZbiorkaAttendance(null);
       setZbiorkaAttendance({});
@@ -9319,7 +9437,7 @@ export default function MinistranciApp() {
                     <div className="mx-auto w-full max-w-[240px]">
                       <div className="rounded-2xl border-4 border-emerald-100 bg-white p-4 shadow-md w-full">
                         <QRCodeSVG
-                          value={`https://ministranci.net/join?kod=${encodeURIComponent(currentParafia?.kod_zaproszenia || '')}`}
+                          value={`https://www.ministranci.net/join?kod=${encodeURIComponent(currentParafia?.kod_zaproszenia || '')}`}
                           size={240}
                           level="H"
                           className="w-full h-auto"
@@ -10614,8 +10732,9 @@ export default function MinistranciApp() {
                               const d = new Date(`${p.data}T00:00:00`);
                               const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
                               const isPlus = Number(p.punkty) > 0;
-                              const powodLabel = p.powod?.trim() && p.powod.trim() !== 'Ręczna korekta punktów'
-                                ? p.powod.trim()
+                              const cleanedPowod = cleanHistoriaPowod(p.powod);
+                              const powodLabel = cleanedPowod && cleanedPowod !== 'Ręczna korekta punktów'
+                                ? cleanedPowod
                                 : '';
                               return (
                                 <div key={p.id} className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border ${isPlus ? 'border-teal-200 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-900/10' : 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10'}`}>
@@ -10653,7 +10772,7 @@ export default function MinistranciApp() {
                         </div>
                         <div className="bg-white dark:bg-gray-900 p-3 space-y-1.5">
                           {myMinusowe.map((m) => {
-                            const cleanedPowod = (m.powod || '').replace(/\s*\[auto_dyzur:[^\]]+\]\s*/gi, '').trim();
+                            const cleanedPowod = cleanHistoriaPowod(m.powod);
                             const powodDisplay = cleanedPowod || m.powod || 'Brak opisu';
                             return (
                               <div key={m.id} className="flex items-center justify-between p-2.5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30">
@@ -15801,7 +15920,7 @@ export default function MinistranciApp() {
 	                  const m = item.minusowe;
 	                  const d = new Date(`${m.data}T00:00:00`);
 	                  const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
-	                  const cleanedPowod = (m.powod || '').replace(/\s*\[auto_dyzur:[^\]]+\]\s*/gi, '').trim();
+	                  const cleanedPowod = cleanHistoriaPowod(m.powod);
 	                  const powodLabel = cleanedPowod || 'Minusowe punkty';
 	                  return (
 	                    <div key={m.id} className="rounded-xl border p-2.5 flex items-center justify-between gap-3 border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10">
@@ -15835,8 +15954,9 @@ export default function MinistranciApp() {
 	                const d = new Date(`${p.data}T00:00:00`);
 	                const dayName = DNI_TYGODNIA[d.getDay() === 0 ? 6 : d.getDay() - 1];
 	                const isPlus = Number(p.punkty) > 0;
-	                const powodLabel = p.powod?.trim() && p.powod.trim() !== 'Ręczna korekta punktów'
-                  ? p.powod.trim()
+	                const cleanedPowod = cleanHistoriaPowod(p.powod);
+	                const powodLabel = cleanedPowod && cleanedPowod !== 'Ręczna korekta punktów'
+                  ? cleanedPowod
                   : '';
 	                return (
 	                  <div key={p.id} className={`rounded-xl border p-2.5 flex items-center justify-between gap-3 ${isPlus ? 'border-teal-200 dark:border-teal-800 bg-teal-50/40 dark:bg-teal-900/10' : 'border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-900/10'}`}>

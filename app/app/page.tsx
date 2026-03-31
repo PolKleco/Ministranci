@@ -81,16 +81,24 @@ const AUTO_DYZUR_MINUS_LOOKBACK_DAYS = 35;
 const ANDROID_APP_PACKAGE_ID = 'net.ministranci.twa';
 const ANDROID_PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${ANDROID_APP_PACKAGE_ID}`;
 const ANDROID_APP_CONTEXT_SESSION_KEY = 'ministranci_android_app_context';
+const IOS_APP_CONTEXT_SESSION_KEY = 'ministranci_ios_app_context';
 const ANDROID_APP_VERSION_SESSION_KEY = 'ministranci_android_app_vc';
-const ANDROID_APP_PLATFORM_QUERY_PARAM = 'app_platform';
+const IOS_APP_VERSION_SESSION_KEY = 'ministranci_ios_app_vc';
+const MOBILE_APP_PLATFORM_QUERY_PARAM = 'app_platform';
 const ANDROID_APP_PLATFORM_QUERY_VALUE = 'android-app';
-const GOOGLE_PLAY_PREMIUM_PRODUCT_ID = 'premium_yearly';
-const GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID = 'yearly-prepaid';
+const IOS_APP_PLATFORM_QUERY_VALUE = 'ios-app';
+const GOOGLE_PLAY_PREMIUM_PRODUCT_ID = (process.env.NEXT_PUBLIC_GOOGLE_PLAY_PREMIUM_PRODUCT_ID || 'premium_yearly').trim();
+const GOOGLE_PLAY_PREMIUM_BASE_PLAN_ID = (process.env.NEXT_PUBLIC_GOOGLE_PLAY_PREPAID_BASE_PLAN_ID || 'yearly-prepaid').trim();
 const GOOGLE_PLAY_NATIVE_CHECKOUT_URL = 'ministranci-billing://checkout';
+const APPLE_PREMIUM_PRODUCT_ID = (process.env.NEXT_PUBLIC_APPLE_PREMIUM_PRODUCT_ID || 'premium_yearly_ios').trim();
+const APPLE_IOS_BUNDLE_ID = (process.env.NEXT_PUBLIC_IOS_BUNDLE_ID || 'net.ministranci.ios').trim();
+const APPLE_NATIVE_CHECKOUT_URL = 'ministranci-ios-billing://checkout';
 const GOOGLE_PLAY_PROCESSED_TOKEN_SESSION_PREFIX = 'ministranci_google_play_processed_';
+const APPLE_PROCESSED_TX_SESSION_PREFIX = 'ministranci_apple_processed_';
 // Podnoś ten numer tylko wtedy, gdy chcesz WYMUSIĆ aktualizację starszych wersji mobilnych.
 const MIN_REQUIRED_ANDROID_APP_VERSION_CODE = 4;
-const PREMIUM_MOBILE_BILLING_INFO = 'W aplikacji Android płatności Premium są obsługiwane przez Google Play Billing.';
+const PREMIUM_ANDROID_BILLING_INFO = 'W aplikacji Android płatności Premium są obsługiwane przez Google Play Billing.';
+const PREMIUM_IOS_BILLING_INFO = 'W aplikacji iOS płatności Premium są obsługiwane przez App Store Billing.';
 
 // ==================== DIECEZJE W POLSCE ====================
 
@@ -178,6 +186,21 @@ const getGooglePlayNativeErrorMessage = (errorCode: string) => {
     return `Nie udało się otworzyć okna płatności Google Play (${errorCode.replace('launch_failed_', '')}).`;
   }
   return `Błąd Google Play: ${errorCode}`;
+};
+
+const getAppleNativeErrorMessage = (errorCode: string) => {
+  if (!errorCode) return 'Nie udało się uruchomić płatności App Store.';
+  if (errorCode === 'missing_parafia_id') return 'Brak identyfikatora parafii do zakupu.';
+  if (errorCode === 'product_not_found') {
+    return 'Produkt Premium nie jest aktywny dla tego testu w App Store.';
+  }
+  if (errorCode === 'already_owned') {
+    return 'To konto ma już aktywny zakup tego produktu.';
+  }
+  if (errorCode.startsWith('purchase_failed_')) {
+    return `App Store zwrócił błąd zakupu (${errorCode.replace('purchase_failed_', '')}).`;
+  }
+  return `Błąd App Store: ${errorCode}`;
 };
 
 const buildInitialAktywnoscForm = () => ({
@@ -2046,6 +2069,7 @@ export default function MinistranciApp() {
   const [showPriestPoslugiInfo, setShowPriestPoslugiInfo] = useState(false);
   const [hidePriestPoslugiInfoPermanently, setHidePriestPoslugiInfoPermanently] = useState(false);
   const [isAndroidAppContext, setIsAndroidAppContext] = useState(false);
+  const [isIosAppContext, setIsIosAppContext] = useState(false);
   const [androidAppVersionCode, setAndroidAppVersionCode] = useState<number | null>(null);
 
   // ==================== STAN — TABLICA OGŁOSZEŃ ====================
@@ -2105,14 +2129,20 @@ export default function MinistranciApp() {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
     const versionFromQuery = parsePositiveInt(url.searchParams.get('app_vc') ?? url.searchParams.get('mobile_vc'));
-    const platformFromQuery = (url.searchParams.get(ANDROID_APP_PLATFORM_QUERY_PARAM) ?? '').trim().toLowerCase();
+    const platformFromQuery = (url.searchParams.get(MOBILE_APP_PLATFORM_QUERY_PARAM) ?? '').trim().toLowerCase();
     const referrer = typeof document !== 'undefined' ? (document.referrer || '') : '';
     const isAndroidReferrer = referrer.startsWith(`android-app://${ANDROID_APP_PACKAGE_ID}`);
     const isAndroidPlatformQuery = platformFromQuery === ANDROID_APP_PLATFORM_QUERY_VALUE;
-    const storedContextFlag = readSessionStorage(ANDROID_APP_CONTEXT_SESSION_KEY) === '1';
-    const storedVersionCode = parsePositiveInt(readSessionStorage(ANDROID_APP_VERSION_SESSION_KEY));
+    const isIosPlatformQuery = platformFromQuery === IOS_APP_PLATFORM_QUERY_VALUE;
+    const storedAndroidContextFlag = readSessionStorage(ANDROID_APP_CONTEXT_SESSION_KEY) === '1';
+    const storedIosContextFlag = readSessionStorage(IOS_APP_CONTEXT_SESSION_KEY) === '1';
+    const storedAndroidVersionCode = parsePositiveInt(readSessionStorage(ANDROID_APP_VERSION_SESSION_KEY));
+    const storedIosVersionCode = parsePositiveInt(readSessionStorage(IOS_APP_VERSION_SESSION_KEY));
     const isAndroidUserAgent = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '');
-    const isAndroidAppSignal = isAndroidReferrer || isAndroidPlatformQuery || versionFromQuery !== null;
+    const isIosUserAgent = typeof navigator !== 'undefined' && /(iphone|ipad|ipod)/i.test(navigator.userAgent || '');
+
+    const isAndroidAppSignal = isAndroidReferrer || isAndroidPlatformQuery;
+    const isIosAppSignal = isIosPlatformQuery;
 
     if (isAndroidAppSignal) {
       writeSessionStorage(ANDROID_APP_CONTEXT_SESSION_KEY, '1');
@@ -2121,8 +2151,23 @@ export default function MinistranciApp() {
       }
     }
 
-    setIsAndroidAppContext(isAndroidAppSignal || (storedContextFlag && isAndroidUserAgent));
-    setAndroidAppVersionCode(versionFromQuery ?? storedVersionCode);
+    if (isIosAppSignal) {
+      writeSessionStorage(IOS_APP_CONTEXT_SESSION_KEY, '1');
+      if (versionFromQuery !== null) {
+        writeSessionStorage(IOS_APP_VERSION_SESSION_KEY, String(versionFromQuery));
+      }
+    }
+
+    const resolvedAndroidContext = isAndroidAppSignal || (storedAndroidContextFlag && isAndroidUserAgent);
+    const resolvedIosContext = isIosAppSignal || (storedIosContextFlag && isIosUserAgent);
+
+    setIsAndroidAppContext(resolvedAndroidContext && !resolvedIosContext);
+    setIsIosAppContext(resolvedIosContext && !resolvedAndroidContext);
+    setAndroidAppVersionCode(
+      versionFromQuery
+      ?? storedAndroidVersionCode
+      ?? storedIosVersionCode
+    );
   }, []);
   const qrPosterRef = useRef<HTMLDivElement | null>(null);
   const wiadomoscInputRef = useRef<HTMLInputElement | null>(null);
@@ -2135,6 +2180,7 @@ export default function MinistranciApp() {
   const [premiumOneTimeCheckoutLoading, setPremiumOneTimeCheckoutLoading] = useState(false);
   const [premiumPortalLoading, setPremiumPortalLoading] = useState(false);
   const [googlePlayCheckoutLoading, setGooglePlayCheckoutLoading] = useState(false);
+  const [appleCheckoutLoading, setAppleCheckoutLoading] = useState(false);
   const [premiumInvoiceForm, setPremiumInvoiceForm] = useState<PremiumInvoiceForm>(() => buildInitialPremiumInvoiceForm(''));
   const [premiumInvoiceErrors, setPremiumInvoiceErrors] = useState<PremiumInvoiceErrors>({});
   const [premiumInvoiceRequested, setPremiumInvoiceRequested] = useState(false);
@@ -2171,7 +2217,9 @@ export default function MinistranciApp() {
   const canEditPrayers = hasPriestPermission('edit_prayers');
   const canManageInvites = hasPriestPermission('manage_invites');
   const canManagePremium = hasPriestPermission('manage_premium');
-  const canUseStripeBilling = !isAndroidAppContext;
+  const clientPlatform = isAndroidAppContext ? 'android-app' : isIosAppContext ? 'ios-app' : 'web';
+  const canUseStripeBilling = clientPlatform === 'web';
+  const mobilePremiumBillingInfo = isIosAppContext ? PREMIUM_IOS_BILLING_INFO : PREMIUM_ANDROID_BILLING_INFO;
   const premiumDaysLeft = useMemo(() => {
     const rawDate = subscription?.premium_expires_at;
     if (!rawDate) return null;
@@ -2265,9 +2313,9 @@ export default function MinistranciApp() {
 
     const applyClientPlatformHeaders = (headers: Headers) => {
       if (!headers.has('x-client-platform')) {
-        headers.set('x-client-platform', isAndroidAppContext ? 'android-app' : 'web');
+        headers.set('x-client-platform', clientPlatform);
       }
-      if (isAndroidAppContext && androidAppVersionCode !== null && !headers.has('x-mobile-app-vc')) {
+      if ((isAndroidAppContext || isIosAppContext) && androidAppVersionCode !== null && !headers.has('x-mobile-app-vc')) {
         headers.set('x-mobile-app-vc', String(androidAppVersionCode));
       }
     };
@@ -2290,7 +2338,7 @@ export default function MinistranciApp() {
     retryHeaders.set('Authorization', `Bearer ${accessToken}`);
     response = await fetch(input, { ...init, headers: retryHeaders });
     return response;
-  }, [androidAppVersionCode, isAndroidAppContext]);
+  }, [androidAppVersionCode, clientPlatform, isAndroidAppContext, isIosAppContext]);
 
   const canUseAdminImpersonation = !!currentUser?.email && ADMIN_PREVIEW_EMAILS.includes(currentUser.email.toLowerCase());
 
@@ -4887,6 +4935,100 @@ export default function MinistranciApp() {
   }, [authFetch, currentParafia?.id, isAndroidAppContext, loadSubscription]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !currentParafia?.id || !isIosAppContext) return;
+
+    const url = new URL(window.location.href);
+    const rawHash = url.hash.startsWith('#') ? url.hash.slice(1) : '';
+    if (!rawHash) return;
+
+    const params = new URLSearchParams(rawHash);
+    const status = (params.get('ap_purchase_status') || '').trim().toLowerCase();
+    if (!status) return;
+
+    const parafiaIdFromHash = (params.get('ap_parafia_id') || '').trim();
+    const transactionId = (params.get('ap_transaction_id') || '').trim();
+    const originalTransactionId = (params.get('ap_original_transaction_id') || '').trim() || null;
+    const productId = (params.get('ap_product_id') || APPLE_PREMIUM_PRODUCT_ID).trim();
+    const errorCode = (params.get('ap_error') || '').trim();
+
+    // Czyścimy hash od razu, żeby dane zakupu nie zostawały w URL.
+    url.hash = '';
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+
+    if (parafiaIdFromHash && parafiaIdFromHash !== currentParafia.id) {
+      alert('Zakup został zwrócony dla innej parafii. Otwórz właściwą parafię i spróbuj ponownie.');
+      return;
+    }
+
+    if (status === 'canceled') {
+      alert('Zakup został anulowany.');
+      return;
+    }
+
+    if (status === 'error') {
+      alert(getAppleNativeErrorMessage(errorCode));
+      return;
+    }
+
+    if (status !== 'success' && status !== 'pending') return;
+
+    if (!transactionId) {
+      alert('App Store nie zwrócił transactionId. Spróbuj ponownie.');
+      return;
+    }
+
+    const processedTxKey = `${APPLE_PROCESSED_TX_SESSION_PREFIX}${transactionId}`;
+    if (readSessionStorage(processedTxKey) === '1') return;
+
+    let cancelled = false;
+    const finalizePurchase = async () => {
+      setAppleCheckoutLoading(true);
+      try {
+        const verifyRes = await authFetch('/api/billing/apple/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parafiaId: currentParafia.id,
+            productId,
+            transactionId,
+            originalTransactionId,
+            bundleId: APPLE_IOS_BUNDLE_ID,
+          }),
+        });
+
+        const verifyPayload = await verifyRes.json().catch(() => ({}));
+        if (!verifyRes.ok && verifyRes.status !== 202) {
+          const apiError = typeof verifyPayload?.error === 'string'
+            ? verifyPayload.error
+            : 'Nie udało się zapisać zakupu App Store.';
+          alert(apiError);
+          return;
+        }
+
+        writeSessionStorage(processedTxKey, '1');
+        if (status === 'pending') {
+          alert('Zakup App Store jest oczekujący. Aktywacja Premium nastąpi po potwierdzeniu płatności.');
+        } else {
+          alert('Płatność App Store została przyjęta. Aktywacja Premium może potrwać chwilę.');
+        }
+        await loadSubscription();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        alert(`Nie udało się zapisać zakupu App Store. ${message}`);
+      } finally {
+        if (!cancelled) {
+          setAppleCheckoutLoading(false);
+        }
+      }
+    };
+
+    void finalizePurchase();
+    return () => {
+      cancelled = true;
+    };
+  }, [authFetch, currentParafia?.id, isIosAppContext, loadSubscription]);
+
+  useEffect(() => {
     if (!currentUser) return;
     setPremiumInvoiceForm((prev) => {
       const next = { ...prev };
@@ -5047,7 +5189,7 @@ export default function MinistranciApp() {
   const handleStartStripeCheckout = async () => {
     if (!currentParafia) return;
     if (!canUseStripeBilling) {
-      alert(PREMIUM_MOBILE_BILLING_INFO);
+      alert(mobilePremiumBillingInfo);
       return;
     }
     const { data: invoiceData, errors } = validatePremiumInvoiceForm();
@@ -5090,7 +5232,7 @@ export default function MinistranciApp() {
   const handleStartStripeOneTimeCheckout = async () => {
     if (!currentParafia) return;
     if (!canUseStripeBilling) {
-      alert(PREMIUM_MOBILE_BILLING_INFO);
+      alert(mobilePremiumBillingInfo);
       return;
     }
     const { data: invoiceData, errors } = validatePremiumInvoiceForm();
@@ -5153,10 +5295,34 @@ export default function MinistranciApp() {
     }
   };
 
+  const handleStartAppleCheckout = async () => {
+    if (!currentParafia?.id) return;
+    if (!isIosAppContext) {
+      alert('Zakup App Store jest dostępny tylko w aplikacji iOS.');
+      return;
+    }
+    setAppleCheckoutLoading(true);
+    try {
+      const checkoutUrl = new URL(APPLE_NATIVE_CHECKOUT_URL);
+      checkoutUrl.searchParams.set('parafiaId', currentParafia.id);
+      checkoutUrl.searchParams.set('productId', APPLE_PREMIUM_PRODUCT_ID);
+      window.location.assign(checkoutUrl.toString());
+
+      // Jeśli urządzenie nie obsłuży deeplinku, nie blokuj przycisku na stałe.
+      window.setTimeout(() => {
+        setAppleCheckoutLoading(false);
+      }, 3000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setAppleCheckoutLoading(false);
+      alert(`Nie udało się uruchomić płatności App Store. ${message}`);
+    }
+  };
+
   const handleOpenStripePortal = async () => {
     if (!currentParafia) return;
     if (!canUseStripeBilling) {
-      alert(PREMIUM_MOBILE_BILLING_INFO);
+      alert(mobilePremiumBillingInfo);
       return;
     }
     setPremiumPortalLoading(true);
@@ -16377,7 +16543,7 @@ export default function MinistranciApp() {
                 )}
                 {subscription.premium_source === 'stripe' && !canUseStripeBilling && (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
-                    {PREMIUM_MOBILE_BILLING_INFO}
+                    {mobilePremiumBillingInfo}
                   </div>
                 )}
                 {subscription.premium_source !== 'stripe' && canUseStripeBilling && (
@@ -16534,7 +16700,7 @@ export default function MinistranciApp() {
                 )}
                 {subscription.premium_source !== 'stripe' && !canUseStripeBilling && (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
-                    {PREMIUM_MOBILE_BILLING_INFO}
+                    {mobilePremiumBillingInfo}
                   </div>
                 )}
               </div>
@@ -16573,28 +16739,56 @@ export default function MinistranciApp() {
                 {!canUseStripeBilling && (
                   <div className="space-y-3">
                     <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
-                      {PREMIUM_MOBILE_BILLING_INFO}
+                      {mobilePremiumBillingInfo}
                     </div>
-                    <div className="p-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 dark:from-emerald-900/20 dark:via-teal-900/20 dark:to-cyan-900/20">
-                      <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-                        <CreditCard className="w-4 h-4" />
-                        Google Play Billing
-                      </p>
-                      <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mt-1">
-                        Cena - 299zł/rok
-                      </p>
-                      <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
-                        Przedpłata roczna (bez auto-odnowienia). Odnowisz ręcznie.
-                      </p>
-                    </div>
-                    <Button
-                      onClick={handleStartGooglePlayCheckout}
-                      disabled={googlePlayCheckoutLoading}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-                    >
-                      <CreditCard className="w-4 h-4 mr-2" />
-                      {googlePlayCheckoutLoading ? 'Otwieranie Google Play...' : 'Zapłać jednorazowo za 1 rok'}
-                    </Button>
+                    {isAndroidAppContext && (
+                      <>
+                        <div className="p-3 rounded-lg border border-emerald-300 dark:border-emerald-700 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 dark:from-emerald-900/20 dark:via-teal-900/20 dark:to-cyan-900/20">
+                          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                            <CreditCard className="w-4 h-4" />
+                            Google Play Billing
+                          </p>
+                          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mt-1">
+                            Cena - 299zł/rok
+                          </p>
+                          <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80 mt-1">
+                            Przedpłata roczna (bez auto-odnowienia). Odnowisz ręcznie.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={handleStartGooglePlayCheckout}
+                          disabled={googlePlayCheckoutLoading}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                        >
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          {googlePlayCheckoutLoading ? 'Otwieranie Google Play...' : 'Zapłać jednorazowo za 1 rok'}
+                        </Button>
+                      </>
+                    )}
+                    {isIosAppContext && (
+                      <>
+                        <div className="p-3 rounded-lg border border-sky-300 dark:border-sky-700 bg-gradient-to-r from-sky-50 via-blue-50 to-indigo-50 dark:from-sky-900/20 dark:via-blue-900/20 dark:to-indigo-900/20">
+                          <p className="text-sm font-semibold text-sky-700 dark:text-sky-300 flex items-center gap-2">
+                            <CreditCard className="w-4 h-4" />
+                            App Store Billing
+                          </p>
+                          <p className="text-xs font-semibold text-sky-700 dark:text-sky-300 mt-1">
+                            Cena - 299zł/rok
+                          </p>
+                          <p className="text-xs text-sky-700/80 dark:text-sky-300/80 mt-1">
+                            Zakup roczny przez App Store. Odnowienie kontrolujesz w Apple ID.
+                          </p>
+                        </div>
+                        <Button
+                          onClick={handleStartAppleCheckout}
+                          disabled={appleCheckoutLoading}
+                          className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold"
+                        >
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          {appleCheckoutLoading ? 'Otwieranie App Store...' : 'Zapłać jednorazowo za 1 rok'}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 )}
 

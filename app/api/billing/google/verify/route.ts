@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { BILLING_CONFIG } from '../../_config';
+import { activateParafiaPremium, getExtendedPremiumExpiry } from '../../_premium';
 import { getClientPlatform } from '../../_platform';
 import {
   findParafiaForAdmin,
   getAuthUser,
-  isMissingColumnError,
   supabaseAdmin,
 } from '../../stripe/_shared';
 import { hashPurchaseToken, parseGoogleVerifyPayload } from '../_shared';
@@ -12,67 +13,6 @@ type StoredEntitlement = {
   id: string;
   status: string | null;
   current_period_end: string | null;
-};
-
-const getExtendedPremiumExpiry = async (parafiaId: string) => {
-  const now = new Date();
-  const fallback = new Date(now);
-  fallback.setFullYear(fallback.getFullYear() + 1);
-
-  const { data, error } = await supabaseAdmin
-    .from('parafie')
-    .select('premium_expires_at')
-    .eq('id', parafiaId)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    if (!isMissingColumnError(error)) {
-      console.error('Google verify: nie udało się pobrać premium_expires_at:', error);
-    }
-    return fallback.toISOString();
-  }
-
-  const currentRaw = typeof data?.premium_expires_at === 'string' ? data.premium_expires_at : null;
-  if (!currentRaw) return fallback.toISOString();
-
-  const currentDate = new Date(currentRaw);
-  if (Number.isNaN(currentDate.getTime()) || currentDate.getTime() <= now.getTime()) {
-    return fallback.toISOString();
-  }
-
-  const extended = new Date(currentDate);
-  extended.setFullYear(extended.getFullYear() + 1);
-  return extended.toISOString();
-};
-
-const applyGooglePlayPremium = async (parafiaId: string) => {
-  const premiumExpiresAt = await getExtendedPremiumExpiry(parafiaId);
-
-  let { error: updateError } = await supabaseAdmin
-    .from('parafie')
-    .update({
-      tier: 'premium',
-      is_active: true,
-      premium_status: 'active',
-      premium_source: 'google_play',
-      premium_expires_at: premiumExpiresAt,
-    })
-    .eq('id', parafiaId);
-
-  if (updateError && isMissingColumnError(updateError)) {
-    const fallback = await supabaseAdmin
-      .from('parafie')
-      .update({ tier: 'premium' })
-      .eq('id', parafiaId);
-    updateError = fallback.error;
-  }
-
-  if (updateError) {
-    throw new Error(`Nie udało się aktywować Premium dla Google Play: ${updateError.message}`);
-  }
-
-  return premiumExpiresAt;
 };
 
 export async function POST(request: NextRequest) {
@@ -97,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
     const payload = parsedPayload.data;
 
-    const expectedPackageName = process.env.GOOGLE_PLAY_PACKAGE_NAME?.trim();
+    const expectedPackageName = BILLING_CONFIG.googlePlay.packageName;
     if (expectedPackageName && payload.packageName !== expectedPackageName) {
       return NextResponse.json(
         { error: 'Nieprawidłowy packageName dla tej aplikacji.' },
@@ -105,7 +45,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const expectedProductId = process.env.GOOGLE_PLAY_PREMIUM_PRODUCT_ID?.trim() || 'premium_yearly';
+    const expectedProductId = BILLING_CONFIG.googlePlay.premiumProductId;
     if (payload.productId !== expectedProductId) {
       return NextResponse.json(
         { error: `Nieprawidłowy productId. Oczekiwano: ${expectedProductId}.` },
@@ -113,7 +53,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const expectedPrepaidBasePlanId = process.env.GOOGLE_PLAY_PREPAID_BASE_PLAN_ID?.trim() || 'yearly-prepaid';
+    const expectedPrepaidBasePlanId = BILLING_CONFIG.googlePlay.prepaidBasePlanId;
     if (payload.basePlanId !== expectedPrepaidBasePlanId) {
       return NextResponse.json(
         { error: `Dozwolona jest tylko przedpłata (basePlanId: ${expectedPrepaidBasePlanId}).` },
@@ -151,7 +91,8 @@ export async function POST(request: NextRequest) {
 
     let premiumExpiresAt = existingEntitlement?.current_period_end || null;
     if (payload.acknowledged === true && !alreadyActive) {
-      premiumExpiresAt = await applyGooglePlayPremium(payload.parafiaId);
+      premiumExpiresAt = await getExtendedPremiumExpiry(payload.parafiaId);
+      await activateParafiaPremium(payload.parafiaId, 'google_play', premiumExpiresAt);
     }
 
     const entitlementPayload = {
